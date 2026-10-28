@@ -6,7 +6,7 @@ export function createControls(THREE, canvas, camera, { onTap } = {}) {
   const c = {
     target: new THREE.Vector3(), goalTarget: new THREE.Vector3(),
     theta: 0.8, phi: 1.05, dist: 3000, goalDist: 3000, goalTheta: 0.8, goalPhi: 1.05,
-    minDist: 4, maxDist: 60000, autoRotate: 0, userActive: 0, panScale: 1
+    minDist: 4, maxDist: 60000, autoRotate: 0, userActive: 0, panScale: 1, ease: 5
   };
   const pointers = new Map();
   let down = null; let lastPinch = 0; let lastMid = null;
@@ -96,7 +96,7 @@ export function createControls(THREE, canvas, camera, { onTap } = {}) {
     }
     c.userActive = Math.max(0, c.userActive - dt);
     if (c.autoRotate && c.userActive <= 0) c.goalTheta += c.autoRotate * dt;
-    const k = 1 - Math.exp(-dt * 5);
+    const k = 1 - Math.exp(-dt * (c.ease || 5));
     c.target.lerp(c.goalTarget, k);
     c.dist += (c.goalDist - c.dist) * k;
     c.theta += (c.goalTheta - c.theta) * k;

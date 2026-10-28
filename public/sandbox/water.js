@@ -1,7 +1,8 @@
 // PG1 Sandbox viewer: the water shader (High and Ultra; quality.js).
 //
-// No mirror pass (that would draw the whole scene a second time each
-// frame): two layers of wave normals scroll across each other, the surface
+// No mirror pass on High and Ultra (that would draw the whole scene a
+// second time each frame); Cinematic adds one (uReflect, from a three.js
+// Reflector the environment renders before each frame). Otherwise two layers of wave normals scroll across each other, the surface
 // reflects the sky's own colours by the Fresnel term, the sun leaves a
 // glitter path, and the colour runs from turquoise over the shallows to
 // deep blue, with foam where the sea meets an island. The shallows and the
@@ -33,6 +34,9 @@ uniform vec3 uShallow;
 uniform float uIslands[${MAX_ISLANDS * 3}];
 uniform int uIslandCount;
 uniform float uFoam;
+uniform float uReflect;
+uniform sampler2D tReflect;
+uniform mat4 uReflectMatrix;
 varying vec3 vWorld;
 #include <fog_pars_fragment>
 float shoreEdge(vec2 p) {
@@ -56,6 +60,12 @@ void main() {
   float fres = 0.02 + 0.98 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
   vec3 r = reflect(-v, n);
   vec3 sky = mix(uHorizon, uZenith, pow(clamp(r.y, 0.0, 1.0), 0.5));
+  if (uReflect > 0.0) {
+    // The mirror image of the scene, rippled by the waves.
+    vec4 rc = uReflectMatrix * vec4(vWorld, 1.0);
+    rc.xy += n.xz * 0.35 * rc.w * 0.12;
+    sky = mix(sky, texture2DProj(tReflect, rc).rgb, uReflect);
+  }
   float spec = pow(max(dot(r, normalize(uSunDir)), 0.0), 220.0) * 3.0 + pow(max(dot(r, normalize(uSunDir)), 0.0), 24.0) * 0.12;
   float edge = shoreEdge(uv);
   float shallow = smoothstep(-180.0, -8.0, edge);
@@ -65,7 +75,11 @@ void main() {
   float foamBand = smoothstep(-26.0, -4.0, edge) * (1.0 - smoothstep(-4.0, 1.0, edge));
   float foamNoise = texture2D(uNormals, uv / 6.0 + vec2(uTime * 0.03, 0.0)).r;
   col = mix(col, vec3(0.92, 0.95, 0.97) * (0.35 + 0.65 * max(uSunColor.r, 0.2)), foamBand * smoothstep(0.42, 0.62, foamNoise) * uFoam);
-  gl_FragColor = vec4(col, 0.94);
+  // Glints: tiny sparks of sunlight where wave facets catch the sun.
+  float spark = texture2D(uNormals, uv / 2.3 + vec2(uTime * 0.05, -uTime * 0.04)).g * texture2D(uNormals, uv / 1.7 - vec2(uTime * 0.035, uTime * 0.06)).r;
+  col += uSunColor * smoothstep(0.62, 0.72, spark) * pow(max(dot(r, normalize(uSunDir)), 0.0), 6.0) * 2.5 * step(0.0, uSunDir.y);
+  // Clear in the shallows: the stones and sand show through near the shore.
+  gl_FragColor = vec4(col, mix(0.94, 0.62, smoothstep(-40.0, -2.0, edge)));
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
   #include <fog_fragment>
@@ -81,7 +95,8 @@ export function createWaterMaterial(THREE, normals, islands = [], { offset = tru
     uSunDir: { value: new THREE.Vector3(0.3, 0.8, 0.2) }, uSunColor: { value: new THREE.Color(1, 0.96, 0.9) },
     uZenith: { value: new THREE.Color('#2a6fd6') }, uHorizon: { value: new THREE.Color('#bcd9f2') },
     uDeep: { value: new THREE.Color('#0b3550') }, uShallow: { value: new THREE.Color('#2bb3b1') },
-    uIslands: { value: Array.from(flat) }, uIslandCount: { value: Math.min(MAX_ISLANDS, islands.length) }, uFoam: { value: 1 }
+    uIslands: { value: Array.from(flat) }, uIslandCount: { value: Math.min(MAX_ISLANDS, islands.length) }, uFoam: { value: 1 },
+    uReflect: { value: 0 }, tReflect: { value: null }, uReflectMatrix: { value: new THREE.Matrix4() }
   }]);
   uniforms.uNormals.value = normals;
   // Pushed back in depth a little, so land just above sea level always wins, even from far away.

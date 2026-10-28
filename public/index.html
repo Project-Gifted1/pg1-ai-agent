@@ -456,6 +456,15 @@
     .sandbox-volume { width: 88px; accent-color: #f3c623; }
     .sandbox-view.is-full { position: fixed; inset: 0; z-index: 60; height: auto; border-radius: 0; border: 0; }
     .sandbox-hud { position: absolute; inset: 0; pointer-events: none; }
+    .sandbox-space { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 8px; scrollbar-width: none; }
+    .sandbox-space[hidden] { display: none; }
+    .sandbox-space button { flex: 0 0 auto; min-height: var(--lx-tap, 44px); padding: 4px 10px; border-radius: 999px; border: 1px solid var(--lx-line-strong); background: var(--lx-card-2); color: var(--lx-text); font: inherit; text-align: left; line-height: 1.15; }
+    .sandbox-space button small { display: block; color: var(--lx-text-dim, #9aa0a6); font-size: 0.68rem; }
+    .sandbox-space button[data-reached="true"] { border-color: #8f86ff; }
+    .sandbox-space .sandbox-land:not([disabled]) { border-color: #f3c623; }
+    .sandbox-floors { position: absolute; right: 8px; bottom: 12px; display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: auto; background: rgba(10,10,11,0.72); border-radius: 10px; padding: 4px; color: #fff; font: 600 0.72rem/1.2 var(--lx-font, system-ui); }
+    .sandbox-floors button { min-width: var(--lx-tap, 44px); min-height: var(--lx-tap, 44px); border: 0; border-radius: 8px; background: rgba(255,255,255,0.12); color: #fff; font-size: 1rem; }
+    .sandbox-floors[hidden] { display: none; }
     .secret-once { max-width: min(420px, calc(100vw - 32px)); border: 1px solid rgba(255,255,255,0.14); border-radius: 14px; background: #121214; color: #e8e8ec; padding: 18px; }
     .secret-once::backdrop { background: rgba(0,0,0,0.6); }
     .secret-once h3 { margin: 0 0 8px; font-size: 1rem; }
@@ -2946,14 +2955,17 @@
           <button type="button" data-view="follow" aria-pressed="false" onclick="setSandboxView('follow')">Follow</button>
           <button type="button" data-view="tour" aria-pressed="false" onclick="setSandboxView('tour')">Tour</button>
           <button type="button" data-view="space" aria-pressed="false" onclick="setSandboxView('space')">Space</button>
+          <button type="button" data-view="explore" aria-pressed="false" onclick="setSandboxView('explore')" title="Walk at eye height: drag to look round, tap the ground to walk there">Explore</button>
           <button type="button" id="sandbox-names" aria-pressed="true" onclick="toggleSandboxNames()">Names</button>
           <button type="button" id="sandbox-sound" aria-pressed="false" title="The sound of the world: wind, sea, town, birds and crickets, the hum of space (off until you turn it on)">Sound</button>
           <button type="button" id="sandbox-music" aria-pressed="false" disabled title="A slow ambient score of the world's own">Music</button>
           <input type="range" class="sandbox-volume" id="sandbox-volume" min="0" max="100" value="50" aria-label="Volume" disabled>
           <button type="button" id="sandbox-xray" aria-pressed="false" onclick="toggleSandboxXray()">See inside</button>
-          <select class="sandbox-quality" id="sandbox-quality" aria-label="Quality" onchange="setSandboxQuality(this.value)"><option value="auto">Auto</option><option value="ultra">Ultra</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
+          <select class="sandbox-quality" id="sandbox-quality" aria-label="Quality" onchange="setSandboxQuality(this.value)"><option value="auto">Auto</option><option value="cinematic">Cinematic</option><option value="ultra">Ultra</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select>
           <button type="button" class="sandbox-full-btn" aria-pressed="false" id="sandbox-full" onclick="toggleSandboxFull()">Full screen</button>
+          <button type="button" id="sandbox-shot" onclick="saveSandboxScreenshot()" hidden>Screenshot</button>
         </div>
+        <div class="sandbox-space" id="sandbox-space" role="group" aria-label="Places in space" hidden></div>
         <div class="sandbox-view" id="sandbox-view" aria-label="The world, drawn in 3D"></div>
         <section class="lx-card sandbox-inspect" id="sandbox-inspect" aria-labelledby="sandbox-inspect-h" hidden><h3 class="lx-section-h" id="sandbox-inspect-h">Selected</h3><ul class="lx-rows" id="sandbox-inspect-rows"></ul></section>
         <div class="sandbox-kinds" id="sandbox-kinds" aria-label="Kinds of entity"></div>
@@ -3871,6 +3883,7 @@
       const kinds = document.getElementById('sandbox-kinds');
       if (kinds && window.__sandboxKinds) kinds.innerHTML = window.__sandboxKinds({ size: w && w.size, entities: (w && w.entities) || [] }).map((k) => `<span><span class="sw" style="background:${k.color}"></span>${escapeHTML(k.kind)} <strong>${k.n}</strong></span>`).join('');
       if (sandboxScene && w) sandboxScene.update(w, { duration: sandboxStepMs() });
+      if (sandboxScene && sandboxScene.view && ['space', 'follow'].includes(sandboxScene.view())) renderSandboxSpace(w);
       const socPanel = document.getElementById('sandbox-panel-society');
       if (socPanel && !socPanel.hidden) renderSandboxSociety(w);
       renderSandboxHistory(w);
@@ -3886,11 +3899,66 @@
       sel.hidden = !q;
       if (!q) return;
       sel.value = q.auto ? 'auto' : q.tier;
+      const shot = document.getElementById('sandbox-shot');
+      if (shot) shot.hidden = !(sandboxScene && sandboxScene.screenshot);
       const auto = sel.querySelector('option[value="auto"]');
       if (auto) auto.textContent = q.auto ? `Auto (${q.tier[0].toUpperCase()}${q.tier.slice(1)})` : 'Auto';
     }
+    // A still of the 3D view as a PNG, stamped "Simulation" with its day and time.
+    function saveSandboxScreenshot() {
+      const url = sandboxScene && sandboxScene.screenshot ? sandboxScene.screenshot() : null;
+      if (!url) return;
+      const a = document.createElement('a');
+      a.href = url; a.download = `simulation-${(sandboxState && sandboxState.world && sandboxState.world.id) || 'world'}-step-${(sandboxState && sandboxState.world && sandboxState.world.tick) || 0}.png`;
+      document.body.appendChild(a); a.click(); a.remove();
+    }
     async function setSandboxQuality(v) { if (sandboxScene && sandboxScene.setQuality) { await sandboxScene.setQuality(v); markSandboxQuality(sandboxScene.quality()); } }
-    function markSandboxView(mode) { document.querySelectorAll('.sandbox-views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === mode))); }
+    function markSandboxView(mode) { document.querySelectorAll('.sandbox-views [data-view]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.view === mode))); renderSandboxSpace(sandboxState.world, mode); }
+    // Places in space (the Space view): every body and craft up there, and
+    // whether the inhabitants have reached it with their technology yet. A
+    // tap flies the camera there; the viewer can always look, they cannot.
+    function renderSandboxSpace(w, mode = sandboxScene && sandboxScene.view ? sandboxScene.view() : null) {
+      const box = document.getElementById('sandbox-space');
+      if (!box) return;
+      const ents = (w && w.entities) || [];
+      const KINDS = ['star', 'planet', 'moon', 'space_station', 'colony', 'satellite', 'shuttle', 'alien_world'];
+      const base = (e) => (KINDS.includes(e.kind) ? e.kind : String(e.kind).replace(/[_-][a-z0-9]+$/, ''));
+      const list = ents.filter((e) => KINDS.includes(base(e))).sort((a, b) => KINDS.indexOf(base(a)) - KINDS.indexOf(base(b)) || (a.id < b.id ? -1 : 1));
+      const sel = sandboxScene && sandboxScene.selected ? sandboxScene.selected() : null;
+      box.hidden = !list.length || !(mode === 'space' || (mode === 'follow' && list.some((e) => e.id === sel)));
+      if (box.hidden) return;
+      const raw = w && w.society; const socs = !raw ? {} : ('currency' in raw || 'treasury' in raw) ? { home: raw } : raw;
+      const tech = Math.max(0, ...Object.values(socs).map((s) => Number(s && s.tech) || 0));
+      const colonised = new Set(ents.filter((e) => e.kind === 'colony' && e.properties && e.properties.orbits).map((e) => e.properties.orbits));
+      const status = (e) => {
+        const k = e.kind;
+        if (k === 'star') return [true, 'their sun'];
+        if (k === 'colony') return [true, 'their colony'];
+        if (k === 'space_station' || k === 'satellite' || k === 'shuttle') return tech >= 4 ? [true, 'theirs, in orbit'] : [false, 'not theirs yet: needs spaceflight'];
+        if (k === 'alien_world') return tech >= 6 ? [true, 'within reach: interstellar'] : [false, 'out of reach: needs interstellar travel'];
+        if (colonised.has(e.id)) return [true, 'a colony there'];
+        return tech >= 5 ? [true, 'within reach'] : tech >= 4 ? [false, 'visited by rocket only'] : [false, 'out of reach: needs spaceflight'];
+      };
+      box.innerHTML = `<button type="button" disabled><strong>Their space age</strong><small>${escapeHTML(SANDBOX_TECH[tech] || 'settlement')} (level ${tech})</small></button>` + list.map((e) => { const [ok, why] = status(e); return `<button type="button" data-id="${escapeHTML(e.id)}" data-reached="${ok}" aria-pressed="${e.id === sel}">${escapeHTML((e.properties && e.properties.name) || e.kind.replace(/_/g, ' '))}<small>${escapeHTML(why)}</small></button>`; }).join('');
+      // Landing: only on a world they have reached (a colony there), or a far
+      // world they have met; otherwise it says what they still need.
+      const contacts = new Set(Object.values(socs).flatMap((x) => (x && x.contacts) || []));
+      const target = list.find((e) => e.id === sel) || null;
+      if (target && sandboxScene.surfaceKind) {
+        const kind = sandboxScene.surfaceKind(target.id);
+        const nm = escapeHTML((target.properties && target.properties.name) || target.kind.replace(/_/g, ' '));
+        const name = (target.properties && target.properties.name) || target.id;
+        let why = null;
+        if (!kind) why = 'not a world to walk on';
+        else if (kind === 'giant') why = 'a gas giant: no surface to stand on (try its moons)';
+        else if (kind === 'alien') why = contacts.has(name) ? null : 'they have not met its people yet: needs first contact (interstellar travel)';
+        else why = colonised.has(target.id) ? null : 'they have no colony there yet: needs space colonies (level 5) and a colony';
+        box.insertAdjacentHTML('beforeend', why ? `<button type="button" class="sandbox-land" disabled><strong>Land on ${nm}</strong><small>${escapeHTML(why)}</small></button>` : `<button type="button" class="sandbox-land" data-land="${escapeHTML(target.id)}"><strong>Land on ${nm}</strong><small>walk its surface</small></button>`);
+        const lb = box.querySelector('[data-land]');
+        if (lb) lb.addEventListener('click', () => { if (sandboxScene.land(lb.dataset.land, { contact: contacts.has(name) })) { box.hidden = true; markSandboxView('explore'); } });
+      }
+      box.querySelectorAll('button[data-id]').forEach((b) => b.addEventListener('click', () => { if (sandboxScene && sandboxScene.select) sandboxScene.select(b.dataset.id); }));
+    }
     function setSandboxView(mode) { if (!sandboxScene || !sandboxScene.setView) return; sandboxScene.setView(mode); markSandboxView(sandboxScene.view ? sandboxScene.view() : mode); }
     function toggleSandboxFull() {
       const v = document.getElementById('sandbox-view'); const b = document.getElementById('sandbox-full');

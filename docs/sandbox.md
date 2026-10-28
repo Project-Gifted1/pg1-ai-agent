@@ -317,27 +317,42 @@ Open it from the `/sandbox` or `/world <id>` reply. It is a full-screen view in 
 
 - **The world, in 3D:** three.js, rendered in the browser; the phone does the work.
 - **Every kind as a detailed model** (`public/sandbox/models.js`):
-  - people walk with swinging arms and legs;
+  - people walk with swinging arms and legs; each has a face (eyes, brows, nose, ears, mouth), one of six hair styles, and clothes with a collar, buttons and a belt; some wear a jacket, a skirt or a dress, some carry a bag (24 looks);
+  - cars come in seven body styles (saloon, hatchback, estate, SUV, pickup, van, sports) and nine colours, with shaped bodies cut away round the wheels, glass cabins with pillars, bumpers, grilles, head and tail lights, door lines, handles, mirrors and number plates; one bus in three is a double-decker; lorries carry a box body, a tank or a flatbed of crates; wheels have tyres, five-spoke rims and hub caps;
   - cars, buses and bikes roll on turning wheels;
   - planes bank and climb, helicopters and drones spin their rotors, propellers turn;
   - boats rock;
   - rockets fire their engines on the way up;
-  - the station turns, planets have painted surfaces, rings, clouds and orbit paths;
+  - the space station is built like a real one: a long truss with four pairs of solar wings and radiators, a line of modules joined by docking nodes, a docking port with lights, a windowed cupola, a dish, navigation lights, and a habitat ring on spokes that turns slowly; satellites have gold foil, solar wings and a dish; colonies have domes with gardens, tunnels, a solar farm, a landing pad and a rover;
+  - planets and moons have surfaces painted from seeded noise (ocean worlds with continents and ice caps, gas giants in bands, cratered moons, cracked ice worlds), rings, clouds, a glowing rim of air on worlds that have it, and orbit paths; the world's asteroids are drawn among a belt of many more rocks where they orbit (scenery, like the woods);
   - riders sit on bikes and horses, and are out of sight inside cars, buses and rockets.
 - **What surrounds them** (`environment.js`):
   - a sky and sun on the world's day, with dawn, dusk and night, lit windows and stars;
   - flat ground inside the world, hills, woods and the sea beyond, curving away like a planet;
   - lakes with ripples, drifting clouds;
-  - the black of space above the space altitude.
-- **Drawn by the viewer, not world data:** the ground, sky, water ripples, grass tufts, clouds and scenery woods. They come from the world's size and seed, stay clear of every entity, and nothing in the world can use them.
+  - the black of space above the space altitude, with the galaxy across it (a band of faint stars and glowing clouds of gas).
+- **Buildings you can go into** (`interiors.js`): in **Explore**, tap a building to walk in at its front door. Its walls turn see-through and its rooms show: shelves and a till in a shop, tables and a counter in a café or bar, desks facing a board in a school, wards in a hospital, desks and screens in an office tower, rooms in a hotel, seats facing a screen or stage, benches and a departures board in a station or terminal, machines and crates in a factory or hangar, bunks in barracks, cells in a prison, and the furniture of a home. Every storey has a floor, a stair and a lift; **▲ ▼** change floors. Walk out (or pick another view) and it is a building again. Windows have frames and sills; houses have porches, gutters and door frames; shops have striped awnings and lit signs.
+- **Space, as far as they have reached:** the **Space** view lists every place up there (the star, planets, moons, the station, satellites, colonies, far worlds) and says whether the inhabitants have reached it with their technology: their sun; the station and satellites at spaceflight; planets visited by rocket at spaceflight, within reach at space colonies, or with a colony there; far worlds at interstellar travel. A tap flies the camera there. The viewer can always look; the inhabitants go only as far as their research takes them.
+- **Landing on another world** (`surface.js`): on a world the inhabitants have reached, **Land** sets you down on its surface at eye height (tap the ground to walk; pick another view to leave). A planet or moon is reached when they have a colony there; a far world only after first contact (which needs their own deep-space expedition, at interstellar travel). Until then the button says what they still need; a gas giant has no surface (its moons do). The surface is drawn from what the world is: rocky and cratered under a black sky of stars, icy, an ocean world with sea and land under blue air, or an alien world with glowing plants under a violet sky. Their colony stands at the middle, with astronauts and a rover; after first contact, a far world shows its people's city. Like the scenery woods it is drawn by the viewer: nothing on the surface is world data, and the clock reads "Simulation · … · on <world>".
+- **The look, by quality tier** (`quality.js`; Low, Medium, High, Ultra, and Cinematic by hand only):
+  - physically based materials lit by the sun and by **image-based light** from the sky (a prefiltered environment map, made again as the sun moves; Medium and up), ACES tone mapping, soft cascaded shadows, ambient occlusion and bloom on the higher tiers;
+  - **streets in detail** (`streets.js`, Medium and up): asphalt with dashed centre lines and edge lines, kerbs and pavements, junctions, zebra crossings, and **street lamps** that come on at dusk with pools of light under them. From the world's road graph when it has one (`roads`), otherwise from its road strips. Low keeps the plain strips;
+  - **coasts** (`coast.js`): rocks where the land meets the sea, smooth stones round every lake and on the sea bed, wet sand at the waterline, and surf where the water shader is off;
+  - **water** (High and up): waves, the sky's reflection, the sun's glitter and glints, foam at the shore, and clear shallows where the stones show through. **Cinematic** adds a true mirror image of the scene in the water;
+  - **close-up grass and flowers** (`foliage.js`, Medium and up): tens of thousands of blades swaying in the wind round wherever the camera looks, never on water, roads or pavements;
+  - **distance detail:** moving things keep their full model up close; further away each becomes one block of its size and colour, all drawn together (one draw call);
+  - **Cinematic:** sharper and bigger shadows, temporal anti-aliasing, depth of field on what the camera looks at, a slower, eased camera, and a **Screenshot** button (a PNG stamped "Simulation · day · time"). It is for stills on a strong computer, not for a phone; Auto never picks it.
+  - Auto starts from the device and steps down a tier when frames keep running slow (30 fps on a mid-range phone at Medium). Reduced motion or no WebGL gives the 2D map.
+  - What a live browser view cannot do: the offline, path-traced look of a scene modelled and rendered in Blender. That takes minutes per frame on a desktop GPU; a phone browser has about 30 ms. This viewer gets as close as it can live.
+- **Drawn by the viewer, not world data:** the ground, sky, water ripples, grass tufts, close-up grass, stones and rocks, street markings and lamps, clouds and scenery woods. They come from the world's size and seed, stay clear of every entity, and nothing in the world can use them.
 - **Between steps,** everything glides from where it was to where the engine put it, along a curve through its recent steps (Catmull-Rom), not a straight line: cars round corners and turn their front wheels, planes bank into turns and pitch on the climb and descent, and wheels stay on the ground through the take-off roll.
 - **The coast and the roads** come from the world's data: the same terrain module as the engine, and the road network drawn from the road graph.
 - **The camera:**
   - drag to turn, pinch or scroll to zoom, two fingers or right-drag to move;
   - tap something to follow it; its details show under the view;
-  - **Overview** (the town), **Follow**, **Tour** (the camera visits what is moving: rockets, planes, buses), **Space** (the sky above);
+  - **Overview** (the town), **Follow**, **Tour** (the camera visits what is moving: rockets, planes, buses), **Space** (the sky above), **Explore** (at eye height where the camera looks: drag to look round, tap the ground to walk there, pinch to step back);
   - **Full screen**.
-- **On the view:** a clock ("Simulation · day 1 · 09:24 · in space") and a minimap (tap to go there).
+- **On the view:** a clock ("Simulation · day 1 · 09:24 · in space") and a minimap (tap to go there). Every view, and every screenshot, says "Simulation".
 - **A 2D map** instead with reduced motion or no WebGL.
 - **A world list that says which is which:** each world's name, "your first universe" on PG1's oldest world, what kind of world it is (universe, Benin–Warri, town, meadow, custom), whose it is, the day it began and the start of its id. **New universe** gives each new one a name no other world has (Pg1-Universe, Pg1-Universe 2, ...).
 - **On the view itself,** a badge in the bottom corner says which world you are watching (its name, "your first universe" on the first, and what kind of world it is), and the same full line as in the list is shown over the view.

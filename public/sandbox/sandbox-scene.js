@@ -33,6 +33,13 @@
 import { buildModel, modelKey, baseKind, classOf, FIXED_KINDS, AIR_KINDS, HOME_KINDS, celestialSize, furnitureFor } from './models.js';
 import { PROP_KINDS } from './rescue-models.js';
 import { createEnvironment } from './environment.js';
+import { buildStreets } from './streets.js';
+import { buildCoast } from './coast.js';
+import { createFoliage } from './foliage.js';
+import { INTERIORS, interiorFor, storeysOf, doorOf } from './interiors.js';
+import { Kit } from './kit.js';
+import { setModelDetail } from './models.js';
+import { buildSurface, surfaceKind } from './surface.js';
 import { createControls } from './controls.js';
 import { createEffects } from './effects.js';
 import { TIERS, TIER_SETTINGS, QUALITY_KEY, pickTier, createGovernor } from './quality.js';
@@ -183,39 +190,61 @@ function describe(e) {
 
 // --- painted textures for planets, moons and stars ---------------------------------------------
 
+// A body's surface, painted on a canvas from seeded noise (512 x 256): rocky
+// worlds and moons mottled and cratered, ocean worlds with continents,
+// shallows and ice caps, gas giants in turbulent bands, ice worlds cracked,
+// stars granulated, far alien worlds glowing with lights.
 function planetTexture(THREE, base, kind, seed) {
-  const c = document.createElement('canvas');
-  c.width = 256; c.height = 128;
+  const W = 512; const H = 256;
+  const c = document.createElement('canvas'); c.width = W; c.height = H;
   const g = c.getContext('2d');
-  const col = new THREE.Color(base);
+  const col = new THREE.Color(base); const hsl = {}; col.getHSL(hsl);
   let s = seed || 7;
   const r = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
-  g.fillStyle = `#${col.getHexString()}`; g.fillRect(0, 0, 256, 128);
-  if (kind === 'moon' || kind === 'asteroid') {
-    for (let i = 0; i < 90; i++) { const x = r() * 256; const y = r() * 128; const rad = 1 + r() * 9; g.fillStyle = `rgba(0,0,0,${0.08 + r() * 0.15})`; g.beginPath(); g.arc(x, y, rad, 0, Math.PI * 2); g.fill(); g.strokeStyle = 'rgba(255,255,255,0.12)'; g.stroke(); }
-  } else if (kind === 'alien_world') {
-    for (let y = 0; y < 128; y += 2) { const k = col.clone().offsetHSL(0, 0, (Math.sin(y * 0.3) * 0.08)); g.fillStyle = `#${k.getHexString()}`; g.fillRect(0, y, 256, 2); }
-    for (let i = 0; i < 700; i++) { g.fillStyle = `rgba(255,${220 + r() * 35},${120 + r() * 80},${0.5 + r() * 0.5})`; g.fillRect(r() * 256, 16 + r() * 96, 1.5, 1.5); }
-  } else if (kind === 'star') {
-    for (let i = 0; i < 400; i++) { g.fillStyle = `rgba(255,${200 + r() * 55},${120 + r() * 80},${r() * 0.3})`; g.fillRect(r() * 256, r() * 128, 3, 3); }
-  } else {
-    // Bands, then land and clouds for the blue ones.
-    for (let y = 0; y < 128; y += 2) {
-      const t = Math.sin(y * 0.18 + r() * 0.6) * 0.5 + 0.5;
-      const k = col.clone().offsetHSL((r() - 0.5) * 0.03, (r() - 0.5) * 0.1, (t - 0.5) * 0.18);
-      g.fillStyle = `#${k.getHexString()}`; g.globalAlpha = 0.5; g.fillRect(0, y, 256, 2);
-    }
-    g.globalAlpha = 1;
-    if (col.b > col.r) {
-      for (let i = 0; i < 14; i++) { g.fillStyle = r() < 0.5 ? '#3f8f4a' : '#c2a46a'; g.beginPath(); g.ellipse(r() * 256, 20 + r() * 88, 10 + r() * 30, 6 + r() * 16, r() * 3, 0, Math.PI * 2); g.fill(); }
-      g.fillStyle = '#f5f7fa'; g.fillRect(0, 0, 256, 7); g.fillRect(0, 121, 256, 7);
-    }
+  // Value noise on a sphere-ish wrap (x wraps), a few octaves.
+  const P = 64; const grid = new Float32Array(P * P); for (let i = 0; i < grid.length; i++) grid[i] = r();
+  const vn = (x, y) => { const xi = Math.floor(x); const yi = Math.floor(y); const xf = x - xi; const yf = y - yi; const at = (a, b) => grid[(((b % P) + P) % P) * P + (((a % P) + P) % P)]; const u = xf * xf * (3 - 2 * xf); const v = yf * yf * (3 - 2 * yf); return (at(xi, yi) * (1 - u) + at(xi + 1, yi) * u) * (1 - v) + (at(xi, yi + 1) * (1 - u) + at(xi + 1, yi + 1) * u) * v; };
+  const fbm = (x, y) => { let t = 0; let a = 0.5; let f = 1; for (let o = 0; o < 5; o++) { t += a * vn(x * f, y * f); a *= 0.5; f *= 2; } return t; };
+  const img = g.createImageData(W, H); const d = img.data; const px = new THREE.Color();
+  const ocean = kind === 'planet' && col.b > col.r && col.b > col.g * 0.9;
+  const ice = kind === 'planet' && hsl.l > 0.6 && !ocean;
+  const giant = kind === 'planet' && !ocean && !ice && hsl.s < 0.55 && hsl.l > 0.45;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const u = (x / W) * P; const v = (y / H) * (P / 2);
+    const n = fbm(u * 0.25, v * 0.25); const lat = Math.abs(y / H - 0.5) * 2;
+    if (kind === 'star') px.copy(col).offsetHSL(0, 0, (n - 0.5) * 0.25 + (vn(u * 2, v * 2) - 0.5) * 0.15);
+    else if (ocean) {
+      const land = n > 0.53;
+      if (land) px.setRGB(0.25, 0.42, 0.2).lerp(new THREE.Color(0.6, 0.5, 0.33), Math.min(1, (n - 0.53) * 6)).offsetHSL(0, 0, (vn(u, v) - 0.5) * 0.1);
+      else px.copy(col).offsetHSL(0, 0, -0.12 + Math.max(0, n - 0.42) * 1.2);
+      if (lat > 0.82 - (n - 0.5) * 0.2) px.setRGB(0.93, 0.95, 0.97);
+    } else if (giant) {
+      const band = Math.sin((y / H) * Math.PI * 14 + (n - 0.5) * 6) * 0.5 + 0.5;
+      px.copy(col).offsetHSL((band - 0.5) * 0.03, (band - 0.5) * 0.1, (band - 0.5) * 0.22 + (vn(u * 3, v * 0.6) - 0.5) * 0.08);
+    } else if (ice) {
+      px.copy(col).offsetHSL(0, 0, (n - 0.5) * 0.15);
+      if (Math.abs(vn(u * 1.5, v * 1.5) - 0.5) < 0.012) px.offsetHSL(0, 0.1, -0.25);   // cracks
+    } else if (kind === 'alien_world') px.copy(col).offsetHSL((n - 0.5) * 0.08, 0, (n - 0.5) * 0.3);
+    else px.copy(col).offsetHSL(0, 0, (n - 0.5) * 0.35 + (vn(u * 4, v * 4) - 0.5) * 0.1);
+    const i = (y * W + x) * 4;
+    d[i] = Math.max(0, Math.min(255, px.r * 255)); d[i + 1] = Math.max(0, Math.min(255, px.g * 255)); d[i + 2] = Math.max(0, Math.min(255, px.b * 255)); d[i + 3] = 255;
   }
+  g.putImageData(img, 0, 0);
+  if (kind === 'moon' || kind === 'asteroid' || (kind === 'planet' && !ocean && !giant && !ice)) {
+    for (let i = 0; i < 160; i++) { const x = r() * W; const y = 10 + r() * (H - 20); const rad = 1 + r() * r() * 22; g.fillStyle = `rgba(0,0,0,${0.1 + r() * 0.2})`; g.beginPath(); g.ellipse(x, y, rad, rad * 0.9, 0, 0, Math.PI * 2); g.fill(); g.strokeStyle = `rgba(255,255,255,${0.08 + r() * 0.12})`; g.lineWidth = 1 + rad * 0.08; g.stroke(); }
+  }
+  if (kind === 'alien_world') for (let i = 0; i < 1400; i++) { g.fillStyle = `rgba(255,${220 + r() * 35},${120 + r() * 80},${0.5 + r() * 0.5})`; g.fillRect(r() * W, 32 + r() * (H - 64), 1.5, 1.5); }
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = THREE.RepeatWrapping;
+  t.anisotropy = 4;
   return t;
 }
+// A glow round a world with air: brighter at its edge (a Fresnel shell).
+const ATMO_VERT = `varying vec3 vN; varying vec3 vV;
+void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`;
+const ATMO_FRAG = `uniform vec3 uColor; varying vec3 vN; varying vec3 vV;
+void main() { float f = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.6); gl_FragColor = vec4(uColor * f * 1.6, f); }`;
 function glowTexture(THREE) {
   const c = document.createElement('canvas');
   c.width = c.height = 128;
@@ -255,11 +284,14 @@ export function catmull(p0, p1, p2, t, out, tan) {
 async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', onTierChange = null }) {
   const THREE = await import(threeUrl);
   const settings = TIER_SETTINGS[tier] || TIER_SETTINGS.high;
+  // Low draws the plain shapes; Medium and up the finer detail (models.js).
+  setModelDetail(tier === 'low' ? 1 : 2);
   const ADD = '/vendor/three/addons/';
-  const [skyMod, csmMod, textures] = await Promise.all([
+  const [skyMod, csmMod, textures, reflMod] = await Promise.all([
     settings.sky === 'physical' ? import(`${ADD}objects/Sky.js`).catch(() => null) : null,
     settings.cascades > 0 ? import(`${ADD}csm/CSM.js`).catch(() => null) : null,
-    settings.textures ? loadTextures(THREE) : null
+    settings.textures ? loadTextures(THREE) : null,
+    settings.reflect === 'planar' ? import(`${ADD}objects/Reflector.js`).catch(() => null) : null
   ]);
   const canvas = document.createElement('canvas');
   canvas.className = 'living-lab-canvas sandbox-canvas';
@@ -280,7 +312,24 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, 1, 0.3, 200000);
-  const env = createEnvironment(THREE, scene, { coarse, quality: settings, camera, addons: { Sky: skyMod && skyMod.Sky, CSM: csmMod && csmMod.CSM } });
+  const env = createEnvironment(THREE, scene, { coarse, quality: settings, camera, renderer, addons: { Sky: skyMod && skyMod.Sky, CSM: csmMod && csmMod.CSM, Reflector: reflMod && reflMod.Reflector } });
+  // Streets in detail (streets.js) replace the plain road strips, here and in the ground.
+  env.detailedRoads = !!settings.streets;
+  let streets = null; let coast = null; let detailSig = '';
+  // Grass and flowers round the camera (foliage.js): not on water, roads or pavements, nor in space.
+  const foliage = settings.foliage > 0 ? createFoliage(THREE, { density: Math.round(settings.foliage * (coarse ? 0.6 : 1)), radius: settings.foliageRadius, setupMaterial: env.setupMaterial, coarse }) : null;
+  if (foliage) scene.add(foliage.group);
+  // Footprints of everything built (not plants or flat roads), for the grass to keep out of.
+  let footGrid = new Map();
+  function indexFootprints() {
+    footGrid = new Map();
+    for (const b of staticBoxes) {
+      if (!b.e || b.e.cls === 'plant' || ['road', 'runway', 'bridge', 'grass', 'flower', 'crop', 'beach'].includes(b.e.base)) continue;
+      for (let i = Math.floor(b.box.min.x / 20); i <= Math.floor(b.box.max.x / 20); i++) for (let j = Math.floor(b.box.min.z / 20); j <= Math.floor(b.box.max.z / 20); j++) { const k = `${i}|${j}`; if (!footGrid.has(k)) footGrid.set(k, []); footGrid.get(k).push(b.box); }
+    }
+  }
+  const onFootprint = (x, z) => { const l = footGrid.get(`${Math.floor(x / 20)}|${Math.floor(z / 20)}`); return !!l && l.some((b) => x > b.min.x - 1 && x < b.max.x + 1 && z > b.min.z - 1 && z < b.max.z + 1); };
+  const blockedAt = (x, z) => (env.waterAt ? env.waterAt(x, z) : false) || (streets ? streets.covers(x, z) : false) || onFootprint(x, z) || Math.abs(x) > world.size.x / 2 + 400 || Math.abs(z) > world.size.y / 2 + 400;
   env.textures = textures;
   const glow = glowTexture(THREE);
   // What happens, seen where it happens (effects.js): meteorites, sparks, flares, battles in space.
@@ -327,11 +376,12 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   // Overlays: a clock, a minimap, a label for the picked thing.
   const hud = document.createElement('div');
   hud.className = 'sandbox-hud';
-  hud.innerHTML = '<span class="sandbox-clock" aria-live="off"></span><canvas class="sandbox-minimap" width="132" height="132" aria-label="Minimap: tap to move there"></canvas><div class="sandbox-tags" aria-hidden="true"></div><div class="sandbox-label" hidden></div>';
+  hud.innerHTML = '<span class="sandbox-clock" aria-live="off"></span><canvas class="sandbox-minimap" width="132" height="132" aria-label="Minimap: tap to move there"></canvas><div class="sandbox-tags" aria-hidden="true"></div><div class="sandbox-label" hidden></div><div class="sandbox-floors" hidden><button type="button" data-floor="1" aria-label="Up a floor">▲</button><span></span><button type="button" data-floor="-1" aria-label="Down a floor">▼</button></div>';
   container.appendChild(hud);
   const clockEl = hud.querySelector('.sandbox-clock');
   const mini = hud.querySelector('.sandbox-minimap');
   const label = hud.querySelector('.sandbox-label');
+  const floorsEl = hud.querySelector('.sandbox-floors');
   // Names and what people are saying, over their heads (the nearest few).
   const tagsEl = hud.querySelector('.sandbox-tags');
   const TAG_MAX = coarse ? 8 : 16;
@@ -410,7 +460,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     const flayers = { body: [], glow: [], glass: [] };
     const m4 = new THREE.Matrix4(); const q = new THREE.Quaternion(); const p = new THREE.Vector3(); const one = new THREE.Vector3(1, 1, 1); const up = new THREE.Vector3(0, 1, 0);
     for (const e of world.entities) {
-      if (!FIXED_KINDS.has(e.base)) continue;
+      if (!FIXED_KINDS.has(e.base) || (e.base === 'road' && settings.streets)) continue;
       const model = modelFor(e);
       toScene(e, p);
       q.setFromAxisAngle(up, yawFromHeading(e.props.heading));
@@ -422,13 +472,20 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         const g = model[name].clone(); g.applyMatrix4(m4); into[name].push(g);
         g.computeBoundingBox(); box.union(g.boundingBox);
       }
-      if (!box.isEmpty()) staticBoxes.push({ id: e.id, box });
+      if (!box.isEmpty()) staticBoxes.push({ id: e.id, box, e });
       // A finished home's furniture, for "See inside".
       if (HOME_KINDS.has(e.base) && !(typeof e.props.built === 'number' && e.props.built < 100)) {
         const fkey = `furniture|${e.base}|${Math.min(12, Number(e.props.furniture) || 0)}`;
         let fm = geoCache.get(fkey);
         if (!fm) { fm = { ...furnitureFor(THREE, e.base, Math.min(12, Number(e.props.furniture) || 0)), parts: [] }; geoCache.set(fkey, fm); }
         for (const name of ['body', 'glow', 'glass']) if (fm[name]) { const g = fm[name].clone(); g.applyMatrix4(m4); flayers[name].push(g); }
+      }
+      // Every other building's inside (interiors.js): shown when you go in, or with "See inside".
+      if (INTERIORS[e.base] && !(typeof e.props.built === 'number' && e.props.built < 100) && !(e.base === 'tower' && e.props.lattice)) {
+        const ikey = `interior|${e.base}|${storeysOf(e.base, e.props)}`;
+        let im = geoCache.get(ikey);
+        if (!im) { im = { ...(interiorFor(THREE, Kit, e.base, e.props) || {}), parts: [] }; geoCache.set(ikey, im); }
+        for (const name of ['body', 'glow', 'glass']) if (im[name]) { const g = im[name].clone(); g.applyMatrix4(m4); flayers[name].push(g); }
       }
     }
     const merge = (list) => {
@@ -460,16 +517,23 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     const color = typeof e.props.color === 'string' ? e.props.color : e.base === 'star' ? '#ffd27a' : e.base === 'moon' ? '#cfcfcf' : '#8fa8c9';
     let seed = 0; for (const ch of e.id) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
     const tex = planetTexture(THREE, color, e.base, seed);
-    const mat = e.base === 'star' || e.base === 'alien_world' ? new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, color: 0xffffff }) : new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, metalness: 0 });
-    const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, 48, 24), mat);
+    const mat = e.base === 'star' || e.base === 'alien_world' ? new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, color: 0xffffff }) : new THREE.MeshStandardMaterial({ map: tex, bumpMap: tex, bumpScale: e.base === 'moon' || e.base === 'asteroid' ? 2.5 : 0.8, roughness: 0.9, metalness: 0 });
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, coarse ? 48 : 96, coarse ? 24 : 48), mat);
     g.add(sphere);
+    // Air: a glowing rim round worlds with clouds, oceans or an alien sky.
+    const airy = e.base === 'alien_world' || (e.base === 'planet' && (e.props.clouds || new THREE.Color(color).b > new THREE.Color(color).r));
+    if (airy) {
+      const shell = new THREE.Mesh(new THREE.SphereGeometry(size * 1.05, 64, 32), new THREE.ShaderMaterial({ vertexShader: ATMO_VERT, fragmentShader: ATMO_FRAG, uniforms: { uColor: { value: new THREE.Color(e.base === 'alien_world' ? color : '#6fb6ff') } }, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+      g.add(shell);
+    }
     if (e.base === 'star') {
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
       halo.scale.setScalar(size * 9);
       g.add(halo);
       const light = new THREE.PointLight(color, 3, 0, 0);
       g.add(light);
-    } else {
+    } else if (!airy) {
+      // (Worlds with air have the rim glow instead: the two together wash a world out.)
       const atmo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: e.base === 'planet' ? color : 0x888888, transparent: true, opacity: e.base === 'planet' ? 0.35 : 0.12, blending: THREE.AdditiveBlending, depthWrite: false }));
       atmo.scale.setScalar(size * 3);
       g.add(atmo);
@@ -511,7 +575,40 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       inner.add(holder);
       parts.push({ role: p.role, node: holder, r: Math.max(0.1, p.pivot[1]), front: p.pivot[0] > 0.05 });
     }
-    return { group, inner, parts, size: model.size || 4, upright: !!model.upright, spin: model.spin || 0, seat: model.seat || null };
+    return { group, inner, parts, size: model.size || 4, upright: !!model.upright, spin: model.spin || 0, seat: model.seat || null, far: farOf(e, model) };
+  }
+
+  // Far away, a moving thing is drawn as one block of its own size and
+  // colour: all of them together in one instanced mesh (one draw call).
+  const farCache = new Map();
+  function farOf(e, model) {
+    const key = modelKey(e.kind, e.props, e.id);
+    if (farCache.has(key)) return farCache.get(key);
+    const box = new THREE.Box3(); const c = new THREE.Color(0, 0, 0); let n = 0;
+    for (const name of ['body', 'glass']) {
+      const g = model[name]; if (!g) continue;
+      g.computeBoundingBox(); box.union(g.boundingBox);
+      const col = g.attributes.color;
+      if (col && name === 'body') for (let i = 0; i < col.count; i += 3) { c.r += col.getX(i); c.g += col.getY(i); c.b += col.getZ(i); n++; }
+    }
+    for (const p of model.parts) { const g = p.geo.body; if (g) { g.computeBoundingBox(); const b = g.boundingBox.clone().translate(new THREE.Vector3(...p.pivot)); box.union(b); } }
+    const f = box.isEmpty() ? null : { size: box.getSize(new THREE.Vector3()), centre: box.getCenter(new THREE.Vector3()), color: n ? c.multiplyScalar(1 / n) : new THREE.Color(0.5, 0.5, 0.5) };
+    farCache.set(key, f);
+    return f;
+  }
+  let farMesh = null;
+  const farBox = new THREE.BoxGeometry(1, 1, 1);
+  const farMat = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0.05 });
+  env.setupMaterial(farMat);
+  function farCapacity(n) {
+    if (farMesh && farMesh.instanceMatrix.count >= n) return farMesh;
+    if (farMesh) { scene.remove(farMesh); farMesh.dispose(); }
+    farMesh = new THREE.InstancedMesh(farBox, farMat, Math.max(64, Math.ceil(n * 1.25)));
+    farMesh.frustumCulled = false;
+    farMesh.castShadow = false; farMesh.receiveShadow = !coarse;
+    farMesh.count = 0;
+    scene.add(farMesh);
+    return farMesh;
   }
 
   // What someone at the beach has with them (rescue-models.js props): a
@@ -619,9 +716,80 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     for (const [id, l] of orbitLines) if (!want.has(id)) { scene.remove(l); l.geometry.dispose(); l.material.dispose(); orbitLines.delete(id); }
   }
 
+  // An asteroid belt round the star, where its asteroids orbit (or, with
+  // none, in the widest gap between its planets' orbits): scenery drawn by
+  // the viewer round the world's own asteroids, like the woods.
+  let belt = null; let beltKey = '';
+  function syncBelt() {
+    const star = world.entities.find((e) => e.base === 'star');
+    const radii = star ? world.entities.filter((e) => e.props.orbits === star.id && Number(e.props.orbit_radius) > 0).map((e) => Number(e.props.orbit_radius)).sort((a, b) => a - b) : [];
+    const key = star && radii.length >= 2 ? `${star.id}|${radii.join(',')}` : '';
+    if (key === beltKey) return;
+    beltKey = key;
+    if (belt) { scene.remove(belt); belt.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); belt = null; }
+    if (!key) return;
+    // Where the star's asteroids orbit, if it has any; else the widest gap.
+    let gap = 0; let at = 0;
+    const rocksR = world.entities.filter((e) => e.base === 'asteroid' && e.props.orbits === star.id).map((e) => Number(e.props.orbit_radius)).filter((x) => x > 0);
+    if (rocksR.length) { const lo = Math.min(...rocksR); const hi = Math.max(...rocksR); at = (lo + hi) / 2; gap = Math.max(200, (hi - lo + 120) / 0.36); }
+    else for (let i = 1; i < radii.length; i++) if (radii[i] - radii[i - 1] > gap) { gap = radii[i] - radii[i - 1]; at = (radii[i] + radii[i - 1]) / 2; }
+    const n = coarse ? 260 : 900;
+    const geo = new THREE.DodecahedronGeometry(1, 1);
+    const pp = geo.attributes.position; for (let i = 0; i < pp.count; i++) { const k = 0.75 + ((Math.sin(i * 12.9898) * 43758.5453) % 1 + 1) % 1 * 0.5; pp.setXYZ(i, pp.getX(i) * k, pp.getY(i) * k * 0.8, pp.getZ(i) * k); }
+    geo.computeVertexNormals();
+    const rocks = new THREE.InstancedMesh(geo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: true }), n);
+    let q = 4242; const rnd = () => { q = (Math.imul(q, 1664525) + 1013904223) >>> 0; return q / 4294967296; };
+    const m4 = new THREE.Matrix4(); const qt = new THREE.Quaternion(); const e3 = new THREE.Euler(); const v = new THREE.Vector3(); const sc = new THREE.Vector3(); const c = new THREE.Color();
+    for (let i = 0; i < n; i++) {
+      const a = rnd() * Math.PI * 2; const rr = at + (rnd() + rnd() - 1) * gap * 0.18;
+      e3.set(rnd() * 6, rnd() * 6, rnd() * 6); qt.setFromEuler(e3);
+      const k = 1.5 + rnd() * rnd() * 11;
+      m4.compose(v.set(Math.cos(a) * rr, (rnd() - 0.5) * 30, Math.sin(a) * rr), qt, sc.set(k, k * (0.6 + rnd() * 0.5), k * (0.8 + rnd() * 0.4)));
+      rocks.setMatrixAt(i, m4); rocks.setColorAt(i, c.setHSL(0.07 + rnd() * 0.05, 0.12 + rnd() * 0.1, 0.25 + rnd() * 0.2));
+    }
+    rocks.instanceMatrix.needsUpdate = true; if (rocks.instanceColor) rocks.instanceColor.needsUpdate = true;
+    rocks.computeBoundingSphere();
+    belt = new THREE.Group(); belt.add(rocks); belt.userData.star = star.id;
+    scene.add(belt);
+  }
+
+  // Landing on another world (surface.js): its own scene, walked at eye
+  // height; the page allows it only once the inhabitants have reached it.
+  let surface = null; let drawnScene = scene;
+  function closeSurface() {
+    if (!surface) return;
+    surface.dispose(); surface = null; delete container.dataset.surface;
+  }
+  function land(id, { contact = false } = {}) {
+    const e = world.entities.find((x) => x.id === id);
+    const kind = surfaceKind(e);
+    if (!kind || kind === 'giant') return false;
+    closeSurface();
+    const colony = world.entities.find((c) => c.base === 'colony' && c.props.orbits === id) || null;
+    const mats = { body: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.06 }), glass: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.75 }), glow: new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }) };
+    const model = (k, props, mid) => {
+      const m = buildModel(THREE, k, props, mid); if (!m) return null;
+      const g = new THREE.Group();
+      const add = (geo, at) => { for (const name of ['body', 'glass', 'glow']) if (geo[name]) { const mesh = new THREE.Mesh(geo[name], mats[name]); mesh.castShadow = name !== 'glow' && !coarse; if (at) mesh.position.set(at[0], at[1], at[2]); g.add(mesh); } };
+      add(m); for (const p of m.parts || []) add(p.geo, p.pivot);
+      return g;
+    };
+    let seed = 0; for (const ch of id) seed = (seed * 31 + ch.charCodeAt(0)) >>> 0;
+    surface = buildSurface(THREE, { kind, name: e.props.name || e.kind.replace(/_/g, ' '), color: typeof e.props.color === 'string' ? e.props.color : '#8a8a8a', seed, colony, city: kind === 'alien' && contact ? (e.props.name || e.id) : null, model, coarse });
+    const own = surface.dispose; surface.dispose = () => { own(); for (const m of Object.values(mats)) m.dispose(); };
+    container.dataset.surface = kind;
+    mode = 'explore'; controls.autoRotate = 0; controls.minDist = 1.5; container.dataset.view = mode;
+    selectedId = null; marker.visible = false; if (onSelect) onSelect(null);
+    controls.jumpTo({ target: new THREE.Vector3(0, surface.heightAt(0, 70) + 1.6, 70), dist: 6, phi: 1.5, theta: Math.PI / 2 });
+    if (typeof container.onViewChange === 'function') container.onViewChange(mode);
+    schedule();
+    return true;
+  }
+
   // --- views ------------------------------------------------------------------------------
   let mode = 'overview'; let selectedId = null; let tourNext = 0;
   const controls = createControls(THREE, canvas, camera, { onTap: (x, y) => pick(x, y) });
+  controls.ease = settings.ease || 5;
   controls.onPan = () => { if (mode === 'follow' || mode === 'tour') setMode('free'); };
   // The overview frames where things are (the town), not the empty corners.
   const centre = () => {
@@ -652,6 +820,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   function setMode(next, { quiet = false } = {}) {
     mode = next;
     controls.autoRotate = mode === 'overview' ? 0.03 : mode === 'tour' ? 0.05 : mode === 'space' ? 0.02 : 0;
+    controls.minDist = mode === 'explore' ? 1.5 : 4;
+    if (mode !== 'explore') { leave(); closeSurface(); }
     const span = Math.max(world.size.x, world.size.y);
     if (mode === 'overview') controls.flyTo({ target: centre(), dist: Math.min(span * 0.85, spread() * 2.6), phi: 0.95 });
     if (mode === 'space') {
@@ -659,8 +829,16 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       const t = star ? toScene(star) : new THREE.Vector3(0, world.spaceAlt * 1.5, 0);
       controls.flyTo({ target: t, dist: star && star.base === 'star' ? 2900 : 900, phi: 1.36 });
     }
-    if (mode === 'follow' && selectedId) controls.flyTo({ dist: Math.max(14, sizeOf(selectedId) * 4.5), phi: 1.18 });
+    // Close enough to see it: a station or colony fills the view; a planet sits in it.
+    if (mode === 'follow' && selectedId) { const se = world.entities.find((x) => x.id === selectedId); const close = se && ['space_station', 'colony', 'satellite'].includes(se.base); const person = se && se.cls === 'person'; const vehicle = se && se.cls === 'vehicle' && !AIR_KINDS.has(se.base); controls.flyTo({ dist: person ? 4.5 : vehicle ? Math.max(7, sizeOf(selectedId) * 1.8) : Math.max(14, sizeOf(selectedId) * (close ? 1.3 : 4.5)), phi: person ? 1.38 : vehicle ? 1.2 : close ? 1.05 : 1.18 }); }
     if (mode === 'tour') tourNext = 0;
+    // Explore: down at eye height where the camera looks; drag to look
+    // round, tap the ground to walk there, pinch to step back.
+    if (mode === 'explore') {
+      const at = controls.target.clone(); at.y = Math.max(0, (env.heightAt || (() => 0))(at.x, at.z)) + 1.6;
+      if (at.y > 60) at.set(centre().x, 1.6, centre().z);
+      controls.flyTo({ target: at, dist: 6, phi: 1.5 });
+    }
     container.dataset.view = mode;
     if (!quiet && typeof container.onViewChange === 'function') container.onViewChange(mode);
   }
@@ -672,6 +850,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     marker.visible = !!e;
   }
   const ray = new THREE.Raycaster();
+  const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   function pick(x, y) {
     ray.setFromCamera({ x, y }, camera);
     let best = null; let bd = Infinity;
@@ -679,7 +858,70 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     for (const h of hits) { let o = h.object; while (o && !o.userData.entityId) o = o.parent; if (o && h.distance < bd) { bd = h.distance; best = o.userData.entityId; } break; }
     const v = new THREE.Vector3();
     for (const b of staticBoxes) { if (ray.ray.intersectBox(b.box, v)) { const d = v.distanceTo(ray.ray.origin); if (d < bd) { bd = d; best = b.id; } } }
+    // On another world: a tap on the ground walks there.
+    if (surface) {
+      groundPlane.constant = -controls.target.y + 1.6;
+      const hit = ray.ray.intersectPlane(groundPlane, new THREE.Vector3());
+      if (hit && hit.distanceTo(ray.ray.origin) < 600) controls.flyTo({ target: new THREE.Vector3(hit.x, surface.heightAt(hit.x, hit.z) + 1.6, hit.z) });
+      return;
+    }
+    // Exploring: a tap on a building goes in at its front door.
+    if (mode === 'explore' && best && enter(best)) return;
+    // Exploring: a tap on open ground (or water's edge, or the floor you are on) walks there.
+    if (mode === 'explore' && !best) {
+      groundPlane.constant = -(inside ? floorY(inside) : 0);
+      const hit = ray.ray.intersectPlane(groundPlane, v);
+      if (hit && hit.distanceTo(ray.ray.origin) < 400) {
+        const y = (inside ? floorY(inside) : Math.max(0, (env.heightAt || (() => 0))(hit.x, hit.z))) + 1.6;
+        controls.flyTo({ target: new THREE.Vector3(hit.x, y, hit.z) });
+        return;
+      }
+    }
     select(best);
+  }
+
+  // Going inside: the building's walls turn see-through, its rooms show,
+  // and ▲ ▼ change floors. Leaving (walking out, or another view) undoes it.
+  let inside = null; let autoXray = false;
+  const HOME_DOOR = { house: [11, 9], cabin: [8, 7], apartment: [20, 14] };
+  function floorY(st) { return 0.3 + st.storey * st.fh; }
+  function enter(id) {
+    const sb = staticBoxes.find((b) => b.id === id); if (!sb || sb.e.cls !== 'building') return false;
+    const e = sb.e; const home = HOME_DOOR[e.base];
+    const door = home ? { x: home[0] / 2 - 1.5, z: 0 } : doorOf(e.base);
+    if (!door) return false;
+    const yaw = yawFromHeading(e.props.heading);
+    const c = toScene(e, new THREE.Vector3());
+    const off = new THREE.Vector3(door.x, 0, door.z).applyAxisAngle(THREE.Object3D.DEFAULT_UP, yaw);
+    inside = { id, e, storey: 0, storeys: home ? 1 : storeysOf(e.base, e.props), fh: home ? 3.1 : INTERIORS[e.base].fh, base: c.y, box: sb.box };
+    // Look in, away from the door (the model's -x).
+    const theta = Math.PI - (Number(e.props.heading) || 0) * Math.PI / 180;
+    controls.flyTo({ target: new THREE.Vector3(c.x + off.x, floorY(inside) + 1.6, c.z + off.z), dist: 2.5, phi: 1.52, theta: theta + Math.PI });
+    if (!xray) { autoXray = true; setXray(true); }
+    showFloors();
+    return true;
+  }
+  function leave() {
+    if (!inside) return;
+    inside = null; floorsEl.hidden = true;
+    if (autoXray) { autoXray = false; setXray(false); }
+  }
+  function showFloors() {
+    floorsEl.hidden = !inside || inside.storeys < 2;
+    if (inside) floorsEl.querySelector('span').textContent = inside.storey === 0 ? 'Ground' : `Floor ${inside.storey}`;
+  }
+  floorsEl.addEventListener('click', (ev) => {
+    const b = ev.target.closest('button'); if (!b || !inside) return;
+    ev.stopPropagation();
+    inside.storey = Math.max(0, Math.min(inside.storeys - 1, inside.storey + Number(b.dataset.floor)));
+    controls.flyTo({ target: new THREE.Vector3(controls.goalTarget.x, floorY(inside) + 1.6, controls.goalTarget.z) });
+    showFloors(); schedule();
+  });
+  // Walked out of the building's footprint: outside again.
+  function checkInside() {
+    if (!inside) return;
+    const t = controls.goalTarget; const b = inside.box;   // where the camera is going (it eases there)
+    if (mode !== 'explore' || t.x < b.min.x - 3 || t.x > b.max.x + 3 || t.z < b.min.z - 3 || t.z > b.max.z + 3) leave();
   }
 
   // The marker over what is picked: a gold cone that bobs gently.
@@ -774,11 +1016,14 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     else if (q.activity === 'volleyball') { inn.position.y = Math.max(0, Math.sin(now / 260 + m.phase)) * 0.6; const a = arm('armR'); if (a) a.node.rotation.z = Math.PI * 0.8; }
   }
   const running = () => visible && !document.hidden;
-  const tmpA = new THREE.Vector3(); const tmpB = new THREE.Vector3(); const proj = new THREE.Vector3(); const tmpT = new THREE.Vector3();
+  const tmpA = new THREE.Vector3(); const tmpB = new THREE.Vector3(); const proj = new THREE.Vector3(); const tmpM4 = new THREE.Matrix4(); const tmpT = new THREE.Vector3();
 
+  const farM4 = new THREE.Matrix4(); const farS = new THREE.Vector3(); const farP = new THREE.Vector3();
   function animate(dt, now) {
     const t = Math.min(1, (now - stepStart) / stepDur);
     const tickF = tickFrom + (tickTo - tickFrom) * t;
+    const far = farCapacity(movers.size);
+    let farN = 0;
     for (const m of movers.values()) {
       const e = m.e;
       // Riders: on a bike, motorbike or horse they sit on it; otherwise inside, out of sight.
@@ -848,6 +1093,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         switch (p.role) {
           case 'wheel': p.node.rotation.z -= moving ? dist / p.r : 0; if (p.front) p.node.rotation.y = m.steer; break;
           case 'rotorY': p.node.rotation.y += dt * ((moving || e.z > 0.5) ? 30 : 4); break;
+          case 'ring': p.node.rotation.y += dt * 0.12; break;   // a station's habitat ring turns slowly
           case 'rotorZ': p.node.rotation.z += dt * ((moving || e.z > 0.5) ? 40 : 6); break;
           case 'propX': p.node.rotation.x += dt * ((moving || e.z > 0.5) ? 50 : 0); break;
           case 'legL': case 'legR': { const a = moving ? Math.sin(m.phase) * 0.55 : 0; p.node.rotation.z += ((p.role === 'legL' ? a : -a) - p.node.rotation.z) * Math.min(1, dt * 10); break; }
@@ -874,7 +1120,22 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       // A crater waits for its meteorite (effects.js): not drawn until then.
       const camD = held.has(m.id) ? Infinity : camera.position.distanceTo(m.group.position);
       if (!m.celestial) m.group.visible = camD < Math.max(600, (m.size || 2) * 420);
+      // Beyond the tier's detail distance (never the followed thing): the block.
+      if (m.group.visible && m.far && !m.celestial && m.id !== selectedId && camD > Math.max(60, (m.size || 2) * settings.lod)) {
+        m.group.visible = false;
+        m.group.updateMatrix();
+        farP.copy(m.far.centre); farS.copy(m.far.size).max(tmpB.set(0.3, 0.3, 0.3));
+        farM4.makeTranslation(farP.x, farP.y, farP.z).premultiply(m.group.matrix);
+        farM4.multiply(tmpM4.makeScale(farS.x, farS.y, farS.z));
+        far.setMatrixAt(farN, farM4); far.setColorAt(farN, m.far.color);
+        farN++;
+      }
     }
+    far.count = farN;
+    far.instanceMatrix.needsUpdate = true;
+    if (far.instanceColor) far.instanceColor.needsUpdate = true;
+    // The belt goes round with its star.
+    if (belt) { const c = entityPos(belt.userData.star); if (c) belt.position.copy(c); belt.rotation.y += dt * 0.004; belt.visible = !!c; }
     // Orbit paths follow their centres.
     for (const l of orbitLines.values()) {
       const c = entityPos(l.userData.center);
@@ -889,10 +1150,11 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     if (!running()) return;
     const dt = Math.min(0.1, (now - last) / 1000);
     acc += dt; last = now;
-    schedule();
+    // The next frame, keeping lastRender (schedule() starts afresh after a pause).
+    raf = requestAnimationFrame(frame);
     if (acc < 1 / targetFps - 0.002) return;
     const step = acc; acc = 0;
-    if (lastRender && now - lastRender < 250) governor.sample(now - lastRender);
+    if (lastRender) governor.sample(Math.min(1000, now - lastRender));
     lastRender = now;
     animateFires(now);
     const tickF = animate(step, now);
@@ -918,6 +1180,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       tourNext = now + 9000;
     }
     controls.update(step);
+    checkInside();
     // The near plane follows the camera's distance (2% of it): depth stays
     // precise enough for a coast 20 cm above the sea seen from 10 km.
     const near = Math.min(1000, Math.max(0.2, controls.dist * 0.02));
@@ -934,6 +1197,13 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     matGlow.color.setRGB(0.22 + nt * 1.2, 0.27 + nt * 1.0, 0.36 + nt * 0.6);
     renderer.toneMappingExposure = 0.95 + envState.space * 0.15;
     if (post) post.setNight(nt);
+    if (streets) streets.update(envState.night);
+    if (coast) coast.update(now / 1000, envState.day);
+    if (foliage) {
+      if (controls.target.y < 50) foliage.place({ cx: controls.target.x, cz: controls.target.z, heightAt: env.heightAt || (() => 0), blocked: blockedAt });
+      foliage.update(now / 1000, controls.target.y < 50 ? controls.dist : Infinity);
+    }
+    if (post && post.setFocus) post.setFocus(controls.dist);
 
     // The marker and label over what is picked.
     if (selectedId && marker.visible) {
@@ -953,12 +1223,36 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       }
     } else label.hidden = true;
 
-    clockEl.textContent = `Simulation · day ${clk.day} · ${clk.hh}:${clk.mm}${effAlt > world.spaceAlt ? ' · in space' : ''}`;
+    // Walking on another world, the ground follows its hills.
+    if (surface) { const h = surface.heightAt(controls.goalTarget.x, controls.goalTarget.z) + 1.6; if (Math.abs(controls.goalTarget.y - h) > 0.05) controls.goalTarget.y = h; }
+    clockEl.textContent = surface ? `Simulation · day ${clk.day} · ${clk.hh}:${clk.mm} · on ${surface.name}` : `Simulation · day ${clk.day} · ${clk.hh}:${clk.mm}${effAlt > world.spaceAlt ? ' · in space' : ''}`;
     updateTags(now);
     if (now - miniAt > 250) { drawMini(); miniAt = now; }
     const still = controls.userActive <= 0 && !controls.autoRotate && t0done(now);
-    if (post) post.render(still); else renderer.render(scene, camera);
+    draw(still);
     container.dataset.frames = String((Number(container.dataset.frames) || 0) + 1);
+  }
+  function draw(still) {
+    const sc = surface ? surface.scene : scene;
+    if (sc !== drawnScene) { drawnScene = sc; if (post && post.setScene) post.setScene(sc); }
+    if (!surface) env.beforeRender(camera);
+    if (post) post.render(still); else renderer.render(sc, camera);
+  }
+  // A still of the view (a PNG data URL), stamped "Simulation" with the day and time.
+  function screenshot() {
+    draw(true);
+    const src = renderer.domElement;
+    const c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
+    const g = c.getContext('2d'); if (!g) return null;
+    g.drawImage(src, 0, 0);
+    const clk = clockOf(world);
+    const text = `Simulation · day ${clk.day} · ${clk.hh}:${clk.mm}`;
+    const fs = Math.max(12, Math.round(c.height / 36));
+    g.font = `600 ${fs}px system-ui, sans-serif`;
+    const w = g.measureText(text).width;
+    g.fillStyle = 'rgba(10,10,11,0.6)'; g.fillRect(fs * 0.6, c.height - fs * 2.4, w + fs * 1.2, fs * 1.8);
+    g.fillStyle = '#ffffff'; g.fillText(text, fs * 1.2, c.height - fs * 1.05);
+    return c.toDataURL('image/png');
   }
   function schedule() { if (!raf && running()) { last = performance.now(); lastRender = 0; raf = requestAnimationFrame(frame); } }
   const t0done = (now) => now - stepStart >= stepDur;
@@ -970,6 +1264,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       const prevTick = world.tick;
       const prevId = world.id;
       world = normalizeWorld(next);
+      // A scene rebuilt for another tier shows the clock before its first frame.
+      if (!clockEl.textContent) { const c = clockOf(world); clockEl.textContent = `Simulation · day ${c.day} · ${c.hh}:${c.mm}`; }
       // Another world: start afresh (camera, things, selection, clock).
       if (!firstWorld && world.id !== prevId) {
         for (const m of movers.values()) scene.remove(m.group);
@@ -987,8 +1283,22 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         const avoid = world.entities.filter((e) => e.z < 5).map((e) => ({ x: e.x - world.size.x / 2, z: -(e.y - world.size.y / 2), r: e.base === 'lake' ? (Number(e.props.radius) || 60) : e.cls === 'building' ? 25 : 0 }));
         env.buildGround({ size: world.size, seed: world.seed, entities: lakeEntities, avoid, islands, terrain: terrainOfWorld(world), roads: world.roads });
       }
+      // Streets and coasts, when the ground or the road network changes.
+      const rd = world.roads || (next && next.roads) || null;
+      const ds = `${groundSig}|${rd && rd.nodes ? `${rd.nodes.length}/${rd.edges.length}` : ''}`;
+      if (ds !== detailSig) {
+        detailSig = ds;
+        for (const d of [streets, coast]) if (d) { scene.remove(d.group); d.dispose(); }
+        streets = null; coast = null;
+        const heightAt = env.heightAt || (() => 0);
+        if (settings.streets) { streets = buildStreets(THREE, { ...world, roads: rd }, { heightAt, setupMaterial: env.setupMaterial, coarse }); scene.add(streets.group); container.dataset.lamps = String(streets.stats.lamps); }
+        const isl = world.entities.filter((e) => e.base === 'island').map((e) => ({ sx: e.x - world.size.x / 2, sz: -(e.y - world.size.y / 2), r: Number(e.props.radius) || 500, climate: e.props.climate || 'temperate' }));
+        const lakes = env.lakeList || [];
+        if (settings.coast && (isl.length || lakes.length)) { coast = buildCoast(THREE, isl, { seed: world.seed, heightAt, setupMaterial: env.setupMaterial, coarse, surf: !settings.water, lakes }); scene.add(coast.group); }
+        if (foliage) foliage.place({ cx: controls.target.x, cz: controls.target.z, heightAt, blocked: blockedAt, force: true });
+      }
       const ss = world.entities.filter((e) => FIXED_KINDS.has(e.base)).map((e) => `${e.id}:${modelKey(e.kind, e.props, e.id)}:${e.x}:${e.y}:${e.props.heading || 0}`).join(',');
-      if (ss !== staticSig) { staticSig = ss; rebuildStatic(); }
+      if (ss !== staticSig) { staticSig = ss; rebuildStatic(); indexFootprints(); if (foliage) foliage.place({ cx: controls.target.x, cz: controls.target.z, heightAt: env.heightAt || (() => 0), blocked: blockedAt, force: true }); }
       tickFrom = firstWorld ? world.tick : prevTick; tickTo = world.tick;
       // Rivers, creeks and mangroves (waterways.js).
       const ws = waterwaysSignature(world);
@@ -997,6 +1307,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       if (world.id !== prevId) effects.reset();
       effects.onWorld(next);
       syncOrbits();
+      syncBelt();
       if (firstWorld) {
         firstWorld = false;
         const span = Math.max(world.size.x, world.size.y);
@@ -1009,6 +1320,23 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       schedule();
     },
     setView(m) { if (m === 'follow' && !selectedId) return; setMode(m); schedule(); },
+    // Land on a world (the page checks the inhabitants have reached it); false if it has no surface.
+    land(id, opts) { return land(id, opts); },
+    surfaceKind: (id) => surfaceKind(world.entities.find((x) => x.id === id)),
+    onSurface: () => (surface ? { kind: surface.kind, name: surface.name } : null),
+    // Go into a building (Explore, at its front door); false if it has no inside.
+    enter(id) { closeSurface(); if (mode !== 'explore') setMode('explore', { quiet: true }); const ok = enter(id); schedule(); return ok; },
+    inside: () => (inside ? { id: inside.id, storey: inside.storey, storeys: inside.storeys } : null),
+    floor(d) { if (!inside) return; floorsEl.querySelector(`[data-floor="${d > 0 ? 1 : -1}"]`).click(); },
+    // Explore from a place in the world (world metres), looking toward a heading (degrees, 0 = east).
+    exploreAt(wx, wy, heading = 0) {
+      closeSurface();
+      const x = wx - world.size.x / 2; const z = -(wy - world.size.y / 2);
+      controls.jumpTo({ target: new THREE.Vector3(x, Math.max(0, (env.heightAt || (() => 0))(x, z)) + 1.6, z), dist: 6, phi: 1.5, theta: Math.PI - (Number(heading) || 0) * Math.PI / 180 });
+      mode = 'explore'; controls.autoRotate = 0; controls.minDist = 2; container.dataset.view = mode;
+      if (typeof container.onViewChange === 'function') container.onViewChange(mode);
+      schedule();
+    },
     setXray(on) { setXray(on); schedule(); }, xray: () => xray,
     setNames(on) { showNames = !!on; schedule(); }, names: () => showNames,
     view: () => mode,
@@ -1019,6 +1347,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     select(id) { select(id); schedule(); },
     selected: () => selectedId,
     clock: () => clockOf(world),
+    screenshot,
     destroy() {
       cancelAnimationFrame(raf); raf = 0;
       if (io) io.disconnect(); if (ro) ro.disconnect();
@@ -1030,6 +1359,9 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       for (const m of geoCache.values()) { for (const k of ['body', 'glow', 'glass']) m[k] && m[k].dispose(); for (const p of m.parts) for (const k of ['body', 'glow', 'glass']) p.geo[k] && p.geo[k].dispose(); }
       effects.dispose();
       if (post) post.dispose();
+      for (const d of [streets, coast, foliage]) if (d) d.dispose();
+      closeSurface();
+      if (farMesh) farMesh.dispose(); farBox.dispose(); farMat.dispose();
       glow.dispose(); renderer.dispose(); canvas.remove(); hud.remove();
     }
   };
@@ -1082,10 +1414,14 @@ export async function createSandboxScene(container, { reducedMotion = false, coa
     renderer: 'webgl',
     update(next, o = {}) { lastWorld = next; lastDuration = o.duration || lastDuration; call('update', next, o); },
     setView: (m) => call('setView', m), view: () => call('view'),
+    exploreAt: (x, y, h) => call('exploreAt', x, y, h),
+    land: (id, o) => !!call('land', id, o), surfaceKind: (id) => call('surfaceKind', id) || null, onSurface: () => call('onSurface') || null,
+    enter: (id) => !!call('enter', id), inside: () => call('inside') || null, floor: (d) => call('floor', d),
     setXray: (on) => call('setXray', on), xray: () => !!call('xray'),
     setNames: (on) => call('setNames', on), names: () => !!call('names'),
     select: (id) => call('select', id), selected: () => call('selected'),
     clock: () => call('clock'),
+    screenshot: () => call('screenshot') || null,
     quality: () => ({ tier: current, auto, tiers: TIERS.slice() }),
     // 'auto', or a tier to keep (remembered on this device).
     async setQuality(t) {

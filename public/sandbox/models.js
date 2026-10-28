@@ -58,6 +58,12 @@ const pickBy = (seed, list) => list[seed % list.length];
 const col = (v, d) => (typeof v === 'string' && /^#[0-9a-f]{3,8}$/i.test(v) ? v : d);
 
 function out(k, extra = {}) { return { ...k.build(), parts: [], ...extra }; }
+
+// How much small detail models carry: 1 (Low: the plain shapes) or 2
+// (Medium and up: fingers, glasses, roof tiles, railings, mullions...). The
+// scene sets it from its quality tier; it is part of every model's key.
+let DETAIL = 2;
+export function setModelDetail(d) { DETAIL = d >= 2 ? 2 : 1; }
 function partOf(THREE, fill, pivot, role) {
   const k = new Kit(THREE);
   fill(k);
@@ -66,28 +72,110 @@ function partOf(THREE, fill, pivot, role) {
 
 // --- people ---------------------------------------------------------------------------
 
-function person(T, p, seed, { child = false, astronaut = false } = {}) {
+// A person: rounded body and limbs, a face (eyes with whites, brows, nose,
+// ears, mouth), one of several hair styles, clothes with a collar, buttons,
+// a belt and shoes with soles; some wear a jacket, a skirt or a dress, some
+// carry a bag. 24 looks per kind, from the id; arms and legs swing (parts).
+function person(T, p, seed0, { child = false, astronaut = false } = {}) {
   const s = child ? 0.7 : 1;
+  // Everything about the look comes from one of 24 (as the model's cache key does).
+  const seed = Math.imul(seed0 % 24 + 7, 40503) >>> 0;
+  const v = Math.imul(seed0 % 24 + 1, 2654435761) >>> 0;   // the look's own bits
+  const bit = (n, m) => (v >>> n) % m;
   const skin = pickBy(seed, SKIN); const hair = pickBy(seed >> 3, HAIR);
-  const shirt = astronaut ? '#f4f4f4' : col(p.shirt, pickBy(seed >> 5, ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#ecf0f1']));
-  const pants = astronaut ? '#e8e8e8' : pickBy(seed >> 7, ['#2c3e50', '#34495e', '#1f2a44', '#5d4037', '#212121']);
+  const shirt = astronaut ? '#f4f4f4' : col(p.shirt, pickBy(seed >> 5, ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#ecf0f1', '#ff8a65', '#4db6ac']));
+  const pants = astronaut ? '#e8e8e8' : pickBy(seed >> 7, ['#2c3e50', '#34495e', '#1f2a44', '#5d4037', '#212121', '#6d7a8a']);
+  const shoe = astronaut ? '#bbbbbb' : pickBy(v >> 9, ['#1a1a1a', '#3e2723', '#fafafa', '#5d4037']);
+  const jacket = !astronaut && !child && bit(3, 4) === 0 ? pickBy(v >> 11, ['#263238', '#4e342e', '#1a237e', '#33691e']) : null;
+  const dress = !astronaut && bit(5, 5) === 0;
+  const skirt = !astronaut && !dress && bit(7, 6) === 0;
+  const style = astronaut ? -1 : bit(13, 6);              // 0 short, 1 long, 2 bun, 3 curly, 4 bald with a cap, 5 side parting
   const k = new Kit(T);
-  k.box(0.26 * s, 0.6 * s, 0.42 * s, shirt, 0, 1.18 * s, 0);                 // torso
-  k.box(0.27 * s, 0.14 * s, 0.43 * s, pants, 0, 0.86 * s, 0);                // belt line
-  k.cyl(0.05 * s, 0.06 * s, 0.1 * s, 8, skin, 0, 1.52 * s, 0);               // neck
-  if (astronaut) {
-    k.sphere(0.2 * s, '#f4f4f4', 0, 1.7 * s, 0);
-    k.sphere(0.15 * s, '#1b2a3a', 0.08 * s, 1.71 * s, 0, { sx: 0.8, sy: 0.75, layer: 'glass' });
-    k.box(0.18 * s, 0.4 * s, 0.34 * s, '#d0d0d0', -0.2 * s, 1.2 * s, 0);    // pack
-  } else {
-    k.sphere(0.12 * s, skin, 0, 1.68 * s, 0, { sy: 1.1 });
-    k.sphere(0.125 * s, hair, -0.02 * s, 1.73 * s, 0, { sy: 0.7, sx: 1.02 });
-    k.box(0.02, 0.02 * s, 0.03 * s, '#111', 0.115 * s, 1.7 * s, 0.04 * s);  // eyes
-    k.box(0.02, 0.02 * s, 0.03 * s, '#111', 0.115 * s, 1.7 * s, -0.04 * s);
+  // Body: hips, a tapered torso, shoulders.
+  const top = shirt;
+  k.capsule(0.15 * s, 0.1 * s, dress ? shirt : pants, 0, 0.92 * s, 0, { sx: 0.85, sz: 1.25, rseg: 10 });                    // hips
+  k.cyl(0.19 * s, 0.155 * s, 0.5 * s, 12, top, 0, 1.2 * s, 0, { sx: 0.7, sz: 1.08 });                                        // torso
+  k.sphere(0.2 * s, top, 0, 1.42 * s, 0, { sx: 0.62, sy: 0.42, sz: 1.12, seg: 12, rings: 8 });                            // shoulders
+  if (!astronaut) {
+    k.cyl(0.075 * s, 0.085 * s, 0.05 * s, 10, shirt, 0, 1.5 * s, 0, { sx: 1.05 });                                            // collar
+    for (let i = 0; i < 3; i++) k.sphere(0.012 * s, '#eeeeee', 0.135 * s, (1.36 - i * 0.12) * s, 0, { seg: 5, rings: 4 }); // buttons
+    k.cyl(0.158 * s, 0.158 * s, 0.04 * s, 12, dress ? shirt : '#3e2723', 0, 0.99 * s, 0, { sx: 0.75, sz: 1.1 });              // belt
+    if (!dress) k.box(0.03 * s, 0.035 * s, 0.05 * s, '#c9a227', 0.12 * s, 0.99 * s, 0);                                       // buckle
   }
-  const leg = (z) => partOf(T, (q) => { q.box(0.15 * s, 0.8 * s, 0.16 * s, pants, 0, -0.42 * s, 0); q.box(0.24 * s, 0.08 * s, 0.15 * s, astronaut ? '#bbbbbb' : '#1a1a1a', 0.04 * s, -0.84 * s, 0); }, [0, 0.88 * s, z], z > 0 ? 'legL' : 'legR');
-  const arm = (z) => partOf(T, (q) => { q.box(0.11 * s, 0.56 * s, 0.11 * s, shirt, 0, -0.27 * s, 0); q.sphere(0.055 * s, astronaut ? '#dddddd' : skin, 0, -0.58 * s, 0); }, [0, 1.44 * s, z], z > 0 ? 'armL' : 'armR');
-  return { ...k.build(), parts: [leg(0.1 * s), leg(-0.1 * s), arm(0.27 * s), arm(-0.27 * s)], size: 1.8 * s };
+  if (jacket) {
+    k.cyl(0.205 * s, 0.17 * s, 0.56 * s, 12, jacket, -0.012 * s, 1.18 * s, 0, { sx: 0.72, sz: 1.12, open: true });
+    k.box(0.02 * s, 0.4 * s, 0.03 * s, jacket, 0.15 * s, 1.24 * s, 0.07 * s, { rz: 0.1 }); k.box(0.02 * s, 0.4 * s, 0.03 * s, jacket, 0.15 * s, 1.24 * s, -0.07 * s, { rz: 0.1 });
+  }
+  if (dress || skirt) k.cone(0.27 * s, dress ? 0.55 * s : 0.42 * s, 14, dress ? shirt : pickBy(v >> 15, ['#ad1457', '#283593', '#212121', '#6a1b9a']), 0, (dress ? 0.7 : 0.76) * s, 0, { sx: 0.85, sz: 1 });
+  if (!astronaut && bit(17, 5) === 0 && !child) {                                                                              // a shoulder bag
+    k.box(0.06 * s, 0.24 * s, 0.22 * s, pickBy(v >> 19, ['#6d4c41', '#212121', '#8d6e63']), -0.02 * s, 0.98 * s, 0.22 * s);
+    k.box(0.02 * s, 0.6 * s, 0.03 * s, '#3e2723', 0.03 * s, 1.27 * s, 0.1 * s, { rx: 0.5 });
+  }
+  // Neck and head.
+  k.cyl(0.048 * s, 0.056 * s, 0.1 * s, 10, skin, 0, 1.55 * s, 0);
+  if (astronaut) {
+    k.sphere(0.2 * s, '#f4f4f4', 0, 1.72 * s, 0);
+    k.sphere(0.15 * s, '#1b2a3a', 0.08 * s, 1.73 * s, 0, { sx: 0.8, sy: 0.75, layer: 'glass' });
+    k.box(0.18 * s, 0.42 * s, 0.34 * s, '#d0d0d0', -0.2 * s, 1.22 * s, 0);                                                    // pack
+    k.box(0.04 * s, 0.1 * s, 0.14 * s, '#1565c0', 0.15 * s, 1.3 * s, 0);                                                      // chest panel
+  } else {
+    const hy = 1.71 * s;
+    k.sphere(0.115 * s, skin, 0, hy, 0, { sy: 1.15, sx: 0.98, seg: DETAIL >= 2 ? 26 : 18, rings: DETAIL >= 2 ? 18 : 12 });   // head
+    k.sphere(0.06 * s, skin, 0.04 * s, hy - 0.075 * s, 0, { sx: 1.0, sy: 0.7, sz: 1.3 });                                     // jaw
+    k.cone(0.022 * s, 0.05 * s, 6, skin, 0.122 * s, hy - 0.01 * s, 0, { rz: -Math.PI / 2 });                                    // nose
+    for (const z of [0.115, -0.115]) k.sphere(0.028 * s, skin, -0.005 * s, hy, z * s, { sx: 0.6, sz: 0.4, seg: 8, rings: 6 }); // ears
+    for (const z of [0.042, -0.042]) {
+      k.sphere(0.019 * s, '#fafafa', 0.1 * s, hy + 0.025 * s, z * s, { seg: 8, rings: 6, sx: 0.5 });                            // eye whites
+      k.sphere(0.01 * s, pickBy(v >> 21, ['#3e2723', '#1565c0', '#2e7d32', '#212121']), 0.108 * s, hy + 0.025 * s, z * s, { seg: 6, rings: 4 });
+      k.box(0.012 * s, 0.009 * s, 0.035 * s, hair, 0.105 * s, hy + 0.055 * s, z * s, { rx: z > 0 ? -0.15 : 0.15 });             // brows
+    }
+    k.box(0.01 * s, 0.01 * s, 0.045 * s, '#8d3b3b', 0.112 * s, hy - 0.06 * s, 0);                                              // mouth
+    // Hair.
+    if (style === 4) { k.sphere(0.122 * s, pickBy(v >> 23, ['#c62828', '#1565c0', '#212121']), 0, hy + 0.04 * s, 0, { sy: 0.55, seg: 14, rings: 8 }); k.box(0.12 * s, 0.015 * s, 0.17 * s, pickBy(v >> 23, ['#c62828', '#1565c0', '#212121']), 0.11 * s, hy + 0.045 * s, 0); }
+    else {
+      k.sphere(0.122 * s, hair, -0.015 * s, hy + 0.035 * s, 0, { sy: 0.78, sx: 1.02, seg: 16, rings: 10 });                    // the cap of hair
+      if (style === 1) k.box(0.06 * s, 0.3 * s, 0.2 * s, hair, -0.085 * s, hy - 0.12 * s, 0, { jitter: 0.004 });                // long, down the back
+      if (style === 2) k.sphere(0.06 * s, hair, -0.11 * s, hy + 0.08 * s, 0);                                                     // a bun
+      if (style === 3) for (let i = 0; i < 9; i++) { const a = (i / 9) * Math.PI * 2; k.ico(0.045 * s, 0, hair, Math.cos(a) * 0.08 * s - 0.02 * s, hy + 0.06 * s + (i % 2) * 0.02 * s, Math.sin(a) * 0.1 * s); }
+      if (style === 5) k.box(0.1 * s, 0.03 * s, 0.12 * s, hair, 0.05 * s, hy + 0.1 * s, 0.03 * s, { rz: 0.25 });                 // a fringe
+    }
+  }
+  // Finer detail (Medium and up): lips, collar points, a pocket, glasses, a sun hat, hair strands.
+  if (DETAIL >= 2 && !astronaut) {
+    const hy = 1.71 * s;
+    k.box(0.012 * s, 0.014 * s, 0.05 * s, '#b5585a', 0.114 * s, hy - 0.058 * s, 0);                                           // lips
+    for (const z of [0.05, -0.05]) k.box(0.05 * s, 0.012 * s, 0.05 * s, jacket || shirt, 0.09 * s, 1.49 * s, z * s, { ry: z > 0 ? 0.6 : -0.6, rz: -0.5 });   // collar points
+    k.box(0.01 * s, 0.07 * s, 0.07 * s, `#${new T.Color(jacket || shirt).multiplyScalar(0.78).getHexString()}`, (jacket ? 0.152 : 0.136) * s, 1.33 * s, 0.07 * s);                                  // a pocket
+    if (bit(27, 6) === 0) {                                                                                                        // glasses
+      for (const z of [0.042, -0.042]) k.torus(0.026 * s, 0.004 * s, '#212121', 0.118 * s, hy + 0.025 * s, z * s, { ry: Math.PI / 2, tseg: 14, rseg: 4 });
+      k.box(0.006 * s, 0.006 * s, 0.03 * s, '#212121', 0.118 * s, hy + 0.028 * s, 0);
+      for (const z of [0.07, -0.07]) k.box(0.11 * s, 0.006 * s, 0.006 * s, '#212121', 0.06 * s, hy + 0.03 * s, z * s);
+    }
+    if (bit(29, 8) === 0 && style !== 4) { k.cyl(0.2 * s, 0.2 * s, 0.012 * s, 18, '#d7b56d', 0, hy + 0.09 * s, 0); k.cyl(0.11 * s, 0.12 * s, 0.1 * s, 14, '#d7b56d', 0, hy + 0.14 * s, 0); k.cyl(0.121 * s, 0.121 * s, 0.025 * s, 14, '#5d4037', 0, hy + 0.11 * s, 0); }
+    if (style === 1) for (const z of [-0.07, 0, 0.07]) k.capsule(0.03 * s, 0.24 * s, hair, -0.09 * s, hy - 0.16 * s, z * s, { rseg: 6 });
+    if (style === 2) k.capsule(0.03 * s, 0.14 * s, hair, -0.14 * s, hy - 0.03 * s, 0, { rz: -0.6, rseg: 6 });                  // a ponytail under the bun
+  }
+  // Legs: thigh, knee, shin, a shoe with a sole. Arms: sleeve, forearm, a hand with a thumb.
+  const legCol = dress || skirt ? skin : pants;
+  const leg = (z) => partOf(T, (q) => {
+    q.capsule(0.072 * s, 0.32 * s, dress ? skin : pants, 0, -0.2 * s, 0, { rseg: 10 });
+    q.capsule(0.06 * s, 0.32 * s, legCol, 0, -0.58 * s, 0, { rseg: 10 });
+    q.capsule(0.05 * s, 0.14 * s, shoe, 0.06 * s, -0.83 * s, 0, { rz: Math.PI / 2, sz: 1.15 });
+    q.box(0.25 * s, 0.025 * s, 0.11 * s, '#2b2b2b', 0.05 * s, -0.875 * s, 0);
+    if (DETAIL >= 2) { q.sphere(0.05 * s, shoe, 0.15 * s, -0.835 * s, 0, { sx: 0.8, sy: 0.7, seg: 8, rings: 6 }); q.box(0.08 * s, 0.01 * s, 0.06 * s, '#e0e0e0', 0.06 * s, -0.79 * s, 0); }   // toe cap, laces
+  }, [0, 0.88 * s, z], z > 0 ? 'legL' : 'legR');
+  const arm = (z) => partOf(T, (q) => {
+    q.capsule(0.058 * s, 0.24 * s, jacket || shirt, 0, -0.15 * s, 0, { rseg: 10 });
+    q.capsule(0.048 * s, 0.22 * s, astronaut ? '#e0e0e0' : (jacket || (bit(25, 2) ? shirt : skin)), 0, -0.4 * s, 0, { rseg: 10 });
+    q.sphere(0.045 * s, astronaut ? '#dddddd' : skin, 0.01 * s, -0.58 * s, 0, { sx: 0.7, sy: 1.15, seg: 10, rings: 8 });
+    q.capsule(0.014 * s, 0.03 * s, astronaut ? '#dddddd' : skin, 0.035 * s, -0.56 * s, (z > 0 ? 0.02 : -0.02) * s, { rz: 0.6, rseg: 6, cseg: 3 });
+    if (DETAIL >= 2) {
+      for (let f = 0; f < 4; f++) q.capsule(0.009 * s, 0.045 * s, astronaut ? '#dddddd' : skin, 0.025 * s - f * 0.012 * s, -0.65 * s, (z > 0 ? -0.012 : 0.012) * s, { rseg: 5, cseg: 2 });   // fingers
+      if (!astronaut && z > 0 && bit(30, 3) === 0) q.cyl(0.05 * s, 0.05 * s, 0.02 * s, 10, '#37474f', 0, -0.52 * s, 0);                              // a watch
+      if (!astronaut) q.cyl(0.052 * s, 0.052 * s, 0.03 * s, 10, jacket || shirt, 0, -0.5 * s, 0);                                                      // the cuff
+    }
+  }, [0, 1.45 * s, z], z > 0 ? 'armL' : 'armR');
+  return { ...k.build(), parts: [leg(0.09 * s), leg(-0.09 * s), arm(0.24 * s), arm(-0.24 * s)], size: 1.8 * s };
 }
 
 // --- animals --------------------------------------------------------------------------
@@ -187,17 +275,31 @@ function crop(T, p) {
 
 // --- buildings ------------------------------------------------------------------------
 
+// A row of windows round a block at height y: each a pane (lit at night),
+// in a frame, over a sill.
 function windowsRow(k, w, d, y, h, count, sides = 'all') {
-  const glow = '#ffd98a';
-  for (let i = 0; i < count; i++) {
-    const t = -w / 2 + (i + 0.5) * (w / count);
-    if (sides !== 'sides') { k.box(w / count * 0.5, h, 0.08, glow, t, y, d / 2 + 0.03, { layer: 'glow' }); k.box(w / count * 0.5, h, 0.08, glow, t, y, -d / 2 - 0.03, { layer: 'glow' }); }
-  }
+  const glow = '#ffd98a'; const frame = '#e8e4dc'; const sill = '#bdb6aa';
+  const pane = (x, z, pw, along) => {
+    // along: 'x' (front and back walls) or 'z' (the sides); out: the outward sign
+    for (const out of [1, -1]) {
+      if (along === 'x') {
+        const zz = out * (d / 2);
+        k.box(pw + 0.16, h + 0.16, 0.05, frame, x, y, zz + out * 0.015);
+        k.box(pw, h, 0.08, glow, x, y, zz + out * 0.03, { layer: 'glow' });
+        k.box(pw + 0.1, 0.03, 0.06, frame, x, y, zz + out * 0.06);                                 // the transom
+        k.box(pw + 0.3, 0.07, 0.2, sill, x, y - h / 2 - 0.1, zz + out * 0.09);
+      } else {
+        const xx = out * (w / 2);
+        k.box(0.05, h + 0.16, pw + 0.16, frame, xx + out * 0.015, y, z);
+        k.box(0.08, h, pw, glow, xx + out * 0.03, y, z, { layer: 'glow' });
+        k.box(0.06, 0.03, pw + 0.1, frame, xx + out * 0.06, y, z);
+        k.box(0.2, 0.07, pw + 0.3, sill, xx + out * 0.09, y - h / 2 - 0.1, z);
+      }
+    }
+  };
+  if (sides !== 'sides') for (let i = 0; i < count; i++) pane(-w / 2 + (i + 0.5) * (w / count), 0, w / count * 0.5, 'x');
   const m = Math.max(1, Math.round(count * d / w));
-  for (let i = 0; i < m; i++) {
-    const t = -d / 2 + (i + 0.5) * (d / m);
-    k.box(0.08, h, d / m * 0.5, glow, w / 2 + 0.03, y, t, { layer: 'glow' }); k.box(0.08, h, d / m * 0.5, glow, -w / 2 - 0.03, y, t, { layer: 'glow' });
-  }
+  for (let i = 0; i < m; i++) pane(0, -d / 2 + (i + 0.5) * (d / m), d / m * 0.5, 'z');
 }
 
 function house(T, p, seed, { cabin = false } = {}) {
@@ -211,8 +313,35 @@ function house(T, p, seed, { cabin = false } = {}) {
   k.prism([[-D / 2 - 0.6, 0], [D / 2 + 0.6, 0], [0, D * 0.45]], W + 0.8, roof, 0, 0.4 + H, 0, { ry: Math.PI / 2 });
   k.box(1.2, 4, 1.2, '#795548', W * 0.25, 0.4 + H + 2, D * 0.18);              // chimney
   k.box(0.1, 2.1, 1.1, '#5d4037', W / 2 + 0.05, 1.45, 0);                      // door
+  k.box(0.08, 2.3, 1.4, '#efebe9', W / 2 + 0.02, 1.5, 0);                       // its frame
+  k.sphere(0.04, '#c9a227', W / 2 + 0.12, 1.4, 0.38, { seg: 6, rings: 4 });     // handle
+  k.box(0.12, 0.2, 0.14, '#fff3c4', W / 2 + 0.1, 2.75, 0.85, { layer: 'glow' }); // porch light
+  k.box(1.6, 0.08, 1.8, roof, W / 2 + 0.7, 2.75, 0);                            // porch canopy
+  for (const z of [D / 2 + 0.55, -D / 2 - 0.55]) k.cyl(0.07, 0.07, W + 0.8, 8, '#616161', 0, 0.4 + H - 0.05, z, { rz: Math.PI / 2 });   // gutters
+  k.cyl(0.05, 0.05, H, 6, '#616161', W / 2 + 0.3, 0.4 + H / 2, D / 2 + 0.55);   // downpipe
+  k.box(W + 1, 0.12, 0.16, '#5d4037', 0, 0.4 + H + D * 0.45, 0, { jitter: 0 }); // ridge
+  k.box(0.1, 0.9, 0.9, '#fafafa', W / 2 + 6.5, 0.5, D / 2 - 0.8);               // letterbox post
+  k.box(0.35, 0.25, 0.25, '#c62828', W / 2 + 6.5, 1.05, D / 2 - 0.8);
   k.box(0.6, 0.2, 1.6, '#9e9e9e', W / 2 + 0.4, 0.3, 0);                        // step
   for (let f = 0; f < floors; f++) windowsRow(k, W, D, 0.4 + 1.7 + f * 3.1, 1.1, 3);
+  if (DETAIL >= 2) {
+    // Roof tiles in rows down both slopes, a chimney cap, shutters by the front windows.
+    const run = D / 2 + 0.6; const rise = D * 0.45; const slope = Math.hypot(run, rise); const ang = Math.atan2(rise, run);
+    for (const sd of [1, -1]) for (let i = 0; i < 7; i++) {
+      const t = (i + 0.5) / 7;
+      k.box(W + 0.8, 0.07, slope / 7 + 0.05, i % 2 ? roof : `#${new T.Color(roof).multiplyScalar(0.85).getHexString()}`, 0, 0.4 + H + rise * (1 - t) + 0.06, sd * run * t, { rx: sd * ang });
+    }
+    k.box(1.5, 0.2, 1.5, '#5d4037', W * 0.25, 0.4 + H + 4.1, D * 0.18);
+    for (let f = 0; f < floors; f++) for (const z of [-D / 3, D / 3]) for (const dz of [-0.95, 0.95]) k.box(0.06, 1.25, 0.45, '#2e5d3a', W / 2 + 0.08, 0.4 + 1.7 + f * 3.1, z + dz);
+    // The garden: a picket fence along the front, flower beds, two bins.
+    for (let z = -D / 2 - 1.5; z <= D / 2 + 1.5; z += 0.6) if (Math.abs(z) > 0.9) k.box(0.06, 0.9, 0.1, '#fafafa', W / 2 + 7.2, 0.45, z);
+    for (const y of [0.35, 0.75]) for (const sz of [1, -1]) k.box(0.05, 0.08, D / 2 + 0.6, '#fafafa', W / 2 + 7.2, y, sz * (D / 4 + 1.05));
+    for (let i = 0; i < 10; i++) k.ico(0.28, 0, ['#e91e63', '#ffeb3b', '#9c27b0', '#ff5722', '#ffffff'][(i + seed % 12) % 5], W / 2 + 1.4 + (i % 5) * 0.9, 0.35, (i < 5 ? 1 : -1) * (D / 2 - 0.6), { jitter: 0.06 });
+    for (const [z, c2] of [[-D / 2 - 0.9, '#2e7d32'], [-D / 2 - 1.6, '#424242']]) { k.box(0.6, 1.0, 0.6, c2, W / 2 + 0.5, 0.5, z); k.box(0.65, 0.06, 0.65, c2, W / 2 + 0.5, 1.03, z); }
+    // Some have a garage; some have solar panels on the roof.
+    if (seed % 3 === 0 && !cabin) { k.box(6, 2.8, 4, wall, 0.5, 1.4, D / 2 + 2.6); k.box(6.4, 0.25, 4.4, roof, 0.5, 2.9, D / 2 + 2.6); k.box(0.06, 2.2, 3.2, '#cfd8dc', 3.52, 1.15, D / 2 + 2.6); for (let i = 0; i < 6; i++) k.box(0.07, 0.03, 3.2, '#9e9e9e', 3.55, 0.3 + i * 0.36, D / 2 + 2.6); }
+    if (seed % 4 === 1 && !cabin) for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) k.box(1.6, 0.06, 1.0, '#1a237e', -W / 3 + i * 1.75, 0.4 + H + rise * 0.45 + j * 1.05 * Math.sin(ang) + 0.2, -run * 0.55 + j * 1.05 * Math.cos(ang), { rx: -ang });
+  }
   // A small garden: a hedge and a path.
   k.box(0.8, 0.9, D + 4, '#2e7d32', W / 2 + 4, 0.45, 0, { jitter: 0.3 });
   k.box(4, 0.05, 1.2, '#bdbdbd', W / 2 + 2, 0.03, 0);
@@ -238,6 +367,18 @@ function apartment(T, p) {
   k.box(23, 0.8, 17, '#757575', 0, H + 0.4, 0);
   k.box(4, 2.5, 4, '#9e9e9e', 4, H + 2, 3);
   for (let f = 1; f < floors; f++) k.box(1.6, 0.15, 12, '#bdbdbd', 11.8, f * 3.2, 0);   // balconies
+  if (DETAIL >= 2) {
+    for (let f = 1; f < floors; f++) {
+      const y = f * 3.2;
+      k.box(0.05, 0.05, 12, '#616161', 12.55, y + 1.0, 0);                                       // the balcony rail
+      for (let z = -5.8; z <= 5.8; z += 0.4) k.box(0.03, 1.0, 0.03, '#616161', 12.55, y + 0.5, z);
+      for (const z of [-6, 6]) k.box(1.6, 1.0, 0.03, '#616161', 11.8, y + 0.5, z);
+      if (f % 2) { k.box(0.6, 0.5, 0.8, '#e0e0e0', -11.3, y - 1.2, -4); k.cyl(0.2, 0.2, 0.05, 10, '#9e9e9e', -11.62, y - 1.2, -4, { rz: Math.PI / 2 }); }   // an air conditioner
+      if (f % 3 === 0) k.box(1.0, 0.4, 0.06, '#5d4037', 11.05, y + 1.7, 4.5);                          // a window box
+    }
+    k.cyl(1.4, 1.4, 2.4, 14, '#90a4ae', -6, H + 3.2, -4); for (const [x, z] of [[-7, -5], [-5, -5], [-7, -3], [-5, -3]]) k.box(0.15, 1.6, 0.15, '#616161', x, H + 1.6, z);   // the water tank
+    k.box(4, 0.25, 3, '#455a64', 13.2, 3.3, 0); for (const z of [-1.2, 1.2]) k.box(0.3, 0.2, 0.3, '#fff3c4', 13.2, 3.1, z, { layer: 'glow' });   // the entrance canopy
+  }
   return out(k, { size: 26 });
 }
 
@@ -260,16 +401,30 @@ function tower(T, p) {
   k.cyl(0.3, 0.4, 18, 6, '#eceff1', 0, H + 16, 0);
   k.sphere(0.6, '#ff5252', 0, H + 25, 0, { layer: 'glow' });
   k.box(30, 0.6, 30, '#9e9e9e', 0, 0.3, 0);
+  if (DETAIL >= 2) {
+    // Mullions up every face, a lit crown, an entrance canopy, a helipad, planters.
+    for (let t = -11.7; t <= 11.8; t += 2.6) { k.box(0.18, H, 0.18, '#cfd8dc', t, H / 2, 13.05); k.box(0.18, H, 0.18, '#cfd8dc', t, H / 2, -13.05); k.box(0.18, H, 0.18, '#cfd8dc', 13.05, H / 2, t); k.box(0.18, H, 0.18, '#cfd8dc', -13.05, H / 2, t); }
+    for (const [x, z, w, d] of [[0, 10.1, 20.2, 0.15], [0, -10.1, 20.2, 0.15], [10.1, 0, 0.15, 20.2], [-10.1, 0, 0.15, 20.2]]) k.box(w, 0.35, d, '#b3e5fc', x, H + 3.6, z, { layer: 'glow' });
+    k.box(5, 0.35, 10, '#37474f', 15.4, 4, 0); for (const z of [-3.5, 0, 3.5]) k.box(0.4, 0.15, 0.4, '#fff3c4', 15.4, 3.8, z, { layer: 'glow' });
+    k.cyl(4.5, 4.5, 0.15, 24, '#455a64', 0, H + 7.1, 0); k.torus(3.6, 0.1, '#ffeb3b', 0, H + 7.2, 0, { rx: Math.PI / 2, tseg: 32 });
+    for (const z of [-8, 8]) { k.box(1.6, 0.8, 1.6, '#795548', 15.5, 0.6, z); k.ico(0.9, 1, '#2e7d32', 15.5, 1.5, z); }
+  }
   return out(k, { size: 32 });
 }
 
+const GOODS_OUT = ['#ef6c00', '#7cb342', '#c62828'];
 function shop(T, p, { cafe = false } = {}) {
   const k = new Kit(T);
   const c = col(p.color, '#f2e6b3');
   k.box(16, 6, 12, c, 0, 3, 0);
   k.box(0.1, 3, 12, '#ffd98a', 8.05, 2, 0, { layer: 'glow' });               // shop window
   k.box(0.12, 2.6, 1.6, '#4e342e', 8.07, 1.3, 4);
-  k.box(3, 0.25, 13, col(p.awning, '#c0392b'), 9.4, 4.4, 0, { rz: -0.35 });
+  for (let i = 0; i < 9; i++) k.box(3, 0.25, 13 / 9, i % 2 ? '#fafafa' : col(p.awning, '#c0392b'), 9.4, 4.4, -6.5 + (i + 0.5) * (13 / 9), { rz: -0.35 });   // striped awning
+  k.box(0.08, 3.1, 12.2, '#3e2723', 8.03, 2, 0);                                 // the window's frame
+  for (const z of [-3, 3]) k.box(0.1, 3, 0.12, '#3e2723', 8.09, 2, z);           // mullions
+  k.box(0.32, 0.8, 7, cafe ? '#ffcc80' : '#80deea', 8.36, 5.4, 0, { layer: 'glow' });   // the sign, lit
+  k.box(0.6, 0.9, 1.2, '#455a64', 9, 0.45, -5);                                  // a bin
+  if (!cafe) for (let i = 0; i < 3; i++) k.box(0.5, 0.5, 0.5, GOODS_OUT[i], 8.4, 0.25, -3.5 - i * 0.6);
   k.box(0.3, 1.2, 8, cafe ? '#6d4c41' : '#263238', 8.2, 5.4, 0);                // sign
   k.box(16.5, 0.5, 12.5, '#8d6e63', 0, 6.25, 0);
   if (cafe) for (const z of [-3.5, 0, 3.5]) { k.cyl(0.6, 0.6, 0.06, 12, '#fafafa', 12, 1, z); k.cyl(0.05, 0.05, 1, 6, '#424242', 12, 0.5, z); k.cone(1.5, 1, 10, '#e53935', 12, 2.6, z); k.cyl(0.04, 0.04, 2.4, 5, '#bdbdbd', 12, 1.3, z); }
@@ -286,6 +441,14 @@ function school(T, p) {
   k.cyl(0.12, 0.12, 14, 6, '#eceff1', 24, 7, -8);
   k.box(0.05, 1.6, 2.6, '#1e88e5', 24, 13, -6.7);
   k.box(30, 0.05, 20, '#c62828', 8, 0.03, 22);                                  // sports court
+  if (DETAIL >= 2) {
+    for (const x of [-6, 22]) { k.cyl(0.08, 0.08, 3, 6, '#eceff1', x, 1.5, 22); k.box(0.1, 1, 1.6, '#fafafa', x + (x < 0 ? 0.3 : -0.3), 3, 22); k.torus(0.25, 0.03, '#ff5722', x + (x < 0 ? 0.6 : -0.6), 2.6, 22, { rx: Math.PI / 2, tseg: 12 }); }   // basketball hoops
+    for (let i = 0; i < 3; i++) k.box(29.8, 0.02, 0.12, '#fafafa', 8, 0.07, 14 + i * 8);                  // court lines
+    // The playground: swings and a slide.
+    k.box(4, 0.15, 0.15, '#1565c0', -16, 2.5, -14); for (const x of [-18, -14]) for (const z of [-14.6, -13.4]) k.box(0.12, 2.6, 0.12, '#1565c0', x, 1.3, z, { rx: z < -14 ? 0.2 : -0.2 });
+    for (const x of [-17, -15]) { k.box(0.6, 0.06, 0.3, '#ff7043', x, 0.6, -14); k.cyl(0.01, 0.01, 1.9, 4, '#9e9e9e', x, 1.55, -14); }
+    k.box(0.6, 2, 0.6, '#ffca28', -10, 1, -14); k.box(3, 0.08, 0.8, '#ef5350', -8.6, 1.0, -14, { rz: -0.6 });
+  }
   return out(k, { size: 46 });
 }
 
@@ -320,6 +483,13 @@ function factory(T, p) {
   windowsRow(k, 40, 26, 6, 1.4, 8);
   k.cyl(1.5, 2, 26, 12, '#8d6e63', 14, 13, 8); k.cyl(1.2, 1.6, 22, 12, '#8d6e63', 18, 11, 8);
   k.box(0.1, 6, 8, '#455a64', 20.05, 3, -4);
+  if (DETAIL >= 2) {
+    // Loading docks with their shutters, pipes along the wall, a tank and a forklift.
+    for (const z of [3, 7, 11]) { k.box(0.1, 3.6, 3, '#78909c', 20.06, 1.9, z); for (let i = 0; i < 8; i++) k.box(0.12, 0.05, 3, '#546e7a', 20.1, 0.3 + i * 0.45, z); k.box(1.4, 1.2, 3.4, '#616161', 20.7, 0.6, z); }
+    for (const y of [7.5, 8.2]) k.cyl(0.25, 0.25, 38, 8, '#8d6e63', 0, y, -13.3, { rz: Math.PI / 2 });
+    k.cyl(3, 3, 7, 18, '#cfd8dc', -24, 3.5, 6); k.cyl(3.05, 3.05, 0.3, 18, '#90a4ae', -24, 7.1, 6);
+    k.box(2, 1.2, 1.1, '#fbc02d', 23, 0.9, -8); k.box(0.1, 2.4, 1, '#424242', 24.1, 1.4, -8);
+  }
   return out(k, { size: 44, smoke: [[14, 26.5, 8], [18, 22.5, 8]] });
 }
 
@@ -410,47 +580,199 @@ function fountain(T) {
 
 // --- vehicles -------------------------------------------------------------------------
 
-function wheelPair(T, x, y, z, r, w, color = '#1a1a1a') {
-  return partOf(T, (q) => { for (const s of [1, -1]) { q.cyl(r, r, w, 14, color, 0, 0, s * z, { rx: Math.PI / 2 }); q.cyl(r * 0.55, r * 0.55, w + 0.02, 10, '#bdbdbd', 0, 0, s * z, { rx: Math.PI / 2 }); } }, [x, y, 0], 'wheel');
+// A pair of wheels on one axle: tyres with a tread band, rims with five
+// spokes and a hub cap. Turns as one part ('wheel').
+function wheelPair(T, x, y, z, r, w, color = '#1a1a1a', rim = '#c7ccd1') {
+  return partOf(T, (q) => {
+    for (const s of [1, -1]) {
+      q.cyl(r, r, w, 20, color, 0, 0, s * z, { rx: Math.PI / 2 });
+      q.cyl(r * 1.005, r * 1.005, w * 0.6, 20, '#262626', 0, 0, s * z, { rx: Math.PI / 2 });             // tread
+      q.cyl(r * 0.62, r * 0.62, w + 0.02, 16, '#3a3a3a', 0, 0, s * z, { rx: Math.PI / 2 });              // the rim's well
+      q.cyl(r * 0.58, r * 0.58, 0.02, 16, rim, 0, 0, s * (z + w / 2 + 0.005), { rx: Math.PI / 2 });     // the rim's face
+      for (let i = 0; i < 5; i++) { const a = (i / 5) * Math.PI * 2; q.box(r * 0.5, r * 0.11, 0.03, rim, Math.cos(a) * r * 0.27, Math.sin(a) * r * 0.27, s * (z + w / 2 + 0.02), { rz: a }); }
+      q.cyl(r * 0.14, r * 0.14, 0.04, 10, '#9e9e9e', 0, 0, s * (z + w / 2 + 0.03), { rx: Math.PI / 2 });  // hub cap
+      if (DETAIL >= 2) {
+        for (let i = 0; i < 24; i++) { const a = (i / 24) * Math.PI * 2; q.box(r * 0.12, 0.03, w * 0.85, '#202020', Math.cos(a) * r, Math.sin(a) * r, s * z, { rz: a + Math.PI / 2 }); }   // tread blocks
+        q.cyl(r * 0.5, r * 0.5, 0.02, 16, '#8d8d8d', 0, 0, s * (z + w / 2 - 0.02), { rx: Math.PI / 2 });            // brake disc
+        q.box(r * 0.3, r * 0.22, 0.05, '#c62828', r * 0.3, r * 0.25, s * (z + w / 2 - 0.01));                       // calliper
+      }
+    }
+  }, [x, y, 0], 'wheel');
 }
 
+// Car body styles, from the side (x along the car, rear to front; y up):
+// the lower body's outline, the glass cabin, the axles and the wheel size.
+const CAR_STYLES = {
+  saloon:    { lower: [[-2.27, 0.92], [-2.05, 1.0], [-1.25, 1.04], [1.05, 1.04], [2.05, 0.93], [2.27, 0.76]], cabin: [[-1.28, 1.03], [-0.95, 1.44], [0.32, 1.44], [1.07, 1.03]], ax: [1.38, -1.38], r: 0.36, W: 1.78, half: 2.25 },
+  hatchback: { lower: [[-2.0, 0.95], [-1.95, 1.04], [0.95, 1.04], [1.85, 0.93], [2.02, 0.76]], cabin: [[-1.96, 1.03], [-1.8, 1.46], [0.25, 1.46], [0.98, 1.03]], ax: [1.25, -1.3], r: 0.34, W: 1.74, half: 2.0 },
+  estate:    { lower: [[-2.33, 0.95], [-2.25, 1.04], [1.05, 1.04], [2.05, 0.93], [2.3, 0.76]], cabin: [[-2.24, 1.03], [-2.18, 1.47], [0.32, 1.47], [1.07, 1.03]], ax: [1.42, -1.42], r: 0.36, W: 1.8, half: 2.3 },
+  suv:       { lower: [[-2.3, 1.12], [-2.22, 1.25], [1.05, 1.25], [2.05, 1.15], [2.3, 0.95]], cabin: [[-2.2, 1.24], [-2.1, 1.78], [0.4, 1.78], [1.1, 1.24]], ax: [1.45, -1.45], r: 0.44, W: 1.92, half: 2.3, clear: 0.48, rails: true },
+  pickup:    { lower: [[-2.6, 1.05], [-0.7, 1.1], [1.15, 1.12], [2.25, 1.02], [2.5, 0.85]], cabin: [[-0.68, 1.1], [-0.6, 1.66], [0.4, 1.66], [1.15, 1.1]], ax: [1.6, -1.65], r: 0.42, W: 1.9, half: 2.55, clear: 0.45, bed: true },
+  van:       { lower: [[-2.45, 1.0], [1.4, 1.0], [2.3, 0.95], [2.45, 0.78]], cabin: [[-2.42, 1.0], [-2.42, 2.05], [0.9, 2.05], [1.55, 1.0]], ax: [1.55, -1.6], r: 0.38, W: 1.95, half: 2.45, solid: true },
+  sports:    { lower: [[-2.2, 0.82], [-2.05, 0.88], [-1.0, 0.9], [0.9, 0.9], [2.1, 0.72], [2.3, 0.58]], cabin: [[-1.05, 0.89], [-0.55, 1.2], [0.15, 1.2], [0.95, 0.89]], ax: [1.42, -1.35], r: 0.35, W: 1.86, half: 2.25, clear: 0.24, spoiler: true }
+};
+const CAR_ORDER = ['saloon', 'hatchback', 'estate', 'suv', 'pickup', 'van', 'sports'];
+const STYLE_OF = { car: CAR_ORDER, taxi: ['saloon', 'estate', 'hatchback', 'suv'], police_car: ['saloon', 'estate', 'suv'] };
+export const carStyle = (variant, seed) => { const list = STYLE_OF[variant === 'taxi' ? 'taxi' : variant === 'police' ? 'police_car' : 'car']; return list[seed % 7 % list.length]; };
+
+// A car in one of seven body styles (saloon, hatchback, estate, SUV,
+// pickup, van, sports): a shaped body cut away round the wheels, a glass
+// cabin with pillars, bumpers, a grille, head and tail lights, door lines
+// and handles, mirrors, number plates, an aerial; roof rails, a load bed or
+// a spoiler where the style has them; a taxi's sign or a police car's
+// stripes and light bar.
 function car(T, p, seed, variant = 'car') {
   const k = new Kit(T);
-  const paint = variant === 'taxi' ? '#f6c90e' : variant === 'police' ? '#f5f5f5' : col(p.color, pickBy(seed, ['#c0392b', '#2c3e50', '#ecf0f1', '#2980b9', '#16a085']));
-  k.box(4.4, 0.7, 1.85, paint, 0, 0.62, 0);
-  k.box(4.2, 0.3, 1.8, '#222', 0, 0.35, 0);
-  k.box(2.3, 0.62, 1.66, paint, -0.25, 1.28, 0);
-  k.box(2.1, 0.5, 1.7, '#22313f', -0.25, 1.3, 0, { layer: 'glass' });
-  k.box(0.05, 0.5, 1.5, '#22313f', 0.92, 1.25, 0, { layer: 'glass', rz: -0.6 });
-  k.box(0.1, 0.18, 0.4, '#fff8e1', 2.2, 0.75, 0.6, { layer: 'glow' }); k.box(0.1, 0.18, 0.4, '#fff8e1', 2.2, 0.75, -0.6, { layer: 'glow' });
-  k.box(0.1, 0.16, 0.4, '#ff1744', -2.2, 0.8, 0.62, { layer: 'glow' }); k.box(0.1, 0.16, 0.4, '#ff1744', -2.2, 0.8, -0.62, { layer: 'glow' });
-  k.box(0.3, 0.12, 0.08, '#111', 0.6, 1.1, 0.95); k.box(0.3, 0.12, 0.08, '#111', 0.6, 1.1, -0.95);   // mirrors
-  if (variant === 'taxi') { k.box(0.8, 0.28, 0.35, '#212121', -0.25, 1.73, 0); k.box(0.7, 0.2, 0.37, '#fff59d', -0.25, 1.74, 0, { layer: 'glow' }); k.box(4.42, 0.1, 1.87, '#212121', 0, 0.85, 0); }
-  if (variant === 'police') { k.box(4.42, 0.3, 1.87, '#1a237e', 0, 0.7, 0); k.box(0.4, 0.18, 1.2, '#212121', -0.25, 1.68, 0); k.box(0.38, 0.16, 0.5, '#ff1744', -0.25, 1.7, 0.3, { layer: 'glow' }); k.box(0.38, 0.16, 0.5, '#2979ff', -0.25, 1.7, -0.3, { layer: 'glow' }); }
-  return { ...k.build(), parts: [wheelPair(T, 1.35, 0.36, 0.86, 0.36, 0.26), wheelPair(T, -1.35, 0.36, 0.86, 0.36, 0.26)], size: 5 };
+  const name = carStyle(variant, seed); const S = CAR_STYLES[name];
+  const paint = variant === 'taxi' ? '#f6c90e' : variant === 'police' ? '#f5f5f5' : col(p.color, pickBy(Math.floor((seed % 63) / 7), ['#c0392b', '#2c3e50', '#ecf0f1', '#2980b9', '#16a085', '#7f8c8d', '#8e44ad', '#d35400', '#1b1b1b']));
+  const W = S.W; const trim = '#2b2b2b'; const chrome = '#cfd8dc'; const h = S.half; const r = S.r; const ay = r; const bottom = S.clear || 0.32;
+  // The lower body, cut away round the wheels (the arches), extruded across the width.
+  const arch = (cx) => Array.from({ length: 11 }, (_, i) => { const a = Math.PI - (i / 10) * Math.PI; return [cx + Math.cos(a) * (r + 0.09), ay + Math.sin(a) * (r + 0.09)]; });
+  const [xf, xr] = S.ax;
+  const outline = [[-h, bottom], [xr - r - 0.09, bottom], ...arch(xr), [xf - r - 0.09, bottom], ...arch(xf), [h, bottom], ...S.lower.slice().reverse()];
+  k.prism(outline, W, paint, 0, 0, 0);
+  // The cabin: glass, then roof and pillars (a van's sides are painted, with a window strip).
+  const c = S.cabin; const roofY = c[1][1]; const roofA = c[1][0]; const roofB = c[2][0];
+  k.prism(c, W - 0.14, '#1d2733', 0, 0, 0, { layer: 'glass' });
+  if (S.solid) { k.prism([[c[0][0], c[0][1]], [c[1][0], c[1][1]], [roofB - 0.6, roofY], [roofB - 0.6, c[0][1]]], W - 0.1, paint, 0, 0, 0); k.box(1.6, 0.4, W - 0.08, '#1d2733', roofB - 2.3, roofY - 0.45, 0, { layer: 'glass' }); }
+  k.box(roofB - roofA + 0.04, 0.06, W - 0.1, paint, (roofA + roofB) / 2, roofY + 0.025, 0);
+  for (const z of [W / 2 - 0.08, -(W / 2 - 0.08)]) {
+    const sz = Math.sign(z);
+    const pil = (a, b, t = 0.07) => { const L = Math.hypot(b[0] - a[0], b[1] - a[1]); k.box(L, t, 0.06, paint, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, z, { rz: Math.atan2(b[1] - a[1], b[0] - a[0]) }); };
+    pil(c[3], c[2]); pil(c[0], c[1], 0.09);
+    const bx = (roofA + roofB) / 2 - 0.1;
+    k.box(0.09, roofY - c[0][1], 0.06, paint, bx, (roofY + c[0][1]) / 2, z);
+    const beltY = c[0][1];
+    for (const x of [c[3][0] - 0.45, bx, name === 'van' || name === 'pickup' || name === 'sports' ? null : c[0][0] + 0.1]) if (x !== null) k.box(0.012, beltY - bottom - 0.12, 0.01, '#1a1a1a', x, (beltY + bottom) / 2 + 0.03, z + sz * 0.08);
+    for (const x of [bx + 0.5, name === 'sports' || name === 'pickup' ? null : bx - 0.45]) if (x !== null) k.box(0.16, 0.035, 0.02, chrome, x, beltY - 0.12, z + sz * 0.09);
+    k.box(xf - xr - 2 * r - 0.3, 0.07, 0.03, trim, (xf + xr) / 2, bottom + 0.06, z + sz * 0.08);
+    k.box(0.12, 0.1, 0.18, paint, c[3][0] - 0.15, beltY + 0.05, z + sz * 0.14); k.box(0.02, 0.08, 0.14, '#90a4ae', c[3][0] - 0.21, beltY + 0.05, z + sz * 0.15, { layer: 'glass' });
+    if (S.rails) k.box(roofB - roofA - 0.2, 0.05, 0.05, '#212121', (roofA + roofB) / 2, roofY + 0.1, z - sz * 0.05);
+  }
+  // Dark wheel wells behind the arches.
+  for (const x of S.ax) k.box(2 * r + 0.18, r + 0.14, W - 0.56, '#141414', x, ay + 0.2, 0);
+  // A pickup's open load bed.
+  if (S.bed) { k.box(1.85, 0.06, W - 0.1, '#3b3b3b', -1.65, 1.0, 0); for (const z of [W / 2 - 0.04, -(W / 2 - 0.04)]) k.box(1.9, 0.12, 0.05, paint, -1.65, 1.1, z); k.box(0.06, 0.4, W - 0.06, paint, -h + 0.04, 0.92, 0); }
+  if (S.spoiler) { k.box(0.35, 0.04, W - 0.2, '#111', -h + 0.2, 1.02, 0); for (const z of [0.6, -0.6]) k.box(0.06, 0.14, 0.04, '#111', -h + 0.22, 0.94, z); }
+  // Front and back: bumpers, grille, lights, indicators, plates.
+  const front = S.lower[S.lower.length - 1]; const fy = Math.max(bottom + 0.3, front[1]);
+  k.box(0.2, 0.2, W + 0.04, trim, h, bottom + 0.1, 0); k.box(0.2, 0.2, W + 0.04, trim, -h, bottom + 0.1, 0);
+  k.box(0.03, 0.17, 0.78, '#111', h + 0.02, fy - 0.08, 0); for (let i = 0; i < 4; i++) k.box(0.035, 0.012, 0.74, '#555', h + 0.025, fy - 0.14 + i * 0.04, 0);
+  for (const z of [W / 2 - 0.3, -(W / 2 - 0.3)]) {
+    k.box(0.06, 0.12, 0.34, '#fff8e1', h - 0.01, fy + 0.04, z, { layer: 'glow' }); k.box(0.05, 0.14, 0.38, '#cfd8dc', h + 0.01, fy + 0.04, z, { layer: 'glass' });
+    k.box(0.06, 0.12, 0.3, '#ff1744', -h - 0.02, S.lower[0][1] - 0.1, z, { layer: 'glow' });
+    k.box(0.05, 0.06, 0.12, '#ffa000', h, bottom + 0.26, z * 1.15, { layer: 'glow' });
+  }
+  k.box(0.02, 0.11, 0.5, '#fafafa', h + 0.11, bottom + 0.12, 0); k.box(0.02, 0.11, 0.5, '#ffeb3b', -h - 0.11, bottom + 0.12, 0);
+  k.box(0.021, 0.04, 0.36, '#212121', h + 0.115, bottom + 0.12, 0); k.box(0.021, 0.04, 0.36, '#212121', -h - 0.115, bottom + 0.12, 0);
+  k.cyl(0.006, 0.006, 0.5, 4, '#212121', roofA - 0.1, roofY + 0.2, 0.5);
+  if (DETAIL >= 2) {
+    // Inside, seen through the glass: seats, a steering wheel, the dashboard.
+    const beltY = c[0][1]; const seatY = beltY - 0.25; const dashX = c[3][0] - 0.3;
+    for (const x of [dashX - 0.9, dashX - 1.8 > c[0][0] + 0.3 && !S.bed ? dashX - 1.8 : null]) if (x !== null) for (const z of (x === dashX - 0.9 ? [0.4, -0.4] : [0])) { k.box(0.5, 0.12, z ? 0.5 : W - 0.5, '#3e3e3e', x, seatY, z); k.box(0.12, 0.6, z ? 0.5 : W - 0.5, '#3e3e3e', x - 0.25, seatY + 0.3, z, { rz: -0.15 }); k.box(0.1, 0.2, z ? 0.3 : 0.3, '#4a4a4a', x - 0.3, seatY + 0.7, z); }
+    k.box(0.4, 0.25, W - 0.3, '#2a2a2a', dashX + 0.1, beltY - 0.05, 0);
+    k.torus(0.17, 0.025, '#1a1a1a', dashX - 0.25, beltY + 0.1, 0.4, { ry: Math.PI / 2, rz: 0.4, tseg: 16 });
+    k.box(0.03, 0.06, 0.25, '#4fc3f7', dashX - 0.05, beltY + 0.12, -0.05, { layer: 'glow' });                    // the screen
+    // Wipers, an exhaust, a fuel cap, a fin aerial, side indicators, a badge.
+    for (const z of [0.25, -0.45]) k.box(0.03, 0.02, 0.6, '#111', c[3][0] - 0.05, c[3][1] + 0.03, z, { ry: 0.3 });
+    k.cyl(0.04, 0.045, 0.25, 8, '#9e9e9e', -h - 0.05, bottom + 0.02, W / 2 - 0.35, { rz: Math.PI / 2 });
+    k.cyl(0.09, 0.09, 0.02, 12, paint, xr + 0.55, c[0][1] - 0.2, -(W / 2 + 0.005), { rx: Math.PI / 2 });
+    k.box(0.25, 0.07, 0.07, '#111', roofA + 0.15, roofY + 0.07, 0);
+    for (const z of [W / 2 + 0.005, -(W / 2 + 0.005)]) k.box(0.1, 0.04, 0.02, '#ffa000', xf + r + 0.15, bottom + 0.42, z, { layer: 'glow' });
+    k.cyl(0.07, 0.07, 0.02, 12, chrome, h + 0.035, fy - 0.08, 0, { rz: Math.PI / 2 });
+    // Rear-window heater lines; roof bars on estates and SUVs; a sunroof on some.
+    for (let i = 0; i < 4; i++) k.box(0.01, 0.005, W - 0.5, '#5d4037', c[0][0] + (c[1][0] - c[0][0]) * (0.3 + i * 0.15) + 0.02, c[0][1] + (c[1][1] - c[0][1]) * (0.3 + i * 0.15), 0, { layer: 'glass' });
+    if (name === 'estate' || name === 'suv') for (const x of [roofA + 0.2, roofB - 0.2]) k.box(0.05, 0.05, W - 0.2, '#212121', x, roofY + 0.14, 0);
+    if (seed % 63 % 5 === 2 && name !== 'van' && name !== 'pickup') k.box(0.7, 0.012, 0.8, '#1d2733', (roofA + roofB) / 2 + 0.1, roofY + 0.06, 0, { layer: 'glass' });
+  }
+  if (variant === 'taxi') { k.box(0.5, 0.18, 0.28, '#212121', (roofA + roofB) / 2, roofY + 0.12, 0); k.box(0.46, 0.14, 0.3, '#fff59d', (roofA + roofB) / 2, roofY + 0.13, 0, { layer: 'glow' }); k.box(2 * h - 0.2, 0.08, W + 0.03, '#212121', 0, c[0][1] - 0.18, 0); }
+  if (variant === 'police') {
+    k.box(2 * h * 0.58, 0.26, W + 0.03, '#1a237e', 0.1, c[0][1] - 0.32, 0);
+    k.box(0.3, 0.1, 1.2, '#212121', (roofA + roofB) / 2, roofY + 0.08, 0); k.box(0.26, 0.12, 0.5, '#ff1744', (roofA + roofB) / 2, roofY + 0.14, 0.3, { layer: 'glow' }); k.box(0.26, 0.12, 0.5, '#2979ff', (roofA + roofB) / 2, roofY + 0.14, -0.3, { layer: 'glow' });
+  }
+  return { ...k.build(), parts: [wheelPair(T, xf, ay, W / 2 - 0.1, r, 0.24), wheelPair(T, xr, ay, W / 2 - 0.1, r, 0.24)], size: 2 * h + 0.5, style: name };
 }
 
-function bus(T, p) {
+// A bus: rounded front, windows in pillars, doors, a lit destination sign,
+// mirrors on arms, bumpers, wheel arches, a roof unit.
+function bus(T, p, seed = 0) {
   const k = new Kit(T);
   const c = col(p.color, '#f1c40f');
-  k.box(12, 2.6, 2.55, c, 0, 1.75, 0);
-  k.box(11.6, 0.9, 2.6, '#22313f', -0.2, 2.25, 0, { layer: 'glass' });
-  k.box(0.1, 1.4, 2.3, '#22313f', 6.02, 2.1, 0, { layer: 'glass' });
-  k.box(12.05, 0.25, 2.6, '#37474f', 0, 0.55, 0);
-  k.box(0.1, 0.4, 1.6, '#263238', 6.03, 3.05, 0); k.box(0.1, 0.25, 1.4, '#ff9800', 6.06, 3.05, 0, { layer: 'glow' });
-  k.box(0.08, 0.2, 0.4, '#fff8e1', 6.03, 0.8, 0.9, { layer: 'glow' }); k.box(0.08, 0.2, 0.4, '#fff8e1', 6.03, 0.8, -0.9, { layer: 'glow' });
-  for (let i = 0; i < 6; i++) k.box(1.4, 0.75, 0.05, '#ffe082', -4.5 + i * 1.8, 2.25, 1.3, { layer: 'glow' });
-  return { ...k.build(), parts: [wheelPair(T, 4, 0.5, 1.15, 0.5, 0.35), wheelPair(T, -3.6, 0.5, 1.15, 0.5, 0.35)], size: 13 };
+  // One bus in three is a double-decker: an upper deck with its own windows.
+  if (seed % 7 % 3 === 0) {
+    k.box(11.6, 1.9, 2.55, c, -0.2, 3.95, 0);
+    k.box(11.7, 0.85, 2.58, '#1d2733', -0.2, 4.1, 0, { layer: 'glass' });
+    for (let i = 0; i < 8; i++) for (const z of [1.3, -1.3]) k.box(0.12, 0.85, 0.03, c, -5.4 + i * 1.5, 4.1, z);
+    k.box(0.1, 0.9, 2.3, '#1d2733', 5.95, 4.15, 0, { layer: 'glass' });
+    k.box(11.4, 0.12, 2.4, '#eeeeee', -0.2, 4.95, 0);
+    for (let i = 0; i < 6; i++) k.box(1.3, 0.6, 0.05, '#ffe082', -4.5 + i * 1.8, 4.1, 1.27, { layer: 'glow' });
+  }
+  k.box(11.6, 2.5, 2.55, c, -0.2, 1.8, 0);
+  for (const z of [1.2, -1.2]) k.cyl(0.08, 0.08, 2.5, 8, c, 5.95, 1.8, z);                                // rounded front corners
+  k.box(11.7, 0.95, 2.58, '#1d2733', -0.2, 2.35, 0, { layer: 'glass' });
+  for (let i = 0; i < 8; i++) for (const z of [1.3, -1.3]) k.box(0.12, 0.95, 0.03, c, -5.4 + i * 1.5, 2.35, z);   // window pillars
+  k.box(0.1, 1.5, 2.3, '#1d2733', 6.0, 2.15, 0, { layer: 'glass' });
+  k.box(1.2, 2.2, 0.04, '#263238', 4.4, 1.55, 1.29, { layer: 'glass' }); k.box(1.2, 2.2, 0.04, '#263238', -0.8, 1.55, 1.29, { layer: 'glass' });   // doors
+  k.box(0.02, 2.2, 0.05, '#9e9e9e', 4.4, 1.55, 1.3); k.box(0.02, 2.2, 0.05, '#9e9e9e', -0.8, 1.55, 1.3);
+  k.box(12.1, 0.3, 2.62, '#37474f', -0.1, 0.6, 0); k.box(0.25, 0.35, 2.6, '#263238', 6.1, 0.65, 0); k.box(0.25, 0.35, 2.6, '#263238', -6.15, 0.65, 0);
+  k.box(0.1, 0.4, 1.7, '#111', 6.05, 3.15, 0); k.box(0.1, 0.28, 1.5, '#ff9800', 6.08, 3.15, 0, { layer: 'glow' });
+  for (const z of [0.9, -0.9]) { k.box(0.08, 0.2, 0.38, '#fff8e1', 6.12, 0.85, z, { layer: 'glow' }); k.box(0.08, 0.25, 0.3, '#ff1744', -6.32, 1.0, z, { layer: 'glow' }); }
+  for (const z of [1.45, -1.45]) { k.box(0.05, 0.05, 0.4, '#212121', 6.0, 2.9, z * 0.9); k.box(0.08, 0.45, 0.2, '#212121', 6.1, 2.65, z); }
+  for (let i = 0; i < 6; i++) k.box(1.3, 0.7, 0.05, '#ffe082', -4.5 + i * 1.8, 2.3, 1.27, { layer: 'glow' });
+  if (seed % 7 % 3 !== 0) k.box(2.6, 0.35, 1.6, '#cfd8dc', -2.5, 3.2, 0);                             // roof unit
+  if (DETAIL >= 2) {
+    // Seats in pairs either side of the aisle, grab rails, wipers, a lit route number, an exhaust.
+    for (let i = 0; i < 9; i++) for (const z of [0.85, 0.4, -0.4, -0.85]) { const x = -5 + i * 1.1; k.box(0.45, 0.1, 0.42, '#1565c0', x, 1.15, z); k.box(0.1, 0.55, 0.42, '#1565c0', x - 0.2, 1.45, z); }
+    for (const z of [0.15, -0.15]) k.cyl(0.02, 0.02, 10, 6, '#bdbdbd', 0, 2.75, z, { rz: Math.PI / 2 });
+    for (let i = 0; i < 5; i++) k.cyl(0.02, 0.02, 1.6, 6, '#ffeb3b', -4 + i * 2, 1.85, 0.2);
+    for (const z of [0.5, -0.5]) k.box(0.03, 0.02, 0.9, '#111', 6.07, 1.5, z, { rx: 0.3 });
+    k.box(0.04, 0.24, 0.4, '#ff9800', 6.1, 3.15, -0.6, { layer: 'glow' }); k.box(0.04, 0.2, 0.4, '#ffe0b2', 6.1, 3.15, 0.6, { layer: 'glow' });
+    k.cyl(0.06, 0.06, 0.3, 8, '#757575', -6.25, 0.55, 0.9, { rz: Math.PI / 2 });
+  }
+
+  return { ...k.build(), parts: [wheelPair(T, 4, 0.5, 1.12, 0.5, 0.32), wheelPair(T, -3.6, 0.5, 1.12, 0.5, 0.32)], size: 13 };
 }
-function truck(T, p) {
+// A lorry: a cab with a windscreen, grille, bumper, steps and mirrors; a
+// fuel tank; three axles; and one of three loads: a ribbed box body, a
+// tank, or a flatbed with crates.
+function truck(T, p, seed = 0) {
   const k = new Kit(T);
-  const c = col(p.color, '#ecf0f1');
-  k.box(2.4, 2.4, 2.4, '#c62828', 3.3, 1.7, 0);
-  k.box(0.1, 1, 2.1, '#22313f', 4.52, 2.2, 0, { layer: 'glass' });
-  k.box(6.4, 3, 2.5, c, -1.3, 2.1, 0);
-  k.box(9, 0.35, 2.3, '#263238', 0.3, 0.6, 0);
-  k.box(0.08, 0.2, 0.4, '#fff8e1', 4.53, 1, 0.9, { layer: 'glow' }); k.box(0.08, 0.2, 0.4, '#fff8e1', 4.53, 1, -0.9, { layer: 'glow' });
-  return { ...k.build(), parts: [wheelPair(T, 3.2, 0.5, 1.1, 0.5, 0.35), wheelPair(T, -2.8, 0.5, 1.1, 0.5, 0.35)], size: 10 };
+  const load = ['box', 'tanker', 'flatbed'][seed % 7 % 3];
+  const c = col(p.color, '#ecf0f1'); const cab = '#c62828';
+  k.box(2.3, 2.3, 2.45, cab, 3.35, 1.85, 0);
+  k.box(0.6, 0.9, 2.45, cab, 4.7, 1.2, 0);
+  k.prism([[2.2, 2.2], [4.2, 2.2], [4.5, 3.0], [2.2, 3.0]], 2.35, cab, 0, 0, 0);
+  k.box(0.08, 0.9, 2.2, '#1d2733', 4.52, 2.45, 0, { layer: 'glass', rz: 0.3 });
+  for (const z of [1.23, -1.23]) { k.box(1.1, 0.75, 0.03, '#1d2733', 3.6, 2.45, z, { layer: 'glass' }); k.box(0.06, 0.6, 0.15, '#212121', 4.6, 2.5, z * 1.12); k.box(0.5, 0.06, 0.3, '#9e9e9e', 4.0, 0.7, z); }
+  k.box(0.04, 0.6, 1.5, '#111', 5.01, 1.2, 0); for (let i = 0; i < 5; i++) k.box(0.05, 0.03, 1.45, '#616161', 5.03, 0.95 + i * 0.12, 0);
+  k.box(0.25, 0.3, 2.5, '#424242', 5.05, 0.6, 0);
+  for (const z of [0.95, -0.95]) k.box(0.06, 0.2, 0.36, '#fff8e1', 5.06, 0.82, z, { layer: 'glow' });
+  if (load === 'box') {
+    k.box(6.4, 2.9, 2.5, c, -1.4, 2.25, 0);
+    for (let i = 0; i < 11; i++) for (const z of [1.26, -1.26]) k.box(0.06, 2.8, 0.03, '#cfd8dc', -4.5 + i * 0.62, 2.25, z);   // ribs
+  } else if (load === 'tanker') {
+    k.capsule(1.15, 5.2, '#b0bec5', -1.4, 2.05, 0, { rz: Math.PI / 2, rseg: 18 });
+    for (const x of [-3.6, -1.4, 0.8]) k.cyl(1.2, 1.2, 0.12, 18, '#78909c', x, 2.05, 0, { rz: Math.PI / 2 });
+    k.box(5.6, 0.06, 0.5, '#616161', -1.4, 3.25, 0); k.cyl(0.25, 0.25, 0.2, 10, '#616161', -1.4, 3.3, 0);
+    k.box(4, 0.4, 0.02, '#ff6f00', -1.4, 2.05, 1.16);
+  } else {
+    k.box(6.4, 0.15, 2.4, '#5d4037', -1.4, 0.95, 0);
+    for (let i = 0; i < 6; i++) k.box(1.6, 1.1 + (i % 2) * 0.4, 1.0, ['#a1887f', '#8d6e63', '#795548'][i % 3], -4 + (i % 3) * 2.2, 1.6 + (i % 2) * 0.2, i < 3 ? 0.6 : -0.6);
+    for (const z of [1.15, -1.15]) for (let i = 0; i < 5; i++) k.box(0.08, 0.6, 0.06, '#424242', -4.4 + i * 1.5, 1.3, z);
+  }
+  for (const z of [0.9, -0.9]) k.box(0.05, 0.25, 0.3, '#ff1744', -4.62, 0.9, z, { layer: 'glow' });
+  k.box(9.4, 0.35, 2.2, '#263238', 0.3, 0.62, 0);
+  k.cyl(0.32, 0.32, 1.2, 14, '#9e9e9e', 2.2, 0.85, 1.0, { rz: Math.PI / 2 });                        // fuel tank
+  if (DETAIL >= 2) {
+    // Exhaust stacks, air horns, a roof light bar, mud flaps, side guards, a sun visor.
+    for (const z of [1.15, -1.15]) { k.cyl(0.09, 0.09, 2.6, 10, '#bdbdbd', 2.15, 2.4, z); k.cyl(0.1, 0.09, 0.12, 10, '#424242', 2.15, 3.75, z); }
+    for (const z of [0.3, -0.3]) k.cone(0.07, 0.6, 10, '#cfd8dc', 3.6, 3.1, z, { rz: -Math.PI / 2 });
+    k.box(0.3, 0.12, 1.8, '#212121', 3.9, 3.08, 0); for (let i = 0; i < 5; i++) k.box(0.05, 0.08, 0.2, '#ffb300', 4.06, 3.08, -0.7 + i * 0.35, { layer: 'glow' });
+    k.box(0.35, 0.06, 2.3, cab, 4.55, 3.02, 0);
+    for (const z of [1.0, -1.0]) for (const x of [-4.55, 2.75]) k.box(0.03, 0.5, 0.45, '#111', x, 0.35, z);
+    for (const z of [1.18, -1.18]) for (let i = 0; i < 2; i++) k.box(4.2, 0.06, 0.04, '#9e9e9e', -0.9, 0.55 + i * 0.25, z);
+  }
+  return { ...k.build(), parts: [wheelPair(T, 3.4, 0.5, 1.1, 0.5, 0.32), wheelPair(T, -2.4, 0.5, 1.1, 0.5, 0.32), wheelPair(T, -3.6, 0.5, 1.1, 0.5, 0.32)], size: 10 };
 }
 function tractor(T, p) {
   const k = new Kit(T);
@@ -472,6 +794,11 @@ function bike(T, p, seed, { motor = false } = {}) {
     k.cyl(0.05, 0.05, 0.75, 6, '#9e9e9e', 0.65, 0.75, 0, { rz: -0.4 });
     k.box(0.08, 0.06, 0.7, '#212121', 0.78, 1.12, 0);
     k.box(0.06, 0.12, 0.15, '#fff8e1', 0.85, 0.95, 0, { layer: 'glow' });
+    if (DETAIL >= 2) {
+      k.cyl(0.05, 0.06, 0.9, 8, '#bdbdbd', -0.45, 0.42, 0.2, { rz: Math.PI / 2 - 0.15 }); k.cyl(0.065, 0.065, 0.2, 8, '#757575', -0.92, 0.48, 0.2, { rz: Math.PI / 2 });   // exhaust
+      for (const z of [0.32, -0.32]) { k.cyl(0.01, 0.01, 0.25, 4, '#212121', 0.75, 1.25, z); k.box(0.02, 0.07, 0.1, '#90a4ae', 0.75, 1.38, z, { layer: 'glass' }); }   // mirrors
+      k.box(0.3, 0.2, 0.42, c, 0.62, 0.5, 0, { rz: 0.3 }); k.box(0.12, 0.08, 0.08, '#ff1744', -0.75, 0.9, 0, { layer: 'glow' }); k.box(0.2, 0.1, 0.42, '#212121', 0.05, 1.0, 0);   // fairing, tail light, tank cap
+    }
   } else {
     k.cyl(0.03, 0.03, 0.9, 6, c, 0.15, 0.62, 0, { rz: 1.0 });
     k.cyl(0.03, 0.03, 0.75, 6, c, -0.18, 0.6, 0, { rz: -0.45 });
@@ -479,9 +806,16 @@ function bike(T, p, seed, { motor = false } = {}) {
     k.box(0.25, 0.06, 0.12, '#212121', -0.33, 0.96, 0);
     k.cyl(0.025, 0.025, 0.5, 6, '#9e9e9e', 0.5, 0.85, 0, { rz: -0.3 });
     k.box(0.05, 0.04, 0.55, '#212121', 0.55, 1.08, 0);
+    if (DETAIL >= 2) {
+      k.torus(0.1, 0.015, '#9e9e9e', 0, 0.34, 0.04, { tseg: 16 }); for (const sz of [1, -1]) { k.box(0.16, 0.012, 0.012, '#757575', 0, 0.34, sz * 0.08, { rz: 0.8 }); k.box(0.12, 0.03, 0.06, '#212121', sz * 0.11, 0.34 - sz * 0.08, sz * 0.12); }   // chainring and pedals
+      k.box(0.56, 0.012, 0.012, '#424242', -0.27, 0.36, 0.04); k.box(0.56, 0.012, 0.012, '#424242', -0.27, 0.32, 0.04);   // the chain
+      k.box(0.05, 0.05, 0.08, '#fff8e1', 0.58, 0.98, 0, { layer: 'glow' }); k.box(0.03, 0.04, 0.06, '#ff1744', -0.48, 0.7, 0, { layer: 'glow' });
+      k.box(0.6, 0.02, 0.1, c, -0.42, 0.72, 0, { rz: 0.15 });                                                         // the rack
+    }
   }
   const r = motor ? 0.32 : 0.34;
-  const wheel = (x) => partOf(T, (q) => { q.torus(r, motor ? 0.08 : 0.03, '#1a1a1a', 0, 0, 0, { tseg: 18 }); q.cyl(0.04, 0.04, 0.06, 6, '#bdbdbd', 0, 0, 0, { rx: Math.PI / 2 }); if (!motor) for (let i = 0; i < 4; i++) q.box(0.01, r * 2, 0.01, '#bdbdbd', 0, 0, 0, { rz: i * Math.PI / 4 }); }, [x, r, 0], 'wheel');
+  const spokes = DETAIL >= 2 ? 12 : 4;
+  const wheel = (x) => partOf(T, (q) => { q.torus(r, motor ? 0.08 : 0.03, '#1a1a1a', 0, 0, 0, { tseg: DETAIL >= 2 ? 28 : 18 }); q.cyl(0.04, 0.04, 0.06, 6, '#bdbdbd', 0, 0, 0, { rx: Math.PI / 2 }); if (!motor) for (let i = 0; i < spokes; i++) q.box(0.006, r * 2, 0.006, '#bdbdbd', 0, 0, 0, { rz: i * Math.PI / spokes }); else if (DETAIL >= 2) { q.cyl(r * 0.6, r * 0.6, 0.06, 18, '#424242', 0, 0, 0, { rx: Math.PI / 2 }); for (let i = 0; i < 5; i++) q.box(r * 0.55, 0.04, 0.07, '#9e9e9e', 0, 0, 0, { rz: i * Math.PI / 5 }); q.cyl(r * 0.45, r * 0.45, 0.02, 16, '#8d8d8d', 0, 0, 0.05, { rx: Math.PI / 2 }); } }, [x, r, 0], 'wheel');
   return { ...k.build(), parts: [wheel(motor ? 0.7 : 0.55), wheel(motor ? -0.7 : -0.5)], size: 2, seat: [motor ? -0.3 : -0.33, motor ? 1.0 : 0.98, 0] };
 }
 
@@ -514,6 +848,10 @@ function boat(T, p, { ship = false } = {}) {
     k.box(2.2, 1.2, 1.8, '#fafafa', -0.6, H * 0.66 + 0.6, 0);
     k.box(0.08, 0.7, 1.6, '#22313f', 0.52, H * 0.66 + 0.9, 0, { layer: 'glass', rz: -0.5 });
     k.cyl(0.04, 0.04, 2.5, 5, '#bdbdbd', -1.2, H * 0.66 + 1.8, 0);
+    // Rails, cleats, a lifebuoy, an outboard motor, cabin windows.
+    for (const z of [W / 2 - 0.05, -(W / 2 - 0.05)]) { k.cyl(0.025, 0.025, L * 0.75, 5, '#cfd8dc', L * 0.05, H * 0.66 + 0.55, z, { rz: Math.PI / 2 }); for (let i = 0; i < 5; i++) k.cyl(0.02, 0.02, 0.5, 4, '#cfd8dc', -L * 0.3 + i * L * 0.17, H * 0.66 + 0.3, z); k.box(0.04, 0.35, 0.9, '#22313f', -0.6, H * 0.66 + 0.85, z * 1.0, { layer: 'glass' }); }
+    k.torus(0.25, 0.06, '#ff5722', -0.6, H * 0.66 + 0.7, -0.92, { tseg: 14 });
+    k.box(0.5, 0.9, 0.4, '#212121', -L / 2 - 0.15, H * 0.4, 0); k.box(0.12, 0.6, 0.12, '#424242', -L / 2 - 0.2, -0.1, 0);
   }
   return out(k, { size: L, wake: true });
 }
@@ -556,6 +894,18 @@ function plane(T, p, { small = false, jet = false } = {}) {
     k.sphere(0.25, s > 0 ? '#00e676' : '#ff1744', -3, 3.4, s * 17.5, { layer: 'glow', seg: 6, rings: 4 });
   }
   k.prism([[0, 0], [-6, 8], [-9, 8], [-7, 0]], 0.4, liv, -12, 5.5, 0);
+  // Detail: doors, winglets, engine pylons and fans, gear legs, the belly fairing, a beacon.
+  for (const z of [2.02, -2.02]) for (const x of [13.2, -13.4]) { k.box(1.0, 1.9, 0.03, '#b0bec5', x, 4.4, z); k.box(0.9, 1.8, 0.035, c, x, 4.4, z); }
+  for (const s of [1, -1]) {
+    k.box(1.2, 2.4, 0.25, liv, -4.6, 4.4, s * 17.2, { rx: s * -0.15 });
+    k.box(3.2, 1.1, 0.35, '#cfd8dc', 3.4, 3.0, s * 6.5);
+    for (let i = 0; i < 12; i++) { const a = (i / 12) * Math.PI * 2; k.box(0.05, 0.75, 0.16, '#90a4ae', 5.72, 2.2 + Math.sin(a) * 0.4, s * 6.5 + Math.cos(a) * 0.4, { rx: a }); }
+    k.cone(0.3, 0.6, 10, '#eceff1', 5.9, 2.2, s * 6.5, { rz: -Math.PI / 2 });
+    k.cyl(0.12, 0.12, 2.6, 6, '#9e9e9e', -1, 1.9, s * 2.5);
+  }
+  k.cyl(0.12, 0.12, 2.6, 6, '#9e9e9e', 12, 1.9, 0);
+  k.capsule(1.2, 8, '#eceff1', 0, 2.3, 0, { rz: Math.PI / 2, sz: 1.5 });
+  k.sphere(0.22, '#ff1744', 0, 6.05, 0, { layer: 'glow', seg: 6, rings: 4 });
   return { ...k.build(), parts: [wheelPair(T, 12, 0.6, 0.01, 0.55, 0.4), wheelPair(T, -1, 0.6, 2.5, 0.6, 0.5)], size: 38 };
 }
 
@@ -624,23 +974,73 @@ function shuttle(T, p) {
 
 // --- space ----------------------------------------------------------------------------
 
+// A space station, built the way real ones are: a long truss carrying four
+// pairs of solar wings (cells in a grid, on masts) and white radiators;
+// pressurised modules in a line across it, joined by docking nodes with
+// hatches, ending in a docking port with its lights and a windowed cupola;
+// a dish and antennas; red and green navigation lights; and a habitat ring
+// on four spokes that turns slowly (part 'ring'), its windows lit.
 function spaceStation(T) {
   const k = new Kit(T);
-  k.cyl(3, 3, 40, 16, '#eceff1', 0, 0, 0, { rz: Math.PI / 2 });
-  for (const x of [-12, 0, 12]) k.cyl(4, 4, 6, 16, '#cfd8dc', x, 0, 0, { rz: Math.PI / 2 });
-  k.cyl(2.5, 2.5, 26, 12, '#b0bec5', 0, 0, 0, { rx: Math.PI / 2 });
-  for (const z of [-22, -16, 16, 22]) { k.box(26, 0.3, 5.5, '#1a237e', 0, 0, z); for (let x = -12; x <= 12; x += 4) k.box(0.15, 0.32, 5.6, '#90a4ae', x, 0, z); }
-  k.torus(18, 1.2, '#eceff1', 0, 0, 0, { rx: Math.PI / 2, rseg: 8, tseg: 48 });
-  for (let i = 0; i < 4; i++) k.cyl(0.4, 0.4, 18, 6, '#b0bec5', Math.cos(i * Math.PI / 2) * 9, 0, Math.sin(i * Math.PI / 2) * 9, { rz: Math.PI / 2, ry: i * Math.PI / 2 });
-  for (let i = 0; i < 8; i++) k.box(0.6, 0.6, 0.6, '#fff59d', Math.cos(i * Math.PI / 4) * 18, 0, Math.sin(i * Math.PI / 4) * 18, { layer: 'glow' });
-  return out(k, { size: 60, spin: 0.05 });
+  const WHITE = '#eceff1'; const GREY = '#b0bec5'; const DARK = '#455a64'; const GOLD = '#c9a227'; const CELL = '#1a237e';
+  // The truss: four long rails with cross braces.
+  for (const [y, z] of [[-1.2, -1.2], [-1.2, 1.2], [1.2, -1.2], [1.2, 1.2]]) k.box(80, 0.25, 0.25, GREY, 0, y, z);
+  for (let x = -40; x <= 40; x += 4) { k.box(0.2, 2.6, 0.2, GREY, x, 0, 1.2); k.box(0.2, 2.6, 0.2, GREY, x, 0, -1.2); k.box(0.2, 0.2, 2.6, GREY, x, 1.2, 0); k.box(0.2, 0.2, 2.6, GREY, x, -1.2, 0); k.box(2.9, 0.12, 0.12, DARK, x + 2, 0, 1.2, { rz: 0.9 }); }
+  // Solar wings: four pairs on masts at the truss ends, cells in a grid, gold backing.
+  for (const x of [-34, -26, 26, 34]) for (const sz of [1, -1]) {
+    const zc = sz * 19;
+    k.cyl(0.2, 0.2, 34, 6, GREY, x, 0, zc - sz * 0.5, { rx: Math.PI / 2 });
+    for (const dx of [-2.6, 2.6]) {
+      k.box(4.6, 0.06, 32, GOLD, x + dx, -0.05, zc);
+      k.box(4.4, 0.08, 31.6, CELL, x + dx, 0.02, zc);
+      for (let i = 1; i < 16; i++) k.box(4.42, 0.1, 0.06, '#9fa8da', x + dx, 0.03, zc - 15.8 + i * 1.975);
+      k.box(0.06, 0.1, 31.6, '#9fa8da', x + dx, 0.03, zc);
+    }
+    k.box(1.2, 1.2, 1.2, DARK, x, 0, sz * 2);                                    // the rotary joint
+  }
+  // Radiators: white panels standing off the truss.
+  for (const x of [-14, 14]) for (const sz of [1, -1]) k.box(10, 0.1, 6, '#fafafa', x, -3.5, sz * 4.5, { rx: sz * 0.25 });
+  // Modules in a line across the truss (along z), joined by nodes with hatches.
+  const mod = (z, len, r = 2.1, c = WHITE) => { k.cyl(r, r, len, 20, c, 0, 3.6, z, { rx: Math.PI / 2 }); for (const dz of [-len / 2 + 0.5, len / 2 - 0.5]) k.cyl(r + 0.08, r + 0.08, 0.25, 20, GREY, 0, 3.6, z + dz, { rx: Math.PI / 2 }); for (let i = 0; i < Math.floor(len / 2); i++) k.box(0.5, 0.35, 0.06, '#ffe0a3', r * 0.72, 3.6 + r * 0.66, z - len / 2 + 1 + i * 2, { layer: 'glow' }); };
+  const node = (z) => { k.sphere(2.5, WHITE, 0, 3.6, z, { seg: 18, rings: 12 }); for (const [x, y] of [[2.5, 0], [-2.5, 0], [0, 2.5]]) { k.cyl(1.0, 1.0, 0.4, 14, GREY, x, 3.6 + y, z, { rz: x ? Math.PI / 2 : 0 }); k.cyl(0.7, 0.7, 0.42, 14, DARK, x * 1.01, 3.6 + y * 1.01, z, { rz: x ? Math.PI / 2 : 0 }); } };
+  k.cyl(1.4, 1.4, 3.4, 14, GREY, 0, 2.0, 0);                                     // the stand-off to the truss
+  node(0); mod(-7.5, 10); node(-15); mod(-21.5, 8, 2.0, '#f5f5f5'); mod(7.5, 10, 2.2); node(15); mod(21, 7, 1.9);
+  // The docking port at one end, with its ring and lights; the cupola at the other.
+  k.cyl(1.2, 1.4, 1.6, 16, GREY, 0, 3.6, 25.3, { rx: Math.PI / 2 }); k.torus(1.25, 0.12, '#ffeb3b', 0, 3.6, 26.15, { tseg: 24 });
+  for (let i = 0; i < 4; i++) k.sphere(0.12, '#fff59d', Math.cos(i * Math.PI / 2) * 1.5, 3.6 + Math.sin(i * Math.PI / 2) * 1.5, 26.2, { layer: 'glow', seg: 6, rings: 4 });
+  k.cyl(1.3, 1.6, 1.0, 7, GREY, 0, 3.6, -26.2, { rx: Math.PI / 2 });
+  for (let i = 0; i < 7; i++) { const a = (i / 7) * Math.PI * 2; k.box(0.8, 0.5, 0.05, '#90caf9', Math.cos(a) * 1.35, 3.6 + Math.sin(a) * 1.35, -26.75, { layer: 'glass', rz: a }); }
+  k.cyl(0.8, 0.8, 0.06, 14, '#90caf9', 0, 3.6, -26.75, { rx: Math.PI / 2, layer: 'glass' });
+  // A dish and antennas.
+  k.cyl(0.08, 0.08, 4, 6, GREY, 0, 7.6, -15); k.lathe([[0, 0], [1.6, 0.5], [1.8, 0.7]], 18, '#fafafa', 0, 9.4, -15, { rx: 0.6 });
+  for (const z of [-7, 7]) k.cyl(0.04, 0.04, 5, 4, '#cfd8dc', 0, 8, z);
+  // Navigation lights: red to port, green to starboard, white at the ends.
+  k.sphere(0.3, '#ff1744', 0, 0, -40, { layer: 'glow', seg: 6, rings: 4 }); k.sphere(0.3, '#00e676', 0, 0, 40, { layer: 'glow', seg: 6, rings: 4 });
+  for (const x of [-40, 40]) k.sphere(0.3, '#ffffff', x, 1.4, 0, { layer: 'glow', seg: 6, rings: 4 });
+  // The habitat ring on four spokes round a hub below the truss; it turns.
+  const ring = partOf(T, (q) => {
+    q.torus(24, 2.3, WHITE, 0, 0, 0, { rx: Math.PI / 2, rseg: 12, tseg: 72 });
+    for (let i = 0; i < 36; i++) { const a = (i / 36) * Math.PI * 2; q.box(1.2, 0.6, 0.06, '#ffe0a3', Math.cos(a) * 26.3, 0.6, Math.sin(a) * 26.3, { ry: -a + Math.PI / 2, layer: 'glow' }); }
+    for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2; q.cyl(0.6, 0.6, 22, 10, GREY, Math.cos(a) * 12, 0, Math.sin(a) * 12, { rz: Math.PI / 2, ry: -a }); }
+    q.cyl(3, 3, 3, 18, GREY, 0, 0, 0);
+  }, [0, -9, 0], 'ring');
+  k.cyl(1, 1, 7, 12, GREY, 0, -5, 0);                                           // the axle down to the ring's hub
+  return { ...k.build(), parts: [ring], size: 90 };
 }
+// A satellite: a gold-foiled body, two solar wings with cells, a dish, thrusters.
 function satellite(T) {
   const k = new Kit(T);
-  k.box(2, 2, 2, '#ffd54f', 0, 0, 0);
-  k.box(7, 0.08, 2, '#1a237e', 4.6, 0, 0); k.box(7, 0.08, 2, '#1a237e', -4.6, 0, 0);
-  k.cyl(0.05, 0.05, 1.6, 4, '#bdbdbd', 0, 1.6, 0); k.cone(0.9, 0.6, 12, '#eceff1', 0, -1.4, 0, { rx: Math.PI });
-  return out(k, { size: 16, spin: 0.3 });
+  k.box(2, 2.2, 2, '#c9a227', 0, 0, 0, { jitter: 0.02 });
+  k.box(2.05, 0.15, 2.05, '#9e9e9e', 0, 1.1, 0);
+  for (const s of [1, -1]) {
+    k.cyl(0.06, 0.06, 1.5, 6, '#bdbdbd', s * 1.75, 0, 0, { rz: Math.PI / 2 });
+    k.box(6.5, 0.06, 2.2, '#1a237e', s * 5.8, 0, 0);
+    for (let i = 1; i < 6; i++) k.box(0.05, 0.08, 2.2, '#9fa8da', s * (2.55 + i * 1.08), 0, 0);
+  }
+  k.cyl(0.05, 0.05, 1.2, 4, '#bdbdbd', 0, -1.6, 0); k.lathe([[0, 0], [0.9, 0.3], [1.0, 0.4]], 16, '#eceff1', 0, -2.4, 0, { rx: Math.PI });
+  for (const [x, z] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) k.cone(0.12, 0.3, 8, '#616161', x, 1.3, z);
+  k.sphere(0.12, '#ff1744', 0, 1.3, 0, { layer: 'glow', seg: 6, rings: 4 });
+  return out(k, { size: 16, spin: 0.15 });
 }
 
 // A meteorite's crater: a raised rim of thrown-up earth, a dark scorched
@@ -702,7 +1102,13 @@ function colony(T) {
   for (const [x, z, r] of [[0, 0, 7], [9, 4, 4.5], [-8, 5, 4], [3, -9, 5]]) { k.sphere(r, '#b3e5fc', x, 1, z, { layer: 'glass', sy: 0.7 }); k.cyl(r * 0.4, r * 0.4, r * 0.8, 10, '#eceff1', x, r * 0.5, z); }
   k.cyl(0.6, 0.8, 16, 8, '#cfd8dc', -11, 8, -6);
   for (let i = 0; i < 10; i++) k.sphere(0.35, '#ffe082', Math.cos(i) * 12, 1.6, Math.sin(i) * 12, { layer: 'glow', seg: 6, rings: 4 });
-  return out(k, { size: 36 });
+  // Gardens under the big dome, tunnels between domes, a solar farm, a landing pad, a rover.
+  for (let i = 0; i < 9; i++) k.ico(0.9, 0, '#43a047', Math.cos(i * 0.7) * 3.5, 1.8, Math.sin(i * 0.7) * 3.5, { jitter: 0.2 });
+  for (const [x, z] of [[9, 4], [-8, 5], [3, -9]]) { const L = Math.hypot(x, z) - 6; k.cyl(1.1, 1.1, L, 10, '#cfd8dc', x / 2, 1.4, z / 2, { rz: Math.PI / 2, ry: -Math.atan2(z, x) }); }
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 4; j++) k.box(2.4, 0.08, 1.4, '#1a237e', 18 + i * 2.7, 1.6, -8 + j * 1.8, { rz: -0.4 });
+  k.cyl(5, 5, 0.3, 24, '#9e9e9e', -20, 1.1, 8); k.torus(4, 0.15, '#ffeb3b', -20, 1.3, 8, { rx: Math.PI / 2, tseg: 32 });
+  k.box(2.4, 1, 1.5, '#eceff1', -14, 1.6, -14); for (const [x, z] of [[-13.2, -13.1], [-14.8, -13.1], [-13.2, -14.9], [-14.8, -14.9]]) k.cyl(0.35, 0.35, 0.3, 10, '#424242', x, 1.15, z, { rx: Math.PI / 2 });
+  return out(k, { size: 46 });
 }
 
 function alienShip(T) {
@@ -921,8 +1327,8 @@ export function modelKey(kind, p, id) {
   const c = classOf(kind);
   const parts = PROP_KEYS.map((k) => (p && p[k] !== undefined ? `${k}=${p[k]}` : '')).join('|');
   // People and trees vary by id (skin, hair, greens), the rest by colours only.
-  const vary = c === 'person' || b === 'tree' || b === 'pine' || b === 'bush' || b === 'rock' || b === 'asteroid' ? (hashOf(id) % 6) : 0;
-  return `${b}|${parts}|${vary}`;
+  const vary = c === 'person' ? (hashOf(id) % 24) : b === 'house' ? (hashOf(id) % 12) : b === 'car' ? (hashOf(id) % 63) : ['taxi', 'police_car', 'bus', 'truck'].includes(b) ? (hashOf(id) % 7) : b === 'tree' || b === 'pine' || b === 'bush' || b === 'rock' || b === 'asteroid' ? (hashOf(id) % 6) : 0;
+  return `${b}|${parts}|${vary}|d${DETAIL}`;
 }
 // The benin-warri template's properties that change a model.
 PROP_KEYS.push('radius', 'gates', 'shape', 'small');
@@ -982,8 +1388,8 @@ export function buildModel(T, kind, p = {}, id = '') {
     case 'car': return car(T, p, seed);
     case 'taxi': return car(T, p, seed, 'taxi');
     case 'police_car': return car(T, p, seed, 'police');
-    case 'bus': return bus(T, p);
-    case 'truck': return truck(T, p);
+    case 'bus': return bus(T, p, seed);
+    case 'truck': return truck(T, p, seed);
     case 'tractor': return tractor(T, p);
     case 'train': return train(T);
     case 'bike': return bike(T, p, seed);

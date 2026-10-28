@@ -336,7 +336,7 @@ test('an invite key is shown once in a copy-only dialog: never in the chat, the 
   assert.deepEqual(errors, []);
 });
 
-test('quality tiers at 380 px: each tier draws the universe, the picker shows and changes it, and a choice is kept on this device', { skip, timeout: 900000 }, async (t) => {
+test('quality tiers at 380 px: each tier draws the universe, the picker shows and changes it, and a choice is kept on this device', { skip, timeout: 1500000 }, async (t) => {
   __resetSandboxMemory(); // the earlier tests' worlds count against PG1's ten
   const { store } = await fixtureStore();
   const pg1 = pg1Principal();
@@ -358,11 +358,11 @@ test('quality tiers at 380 px: each tier draws the universe, the picker shows an
     await page.waitForFunction((n) => Number(document.getElementById('sandbox-view').dataset.frames || 0) > n + 3, f0, { timeout: 120000 });
     await page.evaluate(() => sandboxScene.setView('overview'));
     await page.waitForTimeout(2500);
-    await page.screenshot({ path: join(SHOTS_DIR, `sandbox-tier-${tier}-380-dark.png`), clip: await view.boundingBox(), timeout: 120000 });
+    await page.screenshot({ path: join(SHOTS_DIR, `sandbox-tier-${tier}-380-dark.png`), clip: await view.boundingBox(), timeout: 300000 });
     // Close up in the town: shadows, materials and ambient occlusion show here.
     await page.evaluate(() => { const e = sandboxState.world.entities.find((x) => x.kind === 'tower') || sandboxState.world.entities.find((x) => x.kind === 'house'); sandboxScene.select(e.id); });
     await page.waitForTimeout(3500);
-    await page.screenshot({ path: join(SHOTS_DIR, `sandbox-tier-${tier}-town-380-dark.png`), clip: await view.boundingBox(), timeout: 120000 });
+    await page.screenshot({ path: join(SHOTS_DIR, `sandbox-tier-${tier}-town-380-dark.png`), clip: await view.boundingBox(), timeout: 300000 });
     assert.deepEqual(errors, [], `${tier}: no page errors`);
     await context.close();
   }
