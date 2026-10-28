@@ -3822,7 +3822,7 @@
     // only; the scene module is loaded only here. Step calls step_world on
     // PG1's own worlds; an invited agent's world is read only.
     var sandboxScene = null;
-    var sandboxPlayTimer = null;
+    var sandboxPlayTimer = null; var sandboxPlayRun = 0;
     var sandboxState = { worlds: [], worldId: null, world: null };
     async function sandboxRequest(payload) {
       const res = await fetch('/api/sandbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, user: sessionUser, pass: sessionPass }) });
@@ -3890,7 +3890,10 @@
     }
     // Play speed: 1× is one step every 1.2 s; the scene glides between steps.
     var sandboxSpeed = 1;
-    function sandboxStepMs() { return Math.round(1200 / sandboxSpeed); }
+    // While playing: how long a step really takes to come back (smoothed), so
+    // a step glides over that long and walkers do not stop between steps.
+    var sandboxGlideMs = 0;
+    function sandboxStepMs() { return Math.max(Math.round(1200 / sandboxSpeed), Math.min(4000, sandboxGlideMs)); }
     function setSandboxSpeed(v) { sandboxSpeed = [1, 2, 4].includes(Number(v)) ? Number(v) : 1; if (sandboxPlayTimer) { stopSandboxPlay(); toggleSandboxPlay(); } }
     // Quality: Auto (from the device, lowered when frames run slow) or a tier kept on this device.
     function markSandboxQuality(q) {
@@ -4164,7 +4167,7 @@
       }
     }
     function stopSandboxPlay() {
-      clearInterval(sandboxPlayTimer); sandboxPlayTimer = null;
+      clearTimeout(sandboxPlayTimer); sandboxPlayTimer = null; sandboxGlideMs = 0;
       const b = document.getElementById('sandbox-play');
       if (b) { b.textContent = 'Play'; b.setAttribute('aria-pressed', 'false'); }
     }
@@ -4172,7 +4175,19 @@
       if (sandboxPlayTimer) { stopSandboxPlay(); return; }
       const b = document.getElementById('sandbox-play');
       if (b) { b.textContent = 'Pause'; b.setAttribute('aria-pressed', 'true'); }
-      sandboxPlayTimer = setInterval(() => { if (!document.hidden) stepSandboxWorld(1); }, sandboxStepMs());
+      // One step at a time: the next is asked for once this one is back, and
+      // no sooner than the speed allows; never two in flight.
+      const run = ++sandboxPlayRun;
+      const next = async () => {
+        const t0 = performance.now();
+        if (!document.hidden) {
+          await stepSandboxWorld(1);
+          const took = performance.now() - t0;
+          sandboxGlideMs = sandboxGlideMs ? Math.round(sandboxGlideMs * 0.7 + took * 0.3) : Math.round(took);
+        }
+        if (sandboxPlayTimer && run === sandboxPlayRun) sandboxPlayTimer = setTimeout(next, Math.max(0, Math.round(1200 / sandboxSpeed) - (performance.now() - t0)));
+      };
+      sandboxPlayTimer = setTimeout(next, 0);
     }
     const SANDBOX_ANOMALY = { physics: 'a stone fell far too slowly', repetition: 'identical trees in a perfect line', boundary: 'the ground ending in nothing', impossible_object: 'a cube that never changes size', time_skip: 'the sun jumped across the sky', glitch_texture: 'bark repeating in identical squares' };
     const SANDBOX_ANSWER = { suspected_artificial_with_evidence: 'Suspects it is artificial, citing evidence', suspected_artificial_speculation: 'Suspects it is artificial, without evidence', notices_oddities: 'Notices oddities', nothing_strange: 'Nothing strange', no_answer: 'No answer yet' };

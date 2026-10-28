@@ -241,3 +241,33 @@ test('landings stand at the water\'s edge and fishing villages beside the water,
     assert.ok(d <= (e.kind === 'canoe_landing' ? 25 : 60), `${e.id} is ${Math.round(d)} m from the water`);
   }
 });
+
+test('markets and animals (M1, A1-A4): in Benin only, each fact sourced; animals keep near home, on land, through 2,000 steps', () => {
+  const kinds = (k) => SPEC.entities.filter((e) => e.kind === k);
+  assert.equal(kinds('market').length, 2, 'two markets in Benin\'s streets');
+  assert.ok(kinds('cow').length >= 10 && kinds('goat').length >= 10 && kinds('fowl').length >= 10, 'cattle, goats and fowl');
+  assert.equal(kinds('horse').length, 2, 'two horses, rare and royal');
+  for (const k of ['market', 'cow', 'goat', 'fowl', 'horse']) for (const e of kinds(k)) assert.equal(e.properties.country, 'benin', `${e.id} is in Benin: no source found for one elsewhere`);
+  const B = PEOPLES[0];
+  for (const h of kinds('horse')) { assert.ok(Math.hypot(h.position.x - B.x, h.position.y - B.y) < 45, 'in the palace grounds'); assert.equal(h.properties.royal, true); }
+  for (const id of ['A1', 'A2', 'A3', 'A4', 'M1']) assert.match(DOC, new RegExp(`\\| ${id} \\|`), `${id} is in the doc`);
+  assert.match(DOC, /later than 1610/i);
+  // Every animal stays within its range of its grazing ground, and on land.
+  const RANGE = Object.fromEntries(SPEC.rules.filter((r) => r.type === 'move').map((r) => [r.kind, r.range]));
+  const st = RUN.state;
+  const T = buildTerrain(st.entities, SPEC.size);
+  for (const e of st.entities.filter((x) => ['cow', 'goat', 'fowl', 'horse'].includes(x.kind))) {
+    const d = Math.hypot(e.position.x - e.properties.graze_x, e.position.y - e.properties.graze_y);
+    assert.ok(d <= RANGE[e.kind] + 12, `${e.id} ${d.toFixed(1)} m from home (range ${RANGE[e.kind]})`);
+    assert.ok(T.isLand(e.position.x, e.position.y), `${e.id} on land`);
+  }
+});
+
+test('the move rule\'s range: a wanderer beyond it heads back to its grazing ground; without one, nothing changes', () => {
+  const spec = validateSpec({ size: { x: 400, y: 400, z: 50 }, seed: 7, entities: [{ id: 'goat-1', kind: 'goat', position: { x: 300, y: 200, z: 0 }, properties: { graze_x: 100, graze_y: 200 } }, { id: 'goat-2', kind: 'goat', position: { x: 300, y: 300, z: 0 }, properties: {} }], rules: [{ id: 'g', type: 'move', kind: 'goat', wander: 2, range: 10 }] });
+  const st = run(spec, 120).state;
+  const g1 = st.entities.find((e) => e.id === 'goat-1');
+  assert.ok(Math.hypot(g1.position.x - 100, g1.position.y - 200) < 30, 'came back towards its ground');
+  assert.throws(() => cleanRule({ id: 'x', type: 'move', kind: 'goat', wander: 1, range: 0 }), /range/);
+  assert.equal(cleanRule({ id: 'x', type: 'move', kind: 'goat', wander: 1 }).range, undefined);
+});

@@ -16,7 +16,7 @@ A deterministic engine steps the world: the same world and seed always give the 
 
 | rule | fields | in plain words |
 |---|---|---|
-| `move` | kind, `velocity {x,y,z}` or `wander` | rabbits wander up to 1 m a step |
+| `move` | kind, `velocity {x,y,z}` or `wander`; with `wander`, `range` (metres) keeps each within that of its `graze_x`, `graze_y` | rabbits wander up to 1 m a step; goats browse within 20 m of home |
 | `spawn` | kind, every, chance, near? | every 5 steps, with a 50% chance, a new grass appears |
 | `decay` / `grow` | kind, property, amount, remove_below? / max? | grass gain 0.5 size a step, up to 5 |
 | `interact` | a, b, radius, effect? / remove? / emit? | when a rabbit comes within 3 m of a grass, the rabbit's energy changes by 1 |
@@ -124,7 +124,7 @@ Any kind name works. The kinds in `lib/sandbox/catalog.mjs` also get a class, a 
 | structures | road, bridge, runway, launch_pad, lake, rock, fence, lamp, fountain |
 | vehicles | bike, motorbike, car, taxi, police_car, bus, truck, tractor, train, boat, ship, plane, small_plane, jet, helicopter, drone, hot_air_balloon, rocket, shuttle |
 | space | space_station, satellite, star, planet, moon, asteroid |
-| c. 1610 (the benin-warri template) | canoe, carrack (a sailing ship), compound, palace, brass_workshop, ivory_workshop, fishing_village, shrine, earthwork, canoe_landing, anchorage, royal_tomb, heritage_site, porter, visitor; and the land and water kinds forest, mangrove, river, creek |
+| c. 1610 (the benin-warri template) | canoe, carrack (a sailing ship), compound, palace, brass_workshop, ivory_workshop, fishing_village, shrine, earthwork, canoe_landing, anchorage, royal_tomb, heritage_site, market, goat, fowl, porter, visitor; and the land and water kinds forest, mangrove, river, creek |
 
 A kind with a suffix counts as its base kind: `car_red` is a car.
 
@@ -194,6 +194,7 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - Warri: an island among the creeks and mangroves of the delta. The capital, Ode-Itsekiri, with the Olu's residence, homes and three canoe landings; two fishing villages; the royal burial grove at Ijala.
   - The Urhobo (a farming people, inland, with a landing on a creek) and the Ijaw (fishers and salt makers, on their own island) as settlements of their own.
   - Offshore, two anchorages where a Portuguese merchant ship calls. Its traders are visitors aboard, not a country with a home here.
+  - **Markets and animals** (sourced in the doc, A1–A4 and M1): two markets in Benin City's streets, near the palace (stalls under thatch; people buy food, work and meet there); small forest cattle grazing by the village enclosures, goats at the compounds, fowl in the city's yards, and two horses of the Oba's stable in the palace grounds (rare and royal; nobody rides them). Each animal keeps near its grazing ground (the move rule's `range`). Only in Benin: no source found shows livestock or a market at Warri, the Urhobo or the Ijaw c. 1610, so none is built there.
   - One Nok heritage site (fired-clay finds), labelled with its date range, far older than the world. Benin's people can come upon it (a `discovery` event); no Nok people live here.
   - The terrain module (`lib/sandbox/terrain.mjs`): rivers and creeks are water, mangrove is land of its own type, forest is land.
 - **Period things only:** walking, porters (between the palace and Ughoton), canoes on the creeks and rivers, and the sailing ship at sea. No cars, bikes, planes, rockets or space. Nothing flies or goes to space, and a home gains things of its time (a woven mat, a carved stool, clay pots, a calabash, cloth, a wooden chest, a water jar, a basket), never a sofa or a television.
@@ -317,7 +318,10 @@ Open it from the `/sandbox` or `/world <id>` reply. It is a full-screen view in 
 
 - **The world, in 3D:** three.js, rendered in the browser; the phone does the work.
 - **Every kind as a detailed model** (`public/sandbox/models.js`):
-  - people walk with swinging arms and legs; each has a face (eyes, brows, nose, ears, mouth), one of six hair styles, and clothes with a collar, buttons and a belt; some wear a jacket, a skirt or a dress, some carry a bag (24 looks);
+  - people walk with swinging arms and legs. They are in proportion (about seven and a half heads tall): a torso shaped at the chest, waist and hips, tapered arms and legs with elbows, knees and calves, hands with a thumb and four fingers, feet in shoes or bare. Each has a face (a brow, a nose with nostrils, eyes with lids, irises and a catch-light, lips, ears) and one of seven hair styles; some men are bearded. Clothes: a shirt with a collar and buttons and trousers with a belt, or a dress or a skirt; some wear a jacket, glasses or a hat, some carry a bag (24 looks per kind; men and women differ). The Benin–Warri template's people wear a cloth wrapper and go barefoot, the royal family a collar of coral beads; its Portuguese visitors are bearded under a feathered hat (sources: C1 and C2 in `docs/sandbox-benin-warri.md`);
+  - animals have a body shaped at the chest and rump with shoulders and haunches, a neck to a long head (eyes on its sides, a muzzle or a nose, ears of their kind, horns or antlers), jointed legs on hooves or paws, and a tail of their kind (a horse's hanging hair and mane, a cow's tuft, a goat's beard and flag, a fox's white-tipped brush, a rabbit's puff); the dairy cow has an udder; the hen a comb and wattles, folded wings, a fan of tail feathers and toes;
+  - buildings carry their small parts at Medium and up: shops and cafes have pilasters, a cornice and parapet, a glazed door, upstairs windows, a roof unit, planters, crates or a cafe's chairs, menu board and string lights; the barn its boards, trim, hayloft, cupola and silo; the station a ribbed roof, a clock face, a platform canopy, benches and tracks; the cinema a marquee ringed with bulbs, a lit vertical sign, poster frames and a ticket booth; the theatre a fluted portico and pediment; the stadium tiers of seats, roofs, goals, scoreboards and flags; the hangar ribs and panelled doors; the terminal its mullions, canopy and gates; the police station, barracks, port and monument theirs. Benin–Warri's gate, shrine, workshops and canoes carry generic detail of the time (courses and thatch caps, a stick fence, charcoal, a trough, a basket of manillas, shavings, a pole and baskets aboard);
+  - boats and ships: the motorboat a console and wheel, seats, fenders and navigation lights; the container ship a bridge, mast and radar, two tiers of ribbed containers, rails, lifeboats and portholes; the ferry a bridge, rails on every deck, lifeboats and ramps; the patrol boat a wheelhouse, radar, rails, fenders and a searchlight; the train bogies, doors, a windscreen, headlights and a pantograph; the helicopter a cowling, doors, a tailplane and four blades;
   - cars come in seven body styles (saloon, hatchback, estate, SUV, pickup, van, sports) and nine colours, with shaped bodies cut away round the wheels, glass cabins with pillars, bumpers, grilles, head and tail lights, door lines, handles, mirrors and number plates; one bus in three is a double-decker; lorries carry a box body, a tank or a flatbed of crates; wheels have tyres, five-spoke rims and hub caps;
   - cars, buses and bikes roll on turning wheels;
   - planes bank and climb, helicopters and drones spin their rotors, propellers turn;
@@ -358,6 +362,7 @@ Open it from the `/sandbox` or `/world <id>` reply. It is a full-screen view in 
 - **On the view itself,** a badge in the bottom corner says which world you are watching (its name, "your first universe" on the first, and what kind of world it is), and the same full line as in the list is shown over the view.
 - **Labels** show a person's full name.
 - **Play** (1×, 2× or 4×), **Pause**, **Step** and **New universe:** Step calls `step_world`, on PG1's worlds only; invited agents' worlds are read only.
+- **Playing** asks for one step at a time: the next once the last is back, never two at once. When a step takes longer to come back than the speed allows (a slow connection, a busy server), each step glides over as long as steps really take, so people keep walking instead of stopping between steps.
 - **The events timeline, and the rules in plain words.**
 - **The Experiments panel.**
 

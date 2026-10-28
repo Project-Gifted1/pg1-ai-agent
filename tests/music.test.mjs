@@ -28,7 +28,7 @@ import { execFileSync } from 'node:child_process';
 import { TASKS, DATA, planRoute, resolveKeys, ENGINE_LABELS, __resetRouterState, isTripped } from '../lib/aiRouter.mjs';
 import { UPSTREAM_BRAND_RE } from '../lib/upstreamFailure.mjs';
 import { GEMINI_API, REPLICATE_API } from '../lib/film/providers.mjs';
-import { estimateMusic } from '../lib/music/pipeline.mjs';
+import { estimateMusic, EXPORT_PARTS } from '../lib/music/pipeline.mjs';
 import {
   generateMusic, musicPlan, musicClipPlan, lyriaClipModel, musicCallUsd, musicPrompt, elevenLabsWav, lyriaRequestBody, LICENCE_NOTES, ELEVENLABS_MUSIC_URL, MUSIC_SAMPLE_RATE
 } from '../lib/music/engines.mjs';
@@ -559,6 +559,7 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
     return workerMain(workerEnv, { fetchImpl, log: quiet, sleep: noSleep, probe, run: fakeRun(calls, { pad }) });
   };
   const track = async (id) => (await db.query('select * from pg1_music_tracks where id = $1', [id])).rows[0];
+  const byPart = (a, b) => EXPORT_PARTS.indexOf(a.meta.part) - EXPORT_PARTS.indexOf(b.meta.part);
   const assets = async (id) => (await db.query('select * from pg1_music_assets where track_id = $1 order by created_at', [id])).rows;
   const money = (n) => (Math.round(Number(n) * 100) / 100).toFixed(2);
 
@@ -681,7 +682,8 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
     assert.ok(names.some((n) => /README\.md$/.test(n)));
     // One stems_zip row per file, told apart by meta.part (the applied
     // migration's kinds are not changed).
-    const parts = (await assets(id)).filter((x) => x.kind === 'stems_zip' && x.status === 'ok');
+    // Rows written in the same millisecond tie on created_at: put them in part order.
+    const parts = (await assets(id)).filter((x) => x.kind === 'stems_zip' && x.status === 'ok').sort(byPart);
     assert.deepEqual(parts.map((x) => x.meta.part), ['master', 'drums', 'bass', 'vocals', 'other', 'midi', 'midi', 'readme', 'zip']);
     assert.ok(parts.every((x) => vault.has(x.storage_path)), 'each file uploaded on its own');
     assert.equal(money(t.spent_usd), '0.12', 'the export spends nothing');
@@ -722,7 +724,7 @@ describe('/music end to end (real Postgres, stand-in engines and worker tools)',
     const t = await track(id);
     assert.equal(t.status, 'done');
     assert.equal(t.stems_path, null, 'no zip');
-    const parts = (await assets(id)).filter((x) => x.kind === 'stems_zip' && x.status === 'ok').map((x) => x.meta.part);
+    const parts = (await assets(id)).filter((x) => x.kind === 'stems_zip' && x.status === 'ok').sort(byPart).map((x) => x.meta.part);
     assert.deepEqual(parts, ['master', 'drums', 'bass', 'vocals', 'other', 'midi', 'midi', 'readme']);
     assert.ok([...vault.keys()].every((k) => !k.endsWith('.zip')));
     const card = await musicCard(store, t);
