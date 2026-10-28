@@ -115,7 +115,7 @@ async function shot(page, name) {
   await page.screenshot({ path: join(SHOTS_DIR, `sandbox-look-${name}-${TAG}-380-dark.png`), clip: await view.boundingBox(), timeout: 180000 });
 }
 
-test('the look at 380 px: overview, following a car, a plane landing, the harbour, the town at night; Cinematic and its screenshot', { skip, timeout: 1500000 }, async (t) => {
+test('the look at 380 px: overview, following a car, a plane landing, the harbour, the town at night; Cinematic and its screenshot', { skip, timeout: 2400000 }, async (t) => {
   __resetSandboxMemory();
   const store = createSandboxStore();
   const pg1 = pg1Principal();
@@ -213,7 +213,9 @@ async function exploreShore(page) {
 async function expectShotButton(page) {
   const btn = page.locator('#sandbox-shot');
   assert.equal(await btn.isVisible(), true, 'the screenshot button shows in 3D');
-  const [download] = await Promise.all([page.waitForEvent('download', { timeout: 120000 }), btn.click()]);
+  // Clicked without Playwright's wait for the button to hold still over
+  // animation frames: in Cinematic on CI's software GPU a frame takes seconds.
+  const [download] = await Promise.all([page.waitForEvent('download', { timeout: 600000 }), btn.dispatchEvent('click')]);
   assert.match(download.suggestedFilename(), /^simulation-.+-step-\d+\.png$/);
   const stamped = await page.evaluate(() => {
     const url = sandboxScene.screenshot();
