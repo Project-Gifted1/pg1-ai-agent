@@ -106,7 +106,9 @@ test('effects: a meteorite strike (streak, flash, shockwave, dust, a crater that
   const { server, origin } = await startServer(store);
   const browser = await chromium.launch({ args: GL });
   t.after(async () => { await browser.close(); await new Promise((r) => server.close(r)); __setSandboxViewerStore(null); });
-  const { page, errors } = await signedInPage(browser, origin, { tier: 'high' });
+  // Medium: on a software-rendered GPU (CI) High draws about a frame a second,
+  // and the dust takes some 450 frames to settle.
+  const { page, errors } = await signedInPage(browser, origin, { tier: 'medium' });
   await openWorld(page, uni.id, 20);
   if (await page.locator('#sandbox-view').getAttribute('data-renderer') !== 'webgl') { t.skip('no WebGL'); return; }
   await frames(page, 4);
