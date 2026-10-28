@@ -107,7 +107,7 @@ async function settle(page, ms) {
 // Waits for n more frames (the camera eases over a few dozen; frames are slow in software).
 async function frames(page, n, extraMs = 500) {
   const f0 = await framesNow(page);
-  await page.waitForFunction(([a, k]) => Number(document.getElementById('sandbox-view').dataset.frames || 0) >= a + k, [f0, n], { timeout: 240000 });
+  await page.waitForFunction(([a, k]) => Number(document.getElementById('sandbox-view').dataset.frames || 0) >= a + k, [f0, n], { timeout: 600000 });
   await page.waitForTimeout(extraMs);
 }
 async function shot(page, name) {
@@ -115,7 +115,7 @@ async function shot(page, name) {
   await page.screenshot({ path: join(SHOTS_DIR, `sandbox-look-${name}-${TAG}-380-dark.png`), clip: await view.boundingBox(), timeout: 180000 });
 }
 
-test('the look at 380 px: overview, following a car, a plane landing, the harbour, the town at night; Cinematic and its screenshot', { skip, timeout: 2400000 }, async (t) => {
+test('the look at 380 px: overview, following a car, a plane landing, the harbour, the town at night; Cinematic and its screenshot', { skip, timeout: 3000000 }, async (t) => {
   __resetSandboxMemory();
   const store = createSandboxStore();
   const pg1 = pg1Principal();
@@ -183,7 +183,8 @@ test('the look at 380 px: overview, following a car, a plane landing, the harbou
     await settle(cin.page, 2000);
     assert.ok(Number(await cin.page.locator('#sandbox-view').getAttribute('data-lamps')) > 50, 'street lamps along the roads');
     await cin.page.evaluate(() => sandboxScene.setView('overview'));
-    await frames(cin.page, 30);
+    // Fewer frames in Cinematic: on CI's software GPU each takes seconds.
+    await frames(cin.page, 12);
     await expectShotButton(cin.page);
     await shot(cin.page, 'cinematic');
     // By day for the explore shot (that world is at night now): a second universe at step 20.
@@ -194,20 +195,20 @@ test('the look at 380 px: overview, following a car, a plane landing, the harbou
     const cin2 = await signedInPage(browser, origin, { tier: 'cinematic' });
     await openWorld(cin2.page, uni2.id, 20);
     await settle(cin2.page, 1500);
-    await exploreShore(cin2.page);
+    await exploreShore(cin2.page, 12);
     await shot(cin2.page, 'explore-cinematic');
     assert.deepEqual(cin2.errors, [], 'no page errors exploring in Cinematic');
     await cin2.context.close();
   }
 });
 
-async function exploreShore(page) {
+async function exploreShore(page, n = 25) {
   await page.evaluate(() => {
     const lake = sandboxState.world.entities.find((x) => x.kind === 'lake');
     const r = Number(lake.properties.radius) || 100;
     sandboxScene.exploreAt(lake.position.x - r - 16, lake.position.y - 6, 8);
   });
-  await frames(page, 25);
+  await frames(page, n);
 }
 
 async function expectShotButton(page) {
