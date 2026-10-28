@@ -55,6 +55,9 @@ function hall(k, L, D, x, z, h = 3.2, ry = 0) {
   for (let t = -L / 2 + 2; t < L / 2 - 1; t += 4) { const oz = D / 2 + 0.01; k.box(0.9, 2.1, 0.05, '#2a1d12', x + t * c + oz * sn, 1.05, z - t * sn + oz * c, g); }
 }
 const out = (k, extra) => ({ ...k.build(), parts: [], ...extra });
+// Small detail (Medium and up), as models.js's setModelDetail.
+let DETAIL = 2;
+export function setPeriodDetail(d) { DETAIL = d >= 2 ? 2 : 1; }
 
 export function periodModel(T, Kit, kind, p = {}, seed = 0) {
   const k = new Kit(T);
@@ -95,10 +98,26 @@ export function periodModel(T, Kit, kind, p = {}, seed = 0) {
         for (const sx of [-1, 1]) { k.box(0.9, 0.3, 0.6, '#3e2723', sx * 1.9, 0.3, 0); k.cyl(0.06, 0.06, 0.9, 6, WOOD, sx * 1.9, 0.7, 0); }
         for (let i = 0; i < 5; i++) k.lathe([[0, 0], [0.18, 0.02], [0.22, 0.3], [0.2, 0.34]], 10, '#4e342e', -3 + i * 0.6, 0, 2.6);
         for (let i = 0; i < 4; i++) k.box(0.6, 0.5, 0.5, '#8d6e63', 2.5 + (i % 2) * 0.8, 0.25, -2.5 + Math.floor(i / 2) * 0.8);
+        if (DETAIL >= 2) {
+          // Heaps of charcoal, a trough of water, a rack of tongs, a stool,
+          // a basket of brass manillas (B6).
+          for (const [x, z] of [[-3.8, -2.6], [-3, -3.2]]) k.cone(0.7, 0.6, 9, '#212121', x, 0.3, z, { jitter: 0.25 });
+          k.box(1.6, 0.4, 0.6, WOOD, 3.6, 0.2, 2.6); k.box(1.4, 0.05, 0.45, '#3a5f78', 3.6, 0.38, 2.6, { layer: 'glass' });
+          k.box(2, 0.1, 0.1, WOOD_D, -4.9, 1.6, 0); for (let i = 0; i < 4; i++) k.box(0.04, 0.9, 0.04, '#424242', -4.85, 1.15, -0.7 + i * 0.45);
+          k.cyl(0.25, 0.25, 0.35, 8, WOOD, 1.2, 0.18, 1.3);
+          k.lathe([[0, 0], [0.4, 0.04], [0.45, 0.35]], 12, '#a1887f', 4.3, 0, -0.6, { open: true });
+          for (let i = 0; i < 6; i++) k.torus(0.12, 0.03, '#c9a227', 4.3 + Math.cos(i) * 0.15, 0.32, -0.6 + Math.sin(i) * 0.15, { rx: Math.PI / 2 + 0.4 * (i % 3), tseg: 10, rseg: 4 });
+        }
       } else {
         k.box(3, 0.8, 1.2, WOOD, 0, 0.4, 0); for (let i = 0; i < 3; i++) k.cyl(0.08, 0.14, 1.4, 8, '#f3ead7', -0.8 + i * 0.8, 0.9, 0.1, { rz: Math.PI / 2 - 0.2 });
         for (let i = 0; i < 4; i++) k.cyl(0.13, 0.2, 1.8, 10, '#efe6d2', -3.5, 0.2 + i * 0.32, -2 + i * 0.25, { rz: Math.PI / 2, ry: 0.2 });
         for (let i = 0; i < 5; i++) k.box(0.3, 0.02, 0.04, '#9e9e9e', 1.6, 0.82, -0.4 + i * 0.2);
+        if (DETAIL >= 2) {
+          // A mat with shavings, stools, a rack of finished pieces under cloth.
+          k.box(3.4, 0.02, 2.4, '#c8a96b', 0, 0.02, 2.6); for (let i = 0; i < 14; i++) k.box(0.08, 0.02, 0.04, '#f3ead7', -1.4 + (i * 0.37) % 2.8, 0.04, 1.8 + (i * 0.53) % 1.6, { ry: i });
+          for (const x of [-1.8, 1.8]) k.cyl(0.25, 0.25, 0.35, 8, WOOD, x, 0.18, 1.2);
+          k.box(2.4, 1.2, 0.5, WOOD, 3.5, 0.6, 3.2); k.box(2.3, 0.05, 0.45, '#e8d9c4', 3.5, 1.22, 3.2);
+        }
       }
       return out(k, { size: 14 });
     }
@@ -136,6 +155,13 @@ export function periodModel(T, Kit, kind, p = {}, seed = 0) {
       k.prism([[-1.8, 0], [1.8, 0], [0, 1.1]], 4, THATCH, 0, 2, 0, { ry: Math.PI / 2 });
       k.box(2.2, 0.9, 1.4, EARTH, 0, 0.45, 0); k.box(2, 0.15, 1.2, '#e0d6c2', 0, 0.98, 0);
       for (let i = 0; i < 3; i++) k.lathe([[0, 0], [0.12, 0.03], [0.15, 0.15], [0.1, 0.26]], 8, '#6d4127', -0.6 + i * 0.6, 1.05, 0);
+      if (DETAIL >= 2) {
+        // A ridge to the thatch, a low fence of sticks round it, a mat before the altar.
+        k.cyl(0.08, 0.08, 4.2, 6, THATCH_D, 0, 3.1, 0, { rz: Math.PI / 2 });
+        for (let i = 0; i < 28; i++) { const a = (i / 28) * Math.PI * 2; k.cyl(0.025, 0.03, 0.7, 4, WOOD_D, Math.cos(a) * 2.6, 0.35, Math.sin(a) * 2.2); }
+        k.box(1.6, 0.02, 1, '#c8a96b', 1.9, 0.02, 0);
+        for (const z of [-0.45, 0.45]) k.lathe([[0, 0], [0.16, 0.04], [0.2, 0.22], [0.12, 0.36]], 8, '#7a4a2a', 0.9, 0, z);
+      }
       return out(k, { size: 5 });
     }
     case 'canoe_landing': {
@@ -209,6 +235,14 @@ export function periodModel(T, Kit, kind, p = {}, seed = 0) {
       for (const z of [-3.6, 3.6]) k.box(0.25, 5, 7, WOOD, 0.4, 2.5, z * 0.98, { ry: z > 0 ? -1.2 : 1.2 });   // the doors, open
       for (const [x, z] of [[-3, 10], [-3, 12.5], [-5.5, 10], [-5.5, 12.5]]) k.cyl(0.1, 0.1, 2.4, 6, WOOD_D, x, 1.2, z);
       k.prism([[-1.8, 0], [1.8, 0], [0, 1.1]], 3.6, THATCH, -4.25, 2.4, 11.25, { ry: Math.PI / 2 });
+      if (DETAIL >= 2) {
+        // Courses in the walls with thatch caps, planks and bars on the doors,
+        // the trodden way through, a bench and a water pot in the shelter.
+        for (const z of [-7, 7]) { for (let i = 1; i < 5; i++) k.box(6.04, 0.07, 1.24, EARTH_D, 0, i * 1.1, z + Math.sign(z) * 1.2); k.box(6.4, 0.3, 1.8, THATCH, 0, 5.65, z + Math.sign(z) * 1.2, { jitter: 0.1 }); }
+        for (const z of [-3.6, 3.6]) for (const y of [1, 2.5, 4]) k.box(0.3, 0.2, 6.8, WOOD_D, 0.55, y, z * 0.98, { ry: z > 0 ? -1.2 : 1.2 });
+        k.box(14, 0.03, 4, '#8a6a46', 0, 0.02, 0);
+        k.box(2, 0.12, 0.5, WOOD, -4.25, 0.5, 12.3); k.lathe([[0, 0], [0.22, 0.05], [0.28, 0.25], [0.15, 0.45]], 10, '#7a4a2a', -3.4, 0, 10.4);
+      }
       return out(k, { size: 18 });
     }
     case 'canoe': {
@@ -217,6 +251,14 @@ export function periodModel(T, Kit, kind, p = {}, seed = 0) {
       k.box(6.4, 0.08, 0.62, '#3e2723', 0, 0.62, 0);
       for (const x of [-2, -0.6, 0.8, 2.2]) k.box(0.12, 0.06, 0.6, '#8d6e63', x, 0.6, 0);
       for (const [x, z] of [[-1.2, 0.35], [1.4, -0.35]]) { k.box(1.6, 0.04, 0.05, '#5d4037', x, 0.72, z, { ry: 0.3 }); k.box(0.4, 0.03, 0.16, '#5d4037', x + 0.9, 0.72, z + 0.25, { ry: 0.3 }); }
+      if (DETAIL >= 2) {
+        // A rim along the hull, the grain of the wood, a pole, baskets and a bundle aboard.
+        for (const z of [0.31, -0.31]) k.box(6.2, 0.07, 0.07, '#4e342e', 0, 0.66, z);
+        for (let i = 0; i < 6; i++) k.box(5.6 - i * 0.4, 0.015, 0.02, '#5a3d26', 0, 0.12 + i * 0.07, i % 2 ? 0.3 : -0.3);
+        k.cyl(0.03, 0.03, 4.2, 5, '#8d6e63', 0.4, 0.75, 0.2, { rz: Math.PI / 2, ry: 0.05 });
+        for (const x of [-0.2, 0.5]) k.lathe([[0, 0], [0.18, 0.02], [0.22, 0.25], [0.2, 0.28]], 9, '#b08a4e', x, 0.62, -0.05, { open: true });
+        k.box(0.6, 0.25, 0.4, '#d7c8a8', -2.6, 0.7, 0, { jitter: 0.1 });
+      }
       return { ...k.build(), parts: [], size: 8 };
     }
     case 'carrack': {
