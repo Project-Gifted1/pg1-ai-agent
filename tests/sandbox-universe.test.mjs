@@ -88,7 +88,8 @@ test('roam keeps a town moving; a rocket carries its crew to space and back; rid
       { id: 'crew-walks', type: 'travel', kind: 'astronaut' }
     ]
   });
-  const { state, events } = run(spec, 120);
+  // A launch, a stay at the station and a landing take a few hundred steps.
+  const { state, events } = run(spec, 300);
   assert.ok(events.some((e) => e.kind === 'space' && e.ref === 'r'), 'the rocket reached space');
   assert.ok(events.some((e) => e.kind === 'reentry' && e.ref === 'r'), 'and came back down');
   assert.deepEqual(at(state, 'crew').position, at(state, 'r').position, 'the crew rides with the rocket');
@@ -186,7 +187,8 @@ test('blind: the subject can get into a car, ride it somewhere, see height and s
   assert.equal(act(spec, o.state, 'leave', {}, { anomalies: [] }).text.split('\n')[0], 'You are not inside anything.');
   // Up in the rocket, into space.
   let s2 = act(spec, null, 'enter', { thing: 'rocket' }, { anomalies: [] });
-  for (let i = 0; i < 2; i++) s2 = act(spec, s2.state, 'go', { place: 'ring of metal' }, { anomalies: [] });
+  // A launch, not a jump: up through the sky a step at a time.
+  for (let i = 0; i < 80 && !/the sky is black/.test(s2.text); i++) s2 = act(spec, s2.state, 'go', { place: 'ring of metal' }, { anomalies: [] });
   assert.match(s2.text, /the sky is black and full of unblinking stars/);
   assert.match(act(spec, s2.state, 'leave', {}, { anomalies: [] }).text, /It is a long way down/);
   for (const t of [o.text, s2.text]) assert.equal(containsBanned(t), false, t);
