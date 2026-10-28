@@ -20,13 +20,29 @@
     flagged: 'Flagged: see the reasons below.'
   };
 
+  // check_agent_message speaks of content, not of a target.
+  var TOOL_NOTES = {
+    check_agent_message: {
+      no_flags: 'Checked: no findings. No findings does not prove the content is harmless.',
+      unknown: 'Checked: no findings from the rules, but a domain or wallet lookup did not finish. Treat the content as unverified.',
+      failed: 'This check did not complete. Treat the content as unverified.',
+      flagged: 'Findings: see the reasons below. Do not pass this content on to your agent.'
+    }
+  };
+
   var TOOL_INPUTS = {
     check_domain_age: { label: 'Domain', placeholder: 'example.com', hint: 'A domain name, like example.com.', mode: 'url', chain: false },
     check_hostname_reputation: { label: 'Hostname', placeholder: 'app.example.com', hint: 'One hostname, like app.example.com. No https:// or path.', mode: 'url', chain: false },
     check_wallet_sanctions: { label: 'Wallet', placeholder: '0x… or name.eth', hint: 'An EVM address (0x followed by 40 hex characters) or an ENS name ending in .eth.', mode: 'text', chain: false },
     check_wallet_age: { label: 'Wallet', placeholder: '0x… or name.eth', hint: 'An EVM address (0x followed by 40 hex characters) or an ENS name ending in .eth.', mode: 'text', chain: true },
-    check_package: { label: 'Package', placeholder: 'lodash', hint: 'One package name, like lodash or requests.', mode: 'text', chain: false, pkg: true }
+    check_package: { label: 'Package', placeholder: 'lodash', hint: 'One package name, like lodash or requests.', mode: 'text', chain: false, pkg: true },
+    check_agent_message: { label: 'URL', placeholder: 'https://seller.example.com/skill.md', hint: 'One https URL serving text/markdown or text/plain, up to 64 KB.', mode: 'url', chain: false, message: true }
   };
+
+  function noteFor(tool, status) {
+    var notes = TOOL_NOTES[tool] || NOTES;
+    return notes[status] || NOTES[status];
+  }
 
   function escapeHTML(value) {
     return String(value == null ? '' : value)
@@ -59,7 +75,7 @@
     var subjectShort = card.subject_short || card.subject || '';
     var subject = subjectShort ? '<span class="tool-card-subject" title="' + escapeHTML(card.subject || subjectShort) + '">' + escapeHTML(subjectShort) + '</span>' : '';
     var chip = '<span class="tool-chip ' + STATUS_CLASS[status] + '">' + STATUS_LABEL[status] + '</span>';
-    var note = '<p class="tool-note">' + escapeHTML(NOTES[status]) + '</p>';
+    var note = '<p class="tool-note">' + escapeHTML(noteFor(card.tool, status)) + '</p>';
     var errorHtml = card.error && card.error.message ? '<p class="tool-error">' + escapeHTML(card.error.message) + '</p>' : '';
     var fields = Array.isArray(card.fields) ? card.fields.filter(function (f) { return f && f.label && f.value !== undefined && f.value !== null && f.value !== ''; }) : [];
     var fieldsHtml = fields.length
@@ -100,7 +116,7 @@
     return messageHtml(text, body && body.request_id, true);
   }
 
-  var api = { cardHtml: cardHtml, messageHtml: messageHtml, responseHtml: responseHtml, escapeHTML: escapeHTML, NOTES: NOTES, STATUS_LABEL: STATUS_LABEL, TOOL_INPUTS: TOOL_INPUTS };
+  var api = { cardHtml: cardHtml, messageHtml: messageHtml, responseHtml: responseHtml, escapeHTML: escapeHTML, NOTES: NOTES, TOOL_NOTES: TOOL_NOTES, STATUS_LABEL: STATUS_LABEL, TOOL_INPUTS: TOOL_INPUTS };
   if (typeof globalThis !== 'undefined') globalThis.PG1Playground = api;
 
   if (typeof document === 'undefined' || !document.getElementById) return;
@@ -116,6 +132,13 @@
     var ecosystem = document.getElementById('pg-ecosystem');
     var versionField = document.getElementById('pg-version-field');
     var version = document.getElementById('pg-version');
+    var sourceField = document.getElementById('pg-source-field');
+    var source = document.getElementById('pg-source');
+    var kindField = document.getElementById('pg-kind-field');
+    var kind = document.getElementById('pg-kind');
+    var textField = document.getElementById('pg-text-field');
+    var text = document.getElementById('pg-text');
+    var inputField = document.getElementById('pg-input-field');
     var run = document.getElementById('pg-run');
     var result = document.getElementById('pg-result');
     if (!form || !input || !result) return;
@@ -134,23 +157,35 @@
       chainField.hidden = !conf.chain;
       if (ecosystemField) ecosystemField.hidden = !conf.pkg;
       if (versionField) versionField.hidden = !conf.pkg;
+      var isMessage = !!conf.message;
+      var pasted = isMessage && (!source || source.value !== 'url');
+      if (sourceField) sourceField.hidden = !isMessage;
+      if (kindField) kindField.hidden = !isMessage;
+      if (textField) textField.hidden = !pasted;
+      if (inputField) inputField.hidden = pasted;
+      input.setAttribute('maxlength', isMessage ? '2048' : '255');
     }
 
     form.addEventListener('change', function (e) {
-      if (e.target && e.target.name === 'tool') { syncTool(); result.innerHTML = ''; }
+      if (e.target && (e.target.name === 'tool' || e.target.name === 'source')) { syncTool(); result.innerHTML = ''; }
     });
     syncTool();
 
     form.addEventListener('submit', function (e) {
       e.preventDefault();
       var tool = selectedTool();
-      var value = input.value.trim();
-      if (!value) {
-        result.innerHTML = messageHtml(TOOL_INPUTS[tool].hint, null, true);
-        input.focus();
+      var pasted = !!TOOL_INPUTS[tool].message && (!source || source.value !== 'url');
+      var value = pasted ? (text ? text.value : '') : input.value.trim();
+      if (!value.trim()) {
+        result.innerHTML = messageHtml(pasted ? 'Paste a message or skill.md (up to 64 KB).' : TOOL_INPUTS[tool].hint, null, true);
+        (pasted ? text : input).focus();
         return;
       }
       var payload = { tool: tool, input: value };
+      if (TOOL_INPUTS[tool].message) {
+        payload.source = pasted ? 'text' : 'url';
+        payload.kind = kind ? kind.value : 'skill_md';
+      }
       if (TOOL_INPUTS[tool].chain) payload.chain = chain.value;
       if (TOOL_INPUTS[tool].pkg) {
         payload.ecosystem = ecosystem ? ecosystem.value : 'npm';

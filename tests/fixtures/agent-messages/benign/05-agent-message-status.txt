@@ -1,0 +1,7 @@
+Task 7f3c2a update: the dataset export finished at 14:02 UTC.
+
+- 18,442 rows written to s3://example-bucket/exports/2026-10-28/part-0001.parquet (12.4 MB)
+- 0 rows rejected
+- checksum sha256: 3b139e7fce1af42a65163e87c9c2c4914225a07c13069cf750b0d17fd8c7da73
+
+Next step on our side is the weekly report. No action is needed from you; we will message again when the report is ready.

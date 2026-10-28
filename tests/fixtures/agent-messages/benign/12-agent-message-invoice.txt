@@ -1,0 +1,6 @@
+Invoice INV-2026-1043 from DataBridge Analytics
+
+Service: 30 days of the enrichment API (October 2026)
+Calls: 61,200 at 0.0005 USDC = 30.60 USDC
+
+This was already settled per call over x402, so there is nothing to pay. This message is only a monthly statement for your records. The receipts are listed at https://billing.databridge-analytics.com/statements/INV-2026-1043.

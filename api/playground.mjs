@@ -1,4 +1,4 @@
-// POST /api/playground {tool, input, chain?} - the public tools playground.
+// POST /api/playground {tool, input, chain?, ecosystem?, version?, source?, kind?} - the public tools playground.
 //
 // Runs one always-free check (lib/playground.mjs PLAYGROUND_TOOLS) through
 // the shared read-only tool runner and answers with the result card the
@@ -22,13 +22,13 @@
 
 import crypto from 'node:crypto';
 import { recordToolError } from './mcp.mjs';
-import { createToolExecutor } from '../lib/chatTools.mjs';
+import { createToolExecutor, PAGE_ONLY_TOOLS } from '../lib/chatTools.mjs';
 import { getRequestIdentifier } from '../lib/freeTier.mjs';
 import { recordTelemetry, callerHash, outcomeTelemetryStatus } from '../lib/telemetry.mjs';
 import { callerKindOf } from '../lib/ownTraffic.mjs';
 import { resolveEnsName } from '../lib/ens.mjs';
 import {
-  validatePlaygroundRequest, toolArgs, createPlaygroundLimiter, limitMessage, playgroundCard, MESSAGES
+  validatePlaygroundRequest, toolArgs, createPlaygroundLimiter, limitMessage, playgroundCard, MESSAGES, AGENT_MESSAGE_TOOL
 } from '../lib/playground.mjs';
 
 export const config = { maxDuration: 30 };
@@ -48,7 +48,8 @@ function send(res, status, payload, requestId) {
 function parseBody(req) {
   const b = req.body;
   if (b && typeof b === 'object') return b;
-  if (typeof b === 'string' && b.length <= 4096) {
+  // Up to the agent message check's 64 KB of text, JSON-escaped.
+  if (typeof b === 'string' && b.length <= 400000) {
     try { return JSON.parse(b); } catch { return null; }
   }
   return null;
@@ -104,7 +105,9 @@ export function createPlaygroundHandler({
       // The visitor key, never the raw IP, is what the tool's own limiter
       // and log see. An ENS name is resolved inside the executor, with the
       // same lookup the chat uses (lib/ens.mjs).
-      const execute = createToolExecutor({ role: 'guest', identifier: `playground:${limiter.visitorKey(ip)}`, route: ROUTE, record, resolveEns, ...executorOptions });
+      // check_agent_message may fetch a URL (6 s) and then look up what it
+      // names (4 s), so it gets a longer budget than the 10 s default.
+      const execute = createToolExecutor({ role: 'guest', identifier: `playground:${limiter.visitorKey(ip)}`, route: ROUTE, record, resolveEns, allowTools: PAGE_ONLY_TOOLS, ...(valid.tool === AGENT_MESSAGE_TOOL ? { timeoutMs: 12000 } : {}), ...executorOptions });
       const outcome = await execute({ id: null, name: valid.tool, args: toolArgs(valid) });
       const card = playgroundCard(outcome);
       // A failed check is the caller's only when its input was refused
