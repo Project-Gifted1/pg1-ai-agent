@@ -97,7 +97,7 @@ const happen = (page, entity, ev) => page.evaluate(([en, e]) => {
   sandboxState.world = w; sandboxScene.update(w, { duration: 1200 });
 }, [entity, ev]);
 
-test('effects: a meteorite strike (streak, flash, shockwave, dust, a crater that stays), a splash, sparks, a flare and a battle in space', { skip, timeout: 1800000 }, async (t) => {
+test('effects: a meteorite strike (streak, flash, shockwave, dust, a crater that stays), a splash, sparks, a flare and a battle in space', { skip, timeout: 2400000 }, async (t) => {
   __resetSandboxMemory();
   const store = createSandboxStore();
   const pg1 = pg1Principal();
@@ -124,7 +124,9 @@ test('effects: a meteorite strike (streak, flash, shockwave, dust, a crater that
   await frames(page, 6); await shot(page, 'streak');
   await frames(page, 10); await shot(page, 'flash');
   await frames(page, 30); await shot(page, 'dust');
-  await page.waitForFunction(() => Number(document.getElementById('sandbox-view').dataset.effects) === 0, null, { timeout: 600000 });
+  // The dust settles over some 450 frames: with the other browser tests running
+  // alongside on CI's software GPU that can take well over ten minutes.
+  await page.waitForFunction(() => Number(document.getElementById('sandbox-view').dataset.effects) === 0, null, { timeout: 1500000 });
   await shot(page, 'crater');
   // Sparks on a craft, a splash at sea, a flare, a battle: each plays and ends.
   for (const [ent, ev] of [
