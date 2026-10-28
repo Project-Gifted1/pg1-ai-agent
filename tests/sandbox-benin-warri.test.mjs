@@ -69,6 +69,10 @@ test('period things only: no cars, bikes, planes, rockets or space, at the start
     assert.ok(!SPEC.entities.some((e) => e.kind === k), `no ${k} at the start`);
     assert.ok(!RUN.kinds.has(k), `no ${k} after 2,000 steps`);
   }
+  // Nothing in the air or in space, no talk of flights, and nothing modern bought for a home.
+  assert.ok(![...RUN.kinds].some((k) => ['air', 'space'].includes(catalogFor(k).domain)), 'nothing flies');
+  assert.deepEqual(RUN.events.filter((e) => /\b(flight|flights|flew|airport|runway|plane|rocket|space)\b/i.test(e.summary)).map((e) => e.summary).slice(0, 3), []);
+  assert.deepEqual(RUN.events.filter((e) => e.kind === 'bought' && /sofa|television|desk|lamp|bookshelf|mirror|dining set|car\b/.test(e.summary)).map((e) => e.summary).slice(0, 3), []);
   for (const k of ['canoe', 'carrack', 'compound', 'palace', 'brass_workshop', 'ivory_workshop', 'canoe_landing', 'fishing_village', 'royal_tomb', 'earthwork', 'porter']) assert.ok(SPEC.entities.some((e) => e.kind === k), k);
   // Technology stays at its time; a per-world rule can let it move on.
   const life = SPEC.rules.find((r) => r.type === 'life');

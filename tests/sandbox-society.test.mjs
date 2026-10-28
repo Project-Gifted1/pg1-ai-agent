@@ -72,7 +72,8 @@ test('leisure, shows, police and prisons, and every inhabitant\'s words stay fre
   const { notable, routine } = fromEvents(LIVE.events, byId);
   assert.ok(notable.some((r) => r.action === 'birth' && r.actor_type === 'inhabitant'));
   assert.ok(!notable.some((r) => ['travel', 'leisure', 'talk', 'meal', 'shower'].includes(r.action)), 'routine actions are never records of their own');
-  assert.ok(Object.values(routine).some((c) => c.travel > 0 && c.leisure > 0));
+  assert.ok(Object.values(routine).some((c) => c.travel > 0), 'travel counted');
+  assert.ok(Object.values(routine).some((c) => c.leisure > 0), 'leisure counted');
 });
 
 test('countries are where their islands are', () => {
@@ -182,6 +183,6 @@ test('other civilisations are hard to meet: no contact without an expedition get
   const contacts = Object.values(LIVE.state.society).flatMap((s) => s.contacts);
   assert.deepEqual(contacts, [], 'no contact in four thousand steps');
   const far = UNI.entities.filter((e) => e.kind === 'alien_world');
-  assert.equal(far.length, 2);
-  for (const w of far) assert.ok(w.position.z >= 9800 && (w.position.x > 11000 || w.position.y < 500), 'at the very edge of the sky');
+  assert.equal(far.length, 4, 'four far worlds (cosmos.mjs), from far ahead of the inhabitants to far behind');
+  for (const w of far) assert.ok(w.position.z >= 9800 && (w.position.x > 11000 || w.position.x < 500) && (w.position.y > 7500 || w.position.y < 500), 'at the very edge of the sky, in a corner of the world');
 });

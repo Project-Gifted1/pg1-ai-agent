@@ -25,6 +25,7 @@ A deterministic engine steps the world: the same world and seed always give the 
 | `condition` | kind, `if {property, op, value}`, then? / remove? / emit? | when a rabbit's energy > 8, its mood becomes "happy" |
 | `travel` | kind, speed?, roam? (up to 12 kinds) | cars drive to their target at up to 90 m a step, then pick a house, shop or tower to go to next |
 | `orbit` | kind, around? | planets circle what their `orbits` property names |
+| `cosmos` | conflict? (false), hazards? (true) | other civilisations live their own lives, and crews in space meet radiation belts, flares and meteoroids (see **The wider cosmos**) |
 
 **Travel.** An entity with a `target` (another entity's id), or `target_x` / `target_y` / `target_z`, heads there at its speed. That is the rule's `speed`, else its own `speed` property, else the catalogue's.
 
@@ -45,6 +46,20 @@ A deterministic engine steps the world: the same world and seed always give the 
   - People walk on the pavements and footpaths; bikes ride roads and paths.
   - **A trip to another island** goes to this island's harbour or airport, boards a ferry or plane there (as a rider, `inside`), and gets off at the other end. With no link, it is refused with a plain `trip_refused` event. A ferry or plane waits at each harbour or airport for a turnaround (10 steps, about an hour) so that passengers can board, then goes on.
 - **Water** (boats, ferries, ships, patrol boats) **never enters land.** Boats sail round the islands with A* on a coarse sea grid (with the rivers and creeks), cached per world, and berth at a harbour's water side.
+- **Nothing passes through anything else** (`lib/sandbox/watchdog.mjs`). Every boat, vehicle, person and animal has a body (a person about 0.6 m across, a car 4.5 m by 1.9 m, a ferry 40 m by 10 m). The whole of each step's move is checked, not only where it ends, so nothing is jumped over.
+  - **Vehicles queue:** a vehicle stops behind what is ahead of it in its lane and goes on when it moves. Cars in the other lane do not block it; a parked vehicle is in the way like anything else.
+  - **Traffic keeps moving:** a vehicle overtakes a much slower one going the same way, does not stop for people along a whole step's stretch (they step aside for it), and two vehicles in each other's way (at a junction, head on) do not wait for each other for ever: the earlier (by id) has the right of way, and after 3 steps a vehicle squeezes past others that are waiting too. Where a vehicle ends a step is always clear of everything. Near the end of its route it pulls in to park. Universe, steps 300–700: cars at 41 m a step on average, standing 37% of the time (without these rules: 20 m a step, 68%).
+  - **People and boats go round:** they step aside (people on land, boats on water), else wait.
+  - Alongside each other, the later one (by id) falls in behind. Someone at their door goes in.
+  - Something that has waited behind another for 12 steps drops its trip and chooses again.
+- **The watchdog** checks every thing that moves after every step, and puts right what is wrong:
+  - a position that is not a number, or outside the world;
+  - a ground thing on the water, a boat on land;
+  - a road vehicle off the road (onto the nearest road);
+  - two things on top of each other (moved apart, staying on land, water or road);
+  - something stuck (a trip, no progress for a day of steps), which drops its trip and chooses again.
+  - Anything really wrong is one `watchdog` event that step ("The watchdog put right: 2 back on the road"). Everyday crowding is fixed without an event.
+- Universe, 1,500 steps: boats, vehicles or people overlapping went from 2,912, 4,128 and 3,510 pair-steps to 0, 0 and 0.
 - **Roads are data:** `roads: { nodes: [[x, y]], edges: [[a, b, width, name]], names }` in the world spec, inside the existing size limit. An edge under 3.5 m wide is a footpath. Road entities (straight strips, and the streets a society builds) join the network too.
   - The town and the universe have a connected network per island: a ring road, the town's street grid, and roads to the harbour, airport or airstrip, every house row, the school, hospital, factory and launch pad. Buildings face the roads, set back from them.
 - **Flight** (plane, small plane, jet):
@@ -52,13 +67,43 @@ A deterministic engine steps the world: the same world and seed always give the 
   - climb out at about 7% (4 degrees) and cruise (airliners at 600 m, small planes 350 m, jets 1,200 m; always below the space altitude, and lower when the trip is short);
   - turn with a limited rate (and bank, in the viewer); join a straight final lined up with the destination runway; descend on a 3-degree glide path; touch down near the threshold (a `touchdown` event); roll out braking; taxi off to a stand beside the runway;
   - not lined up, too high or too long: a go-around, and another approach;
+  - an approach starts inside the world: from the end of the runway whose approach fits, slowing near the approach fix so the plane can turn onto it rather than circle it, and turning back before the edge of the world;
   - speed changes gradually; never steeper than 8% up or down.
   - Helicopters, drones and balloons climb and come down vertically, smoothly.
+  - **Never into a building:** a helicopter or drone flies at least 30 m above the tallest building along its way (towers are as tall as the viewer draws them: about 3.6 m a floor plus the roof and mast), climbs straight up to that height before going across, and comes down only once it is over where it is going, never below it (no overshoot). A helicopter lands on a hospital's or a tower's roof pad, and the universe's helicopter starts on the hospital roof. Universe and town, 2,000 steps: no helicopter or drone inside a building (main had drones flying into towers).
   - Every island country has a runway with a heading (Saltreach an airstrip).
+- **Rockets and shuttles** launch, they do not jump: from the pad straight up, speeding up (12 m a step, each step, up to 400 m a step), leaning over toward where they are going once 300 m up; they slow to arrive, dock within 60 m of a station and move with it, and stay 40 steps (fuelling on the pad, docked at the station) before going again. Coming down, they fly high over the pad and descend upright, slowing to a soft landing. Pad to station takes about 35 steps (on main it took one).
 - **Blind experiments** (`lib/sandbox/blind.mjs`): `go` uses the same rules, `move` stops at the water's edge ("Water stops you from going further that way."), and `leave` will not put the subject in the water.
 - **Worlds from before** keep working without a reset: on the first step, a ground thing standing on water is moved to the nearest point on its own island's coast, and a boat on land to the nearest water, each with one `terrain_fix` event (a black box record).
 - **The same every time, cache or no cache:** the next hop toward a goal comes from one search out from that goal (Dijkstra, ties by node), and a door is remembered only when it does not depend on who is asking. What the caches hold never changes an answer, so a world runs the same in a fresh process as in one that has already run it or other worlds. `tests/sandbox-same-routes.test.mjs` checks it.
 - **Step time:** the universe template runs at about 6.1 ms a step on the machine where it was measured (5.7 ms before these rules, the same machine).
+
+### Emergencies and the beach (`lib/sandbox/emergency.mjs`)
+
+Runs with the life rule, deterministically, with whatever a world has.
+
+- **Fires:** now and then a building catches fire (the life rule's `fire_rate`: the chance a building catches fire in a day, 0.0012 by default; three times that for factories).
+  - Everyone in it gets out, some hurt.
+  - The nearest free **fire engine on the same island** is called out: lights flashing and siren on, along the roads to the nearest point of the road to the fire. Its crew fight it from beside it, or with hose lines up to 300 m from where the road ends. Then it goes back to its station.
+  - With no fire engine (a period world, or none built yet), **the neighbours** come and fight it.
+  - A fire nobody reaches in time **badly damages** the building; it goes back to being built, and the builders rebuild it.
+- **Ambulances:** the nearest free ambulance on the same island collects someone hurt, lights and siren on, and drives them to hospital, where they are treated. With no ambulance they walk to the hospital, or rest at home for a day.
+- **Services:** the town has a fire station with two fire engines and an ambulance at its hospital. A country with 30 people and industrial technology builds a fire station; every fire station gets a fire engine and every hospital an ambulance. Firefighters and lifeguards are jobs.
+- **A day at the beach:** someone near a beach (within 800 m: a holidaymaker in the beach hotels, or a local), in daylight and outside working hours, may go for the day. They walk straight across open ground to a beach, a fountain or a monument, and keep to the plan unless something urgent comes up. There they:
+  - swim in the shallows (in the water on purpose, so the land and water rules leave them be);
+  - surf, sunbathe on a towel under an umbrella, play beach volleyball, build a sandcastle (children) or stroll by the water.
+- **Rescues:** now and then a swimmer gets into trouble. A lifeguard (or, with none, someone on the beach) swims out and brings them back, and some need a check-up from the ambulance. With nobody to help, they struggle back to shore exhausted. The rescuer is swimming only once in the water, stops whatever they were doing on the beach, and gives up after 60 steps if they cannot reach the swimmer (who then struggles in alone). Someone called away from the beach comes out of the water and the activity ends.
+- **On the water:** every beach in the universe has a lifeguard tower, and kayaks, a sailing boat and a jet ski off it; a yacht sails between Aurelia Harbour and the beaches.
+- **In a period world** (Benin–Warri): no fire engines, ambulances, umbrellas or jet skis. Fires are fought by neighbours; at the water people stroll or swim.
+- **Every fire, call-out, rescue and treatment** is an event, in the black box.
+- **In the viewer:**
+  - fire stations, fire engines (a ladder on the roof), ambulances and lifeguard towers;
+  - kayaks, sailing boats, jet skis and yachts;
+  - light bars flash red and blue while on a call;
+  - a burning building has flames over its roof, a column of smoke and a glow;
+  - people at the beach are posed: swimming (head and shoulders above the water, arms stroking), waving for help, lying on a towel, kneeling at a sandcastle, jumping for the ball, standing on a surfboard;
+  - someone hurt lies on the ground until help comes.
+- `tests/sandbox-emergency.test.mjs`.
 
 **Orbits.** An entity with `orbit_radius` circles the entity named by `orbits` once every `orbit_period` steps, starting at `orbit_phase`, `orbit_altitude` metres above it.
 
@@ -94,12 +139,13 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - cars, taxis, a police car, buses, trucks, bikes and motorbikes driving;
   - planes, a small plane, a helicopter, a balloon and a drone flying;
   - a rocket taking its crew of three to a station in orbit and back.
-- **universe (Pg1-Universe):** a 12 km × 8 km world of sea and four island countries, plus the space above it (627 things at the start, and a road network on each island):
+- **universe (Pg1-Universe):** a 12 km × 8 km world of sea and four island countries, plus the space above it (629 things at the start, and a road network on each island):
   - **Aurelia,** the town above on its island, with a harbour, a beach, a hotel, a cinema, a theatre, a bar, a stadium, an amusement park and an airport terminal;
   - **Maravia** (tropical, ruled by a council, with an airstrip), **Nordheim** (cold, a monarchy, with an airstrip) and **Saltreach** (maritime, a democracy, with an airstrip), each with its own houses, harbour, hotel, people, names and money;
   - ferries (Sea Swallow, Northern Star, Coral Queen) and an airliner (Maravia Air 7) between them; army trucks and navy patrols;
   - a star, four planets (one ringed, one with clouds), moons, an asteroid belt, a station and a shuttle;
-  - two far worlds of other civilisations (the Vel and the Oru) at the very edge of the sky, hard to reach.
+  - four far worlds of other civilisations at the very edge of the sky, hard to reach, from far beyond the inhabitants to far behind them: the Vel (far beyond interstellar travel), the Kesh (space colonies), the Oru (industry) and the Amaru (settlement);
+  - radiation belts round Thalassa and Zephyr, and round the home world above the space altitude.
 - **meadow:** the first starter world: grass, rabbits and a fox.
 - **benin-warri:** Benin and Warri c. 1610, **a simulation inspired by history; its inhabitants are fictional** (see **Benin–Warri c. 1610** below).
 
@@ -125,6 +171,11 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
 - **Law and order:** crime by the dishonest and the desperate; police arrests; prison terms; fines while there is no prison.
 - **Holidays:** by sea (harbour, ferry or ship, fare 15) and, once flight is known, by air (airport, plane, fare 40); hotel nights; coming home. Someone with a ticket who has reached the harbour or airport waits there for the next ship or plane. No holidays to a country at war with, or standing off with, their own.
 - **Entertainment:** cinema, theatre, bar, stadium matches and shows, the beach and the amusement park; they cost a little and lift the mood.
+- **Conversations:** people passing say a line now and then. Sometimes two who meet stop for a proper conversation: they stand about a metre apart and face each other, and take turns, each line answering the last (a question gets an answer). A conversation lasts 6 to 15 steps; when either has nothing new to say, or the time is up, they say goodbye and go on their way. It is ten times as likely when both are at the same place (a café, a beach, a shrine, a landing, home) as in passing, and more likely between friends, so people gather where they spend their time. Nobody stops to talk while riding in something, in prison, starving, exhausted or on the way to a trip abroad.
+  - **How they talk:** partners talk like partners ("What shall we have for dinner tonight?"), grown-ups to children as grown-ups do ("Have you done your chores?"), children like children ("Race you to the trees!"). Nothing is said twice in one conversation.
+  - **In a period world** (the life rule's `progress: false`, such as Benin–Warri c. 1610), nothing of a later time is said: no shops, taxes, factories or machines. They talk of what the world holds and the sources support: the fish and the canoes from Warri, the ship at the anchorage, the brass casters and ivory carvers, the salt drying, the farms, the rains.
+  - In 1,500 steps of the universe about 600 conversations; of Benin–Warri, about 1,500 (more people at home together). `tests/sandbox-social.test.mjs`.
+  - **In the viewer:** the two turn to face each other; the one speaking moves a hand as they talk, the one listening leans in and nods; what is said shows in a speech bubble over the speaker (with **Names** off too, then without the name).
 - **Technology:** research from scientists and schools, through seven levels (from tools to interstellar flight), unlocking cars, flight, rockets, colonies and deep-space expeditions.
 - **Research and development** (`lib/sandbox/research.mjs`): each country's research is shared once a day between six branches, by need: **energy** (fire, water wheels, coal and steam, electricity, oil and gas, nuclear fission, solar and wind; then fusion and antimatter), **industry** (tools to factories, assembly lines, chemistry, automation, robotics; then nanofabrication), **weapons** (spears and bows to gunpowder, rifles, artillery, aircraft and warships, missiles, a nuclear deterrent; then energy weapons and orbital defence), **medicine** (remedies, sanitation, vaccines, antibiotics, surgery, genetics; then gene therapy and regeneration), **computing** (counting boards, printing, the telegraph, radio, computers, the network, thinking machines; then quantum computing) and **materials** (stone and wood to steel, concrete, alloys, composites; then room-temperature superconductors). Today's science comes first, in our order; the future ones only after it. A country under threat or led by a hawk leans to weapons and pays for arms.
   - **Effects:** energy makes work richer and research faster; coal, oil and gas pollute (shortening lives by up to six years) until solar and wind clean it up; fission now and then has a reactor accident (a clean-up bill and more pollution). Industry and materials make building cheaper. Weapons make an army stronger in a war, and when both sides of a quarrel hold a nuclear deterrent, war becomes far less likely. Medicine adds years to lives. Computing speeds research.
@@ -145,7 +196,7 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - Offshore, two anchorages where a Portuguese merchant ship calls. Its traders are visitors aboard, not a country with a home here.
   - One Nok heritage site (fired-clay finds), labelled with its date range, far older than the world. Benin's people can come upon it (a `discovery` event); no Nok people live here.
   - The terrain module (`lib/sandbox/terrain.mjs`): rivers and creeks are water, mangrove is land of its own type, forest is land.
-- **Period things only:** walking, porters (between the palace and Ughoton), canoes on the creeks and rivers, and the sailing ship at sea. No cars, bikes, planes, rockets or space.
+- **Period things only:** walking, porters (between the palace and Ughoton), canoes on the creeks and rivers, and the sailing ship at sea. No cars, bikes, planes, rockets or space. Nothing flies or goes to space, and a home gains things of its time (a woven mat, a carved stool, clay pots, a calabash, cloth, a wooden chest, a water jar, a basket), never a sofa or a television.
 - **No church and no resident priest** in 1610: the sources found say there was none (see the doc).
 - **Two kingdoms:** Benin (the Oba, with chiefs at the palace) and Warri (the Olu), each with a royal house. The Urhobo and the Ijaw are each led by a head of the elders: a simulation mechanic, not a historical claim.
 - **The life rule** has two fields for a period world:
@@ -204,6 +255,33 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - blind-subject actions: at most 200 per run.
   - So about **150 MB plus 39 MB per invited key**, if every quota were used in full every day for six months.
 - `tests/sandbox-blackbox.test.mjs` fails if one simulated day of the universe writes more than 2,000 records.
+
+## The wider cosmos (the `cosmos` rule)
+
+`lib/sandbox/cosmos.mjs`. A simulation: rules and seeded dice, no AI engine; the same world and seed always give the same result. The cosmos rolls its own dice (from the seed and the step), so switching it on does not reshuffle the inhabitants' everyday lives; only what it does (a crater, a crew turned back) changes them. Whether a meteorite falls on land or water is decided by the world's own terrain (`terrain.mjs`).
+
+- **Other civilisations live lives of their own.** Each far world has a technology level on the inhabitants' own ladder, or beyond it (7, far beyond interstellar travel), set by the template or from the seed. They research and rise a level now and then (slowly: months of their days), and at space colonies found outposts of their own on unsettled worlds (two at most each). The events say "observed": the inhabitants do not know.
+- **They are met only when the inhabitants are ready** (`society.mjs`, unchanged here): by their own deep-space expedition, or by a visiting ship.
+- **They govern themselves:** each has a government (council, monarchy, democracy or collective) and a leader, a hawk, a dove or a pragmatist; leaders change in each one's own way (elections, rotation, a new consensus, a monarch's long reign); wealth and technology build their fleets.
+- **Between peoples who have met** (the inhabitants' countries and the civilisations they have contacted; two civilisations once both reach interstellar travel), the way the countries deal with each other: exchange of goods, learning, music and stories warms relations, and the less advanced side learns a little from the more advanced (research).
+- **Conflict, by the world's own rule** (`conflict: true`; on in the universe, so that peoples govern themselves fully): hawkish leaders, rivalry for the same worlds and incidents (the right to mine the asteroids) strain relations; at -60 a standoff, with envoys talking, doves and a friend of both mediating making peace likelier; after three days of talks, war only at the very worst (-85), with a hawk leading and fleets on both sides, a democracy less willing. A war is fought between ships in space, never on anyone's ground: clashes cost ships and crews (the inhabitants' losses are their astronauts), treasuries pay, weariness grows until an armistice, and the side that lost more pays reparations. Without the rule, peace only.
+- **The hazards of space** (`hazards: false` turns them off), for craft in space with people aboard:
+  - **radiation belts:** round the home world (a band above the space altitude) and round worlds with a belt (`belt_inner`, `belt_outer`, times the world's size);
+  - **solar flares:** every few days, for a while, a dose to everyone in space;
+  - **meteoroids:** in the asteroid field, damage to a craft.
+  - **meteorites:** every few days one strikes a moon or planet (a flash on its face), or the home world: never on a building or a person (at least 70 m from anything). On land it leaves a crater (at most eight; the oldest goes), at sea a splash; people nearby go to look, and scientists study what fell (research).
+  Shielding grows with technology. A crew's dose past a limit means radiation sickness (ill for a few days, never fatal here) and the craft turns back; a craft damaged past a limit turns back too, and is repaired at home.
+- **What you see when it happens** (`public/sandbox/effects.js`): the viewer plays each new event from the world's recent events, once.
+  - **A strike on land:** a glowing streak from the sky, a flash, a shockwave ring across the ground, a burst of debris and a dust cloud that drifts and settles. The crater stays: a raised rim, a dark bowl, rocks thrown round it.
+  - **At sea:** a streak and a column of spray.
+  - **On a moon or planet:** a flash on its face.
+  - **Meteoroids hitting a craft:** sparks. **A solar flare:** the sun pulses. **A battle in space:** lines of fire between the ships.
+  - Effects are drawn only, never stored, and fade in a few seconds; opening a world does not replay what already happened.
+- **What the inhabitants build** is unchanged: their countries grow, research and build by the life rule (homes, workplaces, roads, airfields, rockets, colonies), within the world's limits.
+- **Safety:** worlds stay data (rules and dice, no code, no agents); the hard limits hold (1,000 things, 256 KB, 100 steps a call), with outposts, craters and every event capped; wars are fought only between ships in space, never on the ground or against civilians, and only where a world's own rule allows them; everything is on the events log and every view says "Simulation".
+- **In the viewer:** the belts are faint glowing bands round their worlds.
+- **Sound** (`public/sandbox/sound.js`, `sound-ui.js`): **Sound** turns on the sound of the world, made in the browser (Web Audio; no recordings, nothing downloaded): wind, the surge of the sea on island worlds, the rumble of a town (more with more traffic, less at night), birds by day and crickets at night, the deep hum of space. **Voices:** people talking near where the camera looks are heard as speech (voiced syllables shaped by vowel resonances, in the rhythm of talk), more with more talkers, fading as the camera pulls back. A world without motor traffic (a period world such as Benin–Warri) is a **village**: no traffic rumble, but voices, birds and water. **Sirens** wail (two tones, hi-lo) when a fire engine or an ambulance on a call is near where the camera looks, louder the nearer; a **fire** nearby crackles; at a **beach** the surf is louder. **Music** adds a slow ambient score, its chords from a scale chosen by the world's own seed. Off until the person turns it on (browsers allow sound only after a tap); quiet when the tab is hidden or the Sandbox is closed; the volume and the music choice are remembered on this device.
+- Tests: `tests/sandbox-cosmos.test.mjs`, `tests/sandbox-sound.test.mjs`.
 
 ## Access: by invitation only
 
@@ -379,10 +457,16 @@ Every blind run, its world and its outputs are labelled **"SIMULATION — blind 
 
 - Without `confirm` it only describes what it would add.
 - With `confirm`, in place, it adds a connected road network to each island (its existing streets joined up, a ring road, a way in to every place) and a runway, with a heading, to each island country without one.
+- For a world made from a template (the universe or the town), it also adds what that template has gained since the world was made (`lib/sandbox/template-sync.mjs`), so an early world looks and behaves like a new one:
+  - every thing in the template that the world lacks, when the world has nothing of that kind (a fire station, lifeguard towers, kayaks), or when it is a fixture of the sky (another far world). Never a person or an animal: the inhabitants are the world's own;
+  - a new building that would stand where the world has built something since goes to the nearest clear spot on the same land, and what belongs to it moves with it. A thing whose beach, station or orbit the world lacks is left out;
+  - details the sky's fixtures lack (a far world's technology, a planet's radiation belt), never changing one they have;
+  - new rules, and the template's version of a travel rule that has changed (where helicopters may land).
+  The road network is planned again round everything, and every vehicle plans its route again. Running it again adds nothing.
 - It never removes, renames or moves a building, person or animal: a new road goes round an existing building instead. Vehicles that are not on a road are moved onto the nearest one (it says how many), since vehicles keep strictly to the roads.
 - It keeps the world id, tick, state, society, research, relations and treasuries, and writes one `upgrade_world` record on the black box long chain (who, when, what was added).
 - It must fit the world's entity and size limits; if it cannot, it refuses and says what to delete first.
-- `tests/sandbox-upgrade.test.mjs` upgrades a universe made by the earlier template (`tests/fixtures/sandbox-universe-v1.json`) after 1,200 ticks and checks that nothing else changed (only off-road vehicles moved, each onto a road), then that every vehicle position in 2,000 more steps is on a road.
+- `tests/sandbox-upgrade.test.mjs` upgrades a universe made by the earlier template (`tests/fixtures/sandbox-universe-v1.json`) after 1,200 ticks and checks that nothing else changed (only off-road vehicles moved, each onto a road), then that every vehicle position in 2,000 more steps is on a road. `tests/sandbox-template-sync.test.mjs` checks what a template adds.
 
 ## Commands (operator only)
 

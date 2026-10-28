@@ -13,6 +13,8 @@ const ADDONS = '/vendor/three/addons/postprocessing/';
 // A glow, not a surface: sprites, and see-through things that write no depth.
 const isFlat = (o) => o.isSprite || o.isPoints || (o.material && !Array.isArray(o.material) && o.material.transparent && o.material.depthWrite === false);
 
+const isFlat = (o) => o.isSprite || o.isPoints || (o.material && !Array.isArray(o.material) && o.material.transparent && o.material.depthWrite === false);
+
 export async function createPost(THREE, renderer, scene, camera, settings) {
   if (!settings || (settings.aa === 'none' && !settings.gtao && !settings.bloom && !settings.dof)) return null;
   const [{ EffectComposer }, { RenderPass }, { OutputPass }, { SMAAPass }, { UnrealBloomPass }, gtaoMod, taaMod, bokehMod] = await Promise.all([

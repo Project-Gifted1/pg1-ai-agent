@@ -31,6 +31,7 @@
 // camera and what is picked. Post-processing is post.js.
 
 import { buildModel, modelKey, baseKind, classOf, FIXED_KINDS, AIR_KINDS, HOME_KINDS, celestialSize, furnitureFor } from './models.js';
+import { PROP_KINDS } from './rescue-models.js';
 import { createEnvironment } from './environment.js';
 import { buildStreets } from './streets.js';
 import { buildCoast } from './coast.js';
@@ -40,6 +41,7 @@ import { Kit } from './kit.js';
 import { setModelDetail } from './models.js';
 import { buildSurface, surfaceKind } from './surface.js';
 import { createControls } from './controls.js';
+import { createEffects } from './effects.js';
 import { TIERS, TIER_SETTINGS, QUALITY_KEY, pickTier, createGovernor } from './quality.js';
 import { createPost } from './post.js';
 import { loadTextures, addSurfaceDetail } from './materials.js';
@@ -60,7 +62,11 @@ export function kindColor(kind) {
   for (const ch of String(kind || '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   return PALETTE[h % PALETTE.length];
 }
+// What talking and the cosmos add to what the viewer keeps.
+KEEP_PROPS.push('chat_with', 'sea', 'belt_inner', 'belt_outer');
 const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
+// Fires, sirens and the beach (rescue-models.js) add to what the viewer keeps.
+KEEP_PROPS.push('fire', 'siren', 'emergency', 'activity', 'swimming', 'injured', 'in_trouble', 'rescuing');
 
 export function normalizeWorld(w) {
   const world = w && typeof w === 'object' ? w : {};
@@ -326,6 +332,21 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   const blockedAt = (x, z) => (env.waterAt ? env.waterAt(x, z) : false) || (streets ? streets.covers(x, z) : false) || onFootprint(x, z) || Math.abs(x) > world.size.x / 2 + 400 || Math.abs(z) > world.size.y / 2 + 400;
   env.textures = textures;
   const glow = glowTexture(THREE);
+  // What happens, seen where it happens (effects.js): meteorites, sparks, flares, battles in space.
+  const effects = createEffects(THREE, scene, {
+    coarse,
+    where: (id) => {
+      if (id === '@star') { const st = world.entities.find((e) => e.base === 'star'); const m = st && movers.get(st.id); return m ? { pos: m.group.position.clone(), size: m.size / 2 } : null; }
+      const e = world.entities.find((x) => x.id === id);
+      if (!e) return null;
+      if (e.base === 'crater') return { pos: toScene(e, new THREE.Vector3()).setY(0.3), size: Number(e.props.radius) || 10, crater: true, sea: !!e.props.sea };
+      const m = movers.get(id);
+      if (m) return { pos: m.group.position.clone(), size: m.size || 4 };
+      const p = entityPos(id); return p ? { pos: p, size: sizeOf(id) } : null;
+    },
+    sky: () => centre().setY(world.spaceAlt * 1.25),
+    hold: (id, on) => { if (on) held.add(id); else held.delete(id); }
+  });
 
   const matBody = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.06 });
   const matGlass = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.75 });
@@ -368,10 +389,10 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   let tagsAt = 0; let tagList = [];
   const JOB_WORD = { soldier: 'soldier', leader: 'leader', farmer: 'farmer', shopkeeper: 'shopkeeper', driver: 'driver', builder: 'builder', teacher: 'teacher', police: 'police', engineer: 'engineer', doctor: 'doctor', scientist: 'scientist', pilot: 'pilot', astronaut: 'astronaut', retired: 'retired', unemployed: 'looking for work' };
   function updateTags(now) {
-    if (!showNames) { for (const t of tags) t.hidden = true; return; }
+    // With Names off, only what people are saying (speech bubbles).
     if (now - tagsAt > 200) {
       tagsAt = now;
-      tagList = [...movers.values()].filter((m) => m.e && m.e.cls === 'person' && m.group.visible && (!m.e.props.inside || movers.get(m.e.props.inside)?.seat))
+      tagList = [...movers.values()].filter((m) => m.e && m.e.cls === 'person' && m.group.visible && (showNames || m.e.props.saying) && (!m.e.props.inside || movers.get(m.e.props.inside)?.seat))
         .map((m) => ({ m, d: camera.position.distanceTo(m.group.position) })).filter((x) => x.d < 260).sort((a, b) => (b.m.e.props.saying ? 1 : 0) - (a.m.e.props.saying ? 1 : 0) || a.d - b.d).slice(0, TAG_MAX);
     }
     const r = container.getBoundingClientRect();
@@ -388,9 +409,9 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       if (placed.some(([px, py]) => Math.abs(px - sx) < 90 && Math.abs(py - sy) < 20)) { t.hidden = true; return; }
       placed.push([sx, sy]);
       t.hidden = false;
-      const name = `${p.name || e.id}${p.family ? ` ${p.family}` : ''}`;
+      const name = showNames ? `${p.name || e.id}${p.family ? ` ${p.family}` : ''}` : '';
       if (t.children[0].textContent !== name) t.children[0].textContent = name;
-      const job = e.base === 'child' ? `${Math.floor(p.age || 0)}` : JOB_WORD[p.job] || (e.base === 'alien' ? 'visitor' : '');
+      const job = !showNames ? '' : e.base === 'child' ? `${Math.floor(p.age || 0)}` : JOB_WORD[p.job] || (e.base === 'alien' ? 'visitor' : '');
       if (t.children[1].textContent !== job) t.children[1].textContent = job;
       const say = p.saying ? `“${p.saying}”` : '';
       if (t.children[2].textContent !== say) t.children[2].textContent = say;
@@ -408,6 +429,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   // (furnitureGroup is added below, once the materials exist.)
   let staticBoxes = []; // [{ id, box }]
   const movers = new Map(); // id -> mover
+  const held = new Set();   // ids kept out of sight for now (a crater until its meteorite lands)
   const geoCache = new Map();
   const orbitLines = new Map();
   let stepStart = performance.now(); let stepDur = 1200; let tickFrom = 0; let tickTo = 0;
@@ -517,6 +539,14 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       g.add(atmo);
     }
     if (e.props.clouds) { const cl = new THREE.Mesh(new THREE.SphereGeometry(size * 1.02, 40, 20), new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.25, roughness: 1, depthWrite: false })); cl.userData.spin = 0.05; g.add(cl); }
+    // A radiation belt (lib/sandbox/cosmos.mjs): a faint glowing band round the world's middle, where it is.
+    if (Number(e.props.belt_outer) > Number(e.props.belt_inner)) {
+      const ri = Number(e.props.belt_inner) * size; const ro = Number(e.props.belt_outer) * size;
+      const belt = new THREE.Mesh(new THREE.TorusGeometry((ri + ro) / 2, (ro - ri) / 2 * 0.55, 18, 96), new THREE.MeshBasicMaterial({ color: 0x7fd4ff, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+      belt.rotation.x = Math.PI / 2;
+      belt.scale.set(1, 1, 0.45);
+      g.add(belt);
+    }
     if (e.props.rings) {
       const rg = new THREE.RingGeometry(size * 1.4, size * 2.4, 96, 1);
       const uv = rg.attributes.uv; const pp = rg.attributes.position; const v = new THREE.Vector3();
@@ -581,6 +611,60 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     return farMesh;
   }
 
+  // What someone at the beach has with them (rescue-models.js props): a
+  // towel and umbrella, a surfboard, a sandcastle, a volleyball net. On the
+  // group, not the pose, so it stays on the sand while they lie or kneel.
+  function syncProp(m, e) {
+    const want = e.cls === 'person' ? PROP_KINDS[e.props.activity] || null : null;
+    if (m.propKind === want) return;
+    if (m.prop) { m.group.remove(m.prop); m.prop = null; }
+    m.propKind = want;
+    if (!want) return;
+    const pm = meshesOf(modelFor({ kind: want, props: {}, id: want }), false);
+    if (want === 'prop_volleyball') pm.position.set(0, 0, 0);
+    m.group.add(pm); m.prop = pm;
+  }
+
+  // Fire on a building (the engine's emergency.mjs): flames over its roof
+  // and a column of smoke, as big as the fire; gone when it is out.
+  const fires = new Map();
+  const smokeTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(255,255,255,0.8)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
+  function syncFires() {
+    const now = new Set();
+    for (const e of world.entities) {
+      const f = Number(e.props.fire) || 0;
+      if (f <= 0) continue;
+      now.add(e.id);
+      let F = fires.get(e.id);
+      if (!F) {
+        const sb = staticBoxes.find((b) => b.id === e.id);
+        const top = sb ? sb.box.max.y : 8;
+        const r = sb ? Math.max(3, Math.min(14, (sb.box.max.x - sb.box.min.x) / 2.5)) : 5;
+        const g = new THREE.Group(); toScene(e, g.position);
+        const flames = []; const smoke = [];
+        // Tongues of flame in layers: wide and red-orange at the roof, narrow and yellow higher up.
+        const nF = coarse ? 12 : 26;
+        for (let i = 0; i < nF; i++) { const lay = i / nF; const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: lay < 0.4 ? 0xff4a10 : lay < 0.75 ? 0xff8c1a : 0xffd54f, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })); sp.userData.base = new THREE.Vector3((Math.random() - 0.5) * r * 1.8 * (1 - lay * 0.6), top - 1 + lay * r * 1.6, (Math.random() - 0.5) * r * 1.8 * (1 - lay * 0.6)); sp.userData.size = 1.6 - lay * 0.8; sp.userData.ph = Math.random() * 6; g.add(sp); flames.push(sp); }
+        for (let i = 0; i < (coarse ? 10 : 22); i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, color: i % 2 ? 0x2b2b2b : 0x474747, transparent: true, depthWrite: false })); sp.userData.ph = i / (coarse ? 10 : 22); g.add(sp); smoke.push(sp); }
+        const light = new THREE.PointLight(0xff7a1a, 2, r * 8, 2); light.position.set(0, top + 3, 0); g.add(light);
+        scene.add(g);
+        F = { g, flames, smoke, top, r, light };
+        fires.set(e.id, F);
+      }
+      F.level = Math.min(1, f / 60);
+    }
+    for (const [id, F] of fires) if (!now.has(id)) { scene.remove(F.g); F.g.traverse((o) => { if (o.material) o.material.dispose(); }); fires.delete(id); }
+  }
+  function animateFires(now) {
+    for (const F of fires.values()) {
+      const L = 0.4 + 0.6 * (F.level || 0);
+      for (const sp of F.flames) { const k = 0.65 + 0.35 * Math.sin(now / 80 + sp.userData.ph * 5); sp.position.copy(sp.userData.base).add(tmpA.set(Math.sin(now / 230 + sp.userData.ph) * 0.4, Math.abs(Math.sin(now / 120 + sp.userData.ph)) * F.r * 0.3 * L, 0)); sp.scale.set(F.r * 1.3 * L * k * sp.userData.size, F.r * 2.2 * L * k * sp.userData.size, 1); sp.material.opacity = 0.9 * k; }
+      // Smoke: a thick column that rises, spreads and drifts downwind.
+      for (const sp of F.smoke) { const t = ((now / 7000) + sp.userData.ph) % 1; sp.position.set(Math.sin(sp.userData.ph * 20) * F.r * 0.5 + t * t * 25, F.top + F.r + t * 70 * L, Math.cos(sp.userData.ph * 20) * F.r * 0.5); sp.scale.setScalar(F.r * (1.6 + t * 5)); sp.material.opacity = 0.8 * Math.min(1, t * 6) * (1 - t) * (0.5 + 0.5 * L); }
+      F.light.intensity = 1.5 + Math.sin(now / 70) * 0.5;
+    }
+  }
+
   function syncMovers(duration) {
     const seen = new Set();
     for (const e of world.entities) {
@@ -606,8 +690,10 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         m.to = to;
       }
       m.e = e;
+      syncProp(m, e);
     }
     for (const [id, m] of movers) if (!seen.has(id)) { scene.remove(m.group); movers.delete(id); }
+    syncFires();
     stepDur = Math.max(200, duration || 1200);
     stepStart = performance.now();
     container.dataset.markers = String(world.entities.length);
@@ -914,6 +1000,21 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   if (io) io.observe(container);
   const onVis = () => schedule();
   document.addEventListener('visibilitychange', onVis);
+  function poseOf(m, e, now) {
+    const q = e.props; const inn = m.inner;
+    const arm = (role) => m.parts.find((x) => x.role === role);
+    inn.position.y = 0; inn.rotation.x = 0;
+    if (!(q.activity || q.injured || q.in_trouble || q.rescuing)) { if (m.posed) { inn.rotation.z = 0; m.posed = false; } return; }
+    m.posed = true;
+    if ((q.swimming && q.activity !== 'surf') || q.rescuing || q.in_trouble) {
+      inn.position.y = -1.2 + Math.sin(now / 400 + m.phase) * 0.06;
+      for (const [role, k] of [['armL', 0], ['armR', Math.PI]]) { const a = arm(role); if (a) a.node.rotation.z = q.in_trouble ? Math.PI * 0.9 + Math.sin(now / 120 + k) * 0.4 : now / 300 + k; }
+      inn.rotation.z = 0;
+    } else if (q.activity === 'surf') { inn.position.y = 0.1; inn.rotation.x = Math.sin(now / 500 + m.phase) * 0.12; }
+    else if (q.activity === 'sunbathe' || q.injured) { inn.rotation.z = -Math.PI / 2; inn.position.y = 0.2; }
+    else if (q.activity === 'sandcastle') { inn.position.y = -0.45; inn.rotation.z = 0.25; }
+    else if (q.activity === 'volleyball') { inn.position.y = Math.max(0, Math.sin(now / 260 + m.phase)) * 0.6; const a = arm('armR'); if (a) a.node.rotation.z = Math.PI * 0.8; }
+  }
   const running = () => visible && !document.hidden;
   const tmpA = new THREE.Vector3(); const tmpB = new THREE.Vector3(); const proj = new THREE.Vector3(); const tmpM4 = new THREE.Matrix4(); const tmpT = new THREE.Vector3();
 
@@ -940,7 +1041,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         }
         continue;
       }
-      m.group.visible = true;
+      m.group.visible = !held.has(m.id);
       // Along a curve through the last steps (Catmull-Rom), not a straight
       // line between two of them: a car rounds a corner, a plane turns.
       const span0 = m.prev ? m.prev.distanceTo(m.from) : 0; const span1 = m.from.distanceTo(m.to);
@@ -960,6 +1061,12 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         m.yaw += step;
         yawRate = dt > 0 ? step / dt : 0;
       }
+      // In a conversation, standing: turned to face the other.
+      const partner = !moving && e.props.chat_with ? movers.get(e.props.chat_with) : null;
+      if (partner) {
+        let d = Math.atan2(-(partner.pos.z - m.pos.z), partner.pos.x - m.pos.x) - m.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+        m.yaw += d * (1 - Math.exp(-dt * 4));
+      }
       m.group.position.copy(m.pos);
       if (!m.celestial) m.group.rotation.y = m.upright ? 0 : m.yaw;
       // Flyers pitch with the climb and lean into turns; ground vehicles stay level.
@@ -978,6 +1085,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       if (e.base === 'hot_air_balloon' || e.base === 'drone') m.inner.position.y = Math.sin(now / 1300 + m.phase) * (e.base === 'drone' ? 0.15 : 0.8);
       if (m.spin) m.group.rotation.y += m.spin * dt;
       if (m.celestial) m.group.traverse((o) => { if (o.userData.spin) o.rotation.y += o.userData.spin * dt; });
+      // Listening: a slight lean in and a nod now and then.
+      if (e.cls === 'person' && !flyer) m.inner.rotation.z = partner && !e.props.saying ? -0.05 + Math.max(0, Math.sin(now / 520 + m.phase)) * 0.06 : 0;
       const dist = speed * dt;
       m.phase += dt * Math.min(12, 2 + speed * 1.6);
       for (const p of m.parts) {
@@ -988,14 +1097,28 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
           case 'rotorZ': p.node.rotation.z += dt * ((moving || e.z > 0.5) ? 40 : 6); break;
           case 'propX': p.node.rotation.x += dt * ((moving || e.z > 0.5) ? 50 : 0); break;
           case 'legL': case 'legR': { const a = moving ? Math.sin(m.phase) * 0.55 : 0; p.node.rotation.z += ((p.role === 'legL' ? a : -a) - p.node.rotation.z) * Math.min(1, dt * 10); break; }
-          case 'armL': case 'armR': { const a = moving ? Math.sin(m.phase) * 0.45 : 0; p.node.rotation.z += ((p.role === 'armL' ? -a : a) - p.node.rotation.z) * Math.min(1, dt * 10); break; }
+          case 'armL': case 'armR': {
+            // Walking: arms swing. Speaking in a conversation: a hand raised and moving as they talk.
+            const talking = !moving && partner && e.props.saying;
+            const a = moving ? Math.sin(m.phase) * 0.45 : 0;
+            const goal = talking && p.role === 'armR' ? 0.9 + Math.sin(now / 260 + m.phase) * 0.35 : talking ? -0.15 : (p.role === 'armL' ? -a : a);
+            p.node.rotation.z += (goal - p.node.rotation.z) * Math.min(1, dt * 10);
+            break;
+          }
           case 'wingL': case 'wingR': { const a = Math.sin(m.phase * 2.5) * 0.7; p.node.rotation.x = p.role === 'wingL' ? a : -a; break; }
+          case 'beaconA': case 'beaconB': { const on = !!e.props.siren && (Math.floor(now / 260) % 2 === (p.role === 'beaconA' ? 0 : 1)); p.node.visible = on; break; }
           case 'flame': { const on = moving && (dy > 0.5 || e.z > 1); p.node.visible = on; if (on) { const s = 1 + Math.sin(now / 160) * 0.08; p.node.scale.set(1, s, 1); } break; }
           default: break;
         }
       }
+      // How someone is: swimming (only head and shoulders above the water,
+      // arms stroking; waving for help when in trouble), lying on a towel,
+      // kneeling at a sandcastle, jumping for the ball, standing on a
+      // surfboard, or lying hurt waiting for help.
+      if (e.cls === 'person') poseOf(m, e, now);
       // Far away, small things are not drawn (they would be under a pixel).
-      const camD = camera.position.distanceTo(m.group.position);
+      // A crater waits for its meteorite (effects.js): not drawn until then.
+      const camD = held.has(m.id) ? Infinity : camera.position.distanceTo(m.group.position);
       if (!m.celestial) m.group.visible = camD < Math.max(600, (m.size || 2) * 420);
       // Beyond the tier's detail distance (never the followed thing): the block.
       if (m.group.visible && m.far && !m.celestial && m.id !== selectedId && camD > Math.max(60, (m.size || 2) * settings.lod)) {
@@ -1033,7 +1156,10 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     const step = acc; acc = 0;
     if (lastRender) governor.sample(Math.min(1000, now - lastRender));
     lastRender = now;
+    animateFires(now);
     const tickF = animate(step, now);
+    effects.tick(step);
+    container.dataset.effects = String(effects.active);
 
     // Camera modes.
     if ((mode === 'follow' || mode === 'tour') && selectedId) {
@@ -1178,6 +1304,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       const ws = waterwaysSignature(world);
       if (ws !== waterSig) { waterSig = ws; if (waterGroup) { scene.remove(waterGroup); waterGroup.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); } waterGroup = buildWaterways(THREE, world, env.setupMaterial); if (waterGroup) scene.add(waterGroup); }
       syncMovers(duration);
+      if (world.id !== prevId) effects.reset();
+      effects.onWorld(next);
       syncOrbits();
       syncBelt();
       if (firstWorld) {
@@ -1229,6 +1357,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       env.dispose();
       scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); }); });
       for (const m of geoCache.values()) { for (const k of ['body', 'glow', 'glass']) m[k] && m[k].dispose(); for (const p of m.parts) for (const k of ['body', 'glow', 'glass']) p.geo[k] && p.geo[k].dispose(); }
+      effects.dispose();
       if (post) post.dispose();
       for (const d of [streets, coast, foliage]) if (d) d.dispose();
       closeSurface();

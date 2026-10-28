@@ -56,10 +56,25 @@ test('a universe from before the roads, 1,200 ticks in: upgraded in place, its p
   assert.ok(after.spec.roads && after.spec.roads.edges.length > 300, 'a road network');
   const runway = after.state.entities.find((e) => e.id === 'runway-saltreach');
   assert.ok(runway && typeof runway.properties.heading === 'number', 'a runway with a heading for Saltreach');
-  assert.equal(after.state.entities.length, before.state.entities.length + 1, 'only the runway is added');
+  // Added: the runway, and what the universe template has gained since the
+  // fixture was made (template-sync.mjs), never a person or an animal.
+  const fromTemplate = Object.values(out.added.template.things).reduce((a, b) => a + b, 0);
+  assert.equal(out.added.template.name, 'universe');
+  assert.equal(after.state.entities.length, before.state.entities.length + 1 + fromTemplate, 'only the runway and the template\'s new things are added');
+  const was = new Set(before.state.entities.map((e) => e.id));
+  for (const e of after.state.entities.filter((x) => !was.has(x.id) && x.id !== 'runway-saltreach')) assert.ok(!['person', 'child', 'astronaut', 'dog', 'cat', 'horse', 'cow'].includes(e.kind), `${e.id} is not an inhabitant`);
   // Nothing removed, renamed or moved, but for vehicles off the road, parked on
   // the nearest one; inhabitants, families, countries, treasuries, research identical.
-  const byId = new Map(after.state.entities.map((e) => [e.id, e]));
+  // (Each vehicle's route through the old road graph is dropped, and the sky's
+  // fixtures may gain a detail they lacked; nothing they had is changed.)
+  const ROUTE = ['rn', 'rp', 'rg'];
+  const plain = (e) => { const p = { ...e.properties }; for (const k of ROUTE) delete p[k]; return { ...e, properties: p }; };
+  const details = new Set(out.added.template.details);
+  const byId = new Map(after.state.entities.map((e) => {
+    const b = before.state.entities.find((x) => x.id === e.id);
+    if (b && details.has(e.id)) { for (const [k, v] of Object.entries(b.properties)) assert.deepEqual(e.properties[k], v, `${e.id}.${k} kept`); return [e.id, plain({ ...e, properties: Object.fromEntries(Object.entries(e.properties).filter(([k]) => k in b.properties)) })]; }
+    return [e.id, plain(e)];
+  }));
   const g = moveContext(after.spec, after.state.entities).roads;
   let parked = 0;
   for (const e of before.state.entities) {
@@ -67,9 +82,9 @@ test('a universe from before the roads, 1,200 ticks in: upgraded in place, its p
     if (a.position.x !== e.position.x || a.position.y !== e.position.y) {
       assert.ok(ROAD_VEHICLES.has(e.kind), `${e.id} moved, and it is not a road vehicle`);
       assert.ok(onRoad(g, a.position.x, a.position.y, { paths: e.kind === 'bike' }), `${e.id} was parked on a road`);
-      assert.deepEqual({ ...a, position: e.position }, e, `${e.id} is otherwise as it was`);
+      assert.deepEqual({ ...a, position: e.position }, plain(e), `${e.id} is otherwise as it was`);
       parked++;
-    } else assert.deepEqual(a, e, `${e.id} is exactly as it was`);
+    } else assert.deepEqual(a, plain(e), `${e.id} is exactly as it was`);
   }
   assert.ok(parked > 0, 'vehicles parked on the roads');
   const people = before.state.entities.filter((e) => LIVING.has(e.kind));
