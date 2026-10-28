@@ -466,12 +466,13 @@ Every blind run, its world and its outputs are labelled **"SIMULATION — blind 
 | `/sandbox consent <agent> <world> "<who agreed>" [on YYYY-MM-DD]` | records that agent's operator's opt-in to blind experiments in that world |
 | `/sandbox experiment <world> [blind\|informed] [clues\|control] [anomalies] [--agent <name>] "<situation>"` | starts a run (PG1-subject by default) |
 | `/sandbox stop <run>` | stops a run |
-| `/sandbox delete <world-id> [confirm]` | deletes one of PG1's worlds (see below); `/universe delete` is the same |
+| `/sandbox delete <world-id> [confirm]` | deletes one of PG1's worlds (see below; the short id from `/sandbox` works); `/universe delete` is the same |
 | `/mission add world "<goal>"` | a world mission |
 | `/universe` | the same as `/sandbox` |
 
 **Deleting a world** (`/sandbox delete <world-id> [confirm]`, `lib/sandbox/delete-command.mjs`):
 
+- The id is the full one, or the short one `/sandbox` lists (its first eight or more characters, as in `/sandbox delete 4ba18ed4`) when it names exactly one of PG1's worlds.
 - Without `confirm` it only shows the world's name, id, tick, in-world day and created date, and asks for the command again with `confirm`. Nothing is deleted.
 - With `confirm` it deletes the world through the same path as the agent tool `delete_world`, as owner `pg1`: the `delete_world` record (with the day in progress summarised) is written on the black box long chain first, and the black box records are kept.
 - PG1's own worlds only. It refuses another owner's world, a blind run's copy, and a world with an experiment run still active (stop the run first).
