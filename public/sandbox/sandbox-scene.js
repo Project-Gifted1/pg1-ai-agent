@@ -1217,6 +1217,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     select(id) { select(id); schedule(); },
     selected: () => selectedId,
     clock: () => clockOf(world),
+    screenshot,
     destroy() {
       cancelAnimationFrame(raf); raf = 0;
       if (io) io.disconnect(); if (ro) ro.disconnect();
