@@ -36,6 +36,8 @@ Object.assign(KIND_CLASS, PERIOD_CLASS);
 for (const k of PERIOD_FIXED) FIXED_KINDS.add(k);
 // Homes whose insides the viewer furnishes (see furnitureFor).
 export const HOME_KINDS = new Set(['house', 'cabin', 'apartment']);
+// Where a meteorite struck (lib/sandbox/cosmos.mjs).
+KIND_CLASS.crater = 'structure';   // drawn on its own (not batched), so a new one can wait for its meteorite
 
 // Emergency services and the beach (rescue-models.js).
 Object.assign(KIND_CLASS, RESCUE_CLASS);
@@ -641,6 +643,21 @@ function satellite(T) {
   return out(k, { size: 16, spin: 0.3 });
 }
 
+// A meteorite's crater: a raised rim of thrown-up earth, a dark scorched
+// bowl, blocks of rock scattered round it (at sea, nothing stays to see).
+function crater(T, p, seed) {
+  const k = new Kit(T);
+  if (p.sea) return { body: null, glow: null, glass: null, parts: [], size: 1 };
+  const R = Math.max(3, Math.min(60, Number(p.radius) || 10));
+  k.torus(R, R * 0.18, '#6b5a45', 0, R * 0.05, 0, { rx: Math.PI / 2, rseg: 10, tseg: 40, sz: 0.5, jitter: 0.08 });
+  k.cyl(R * 0.95, R * 0.7, 0.3, 32, '#2e2620', 0, 0.05, 0);
+  k.cyl(R * 0.45, R * 0.3, 0.35, 24, '#1c1714', 0, 0.08, 0);
+  k.cyl(R * 1.6, R * 1.25, 0.12, 32, '#7d6a52', 0, 0.02, 0);
+  let s = seed || 3; const r = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+  for (let i = 0; i < 14; i++) { const a = r() * Math.PI * 2; const d = R * (1.1 + r() * 0.9); k.ico(0.4 + r() * R * 0.08, 0, '#5d4f42', Math.cos(a) * d, 0.2, Math.sin(a) * d, { jitter: 0.3 }); }
+  return out(k, { size: R * 3.2 });
+}
+
 // Planets, moons and stars are spheres with painted textures (see the scene).
 export function celestialSize(kind, p) {
   const b = baseKind(kind);
@@ -910,6 +927,8 @@ export function modelKey(kind, p, id) {
 // The benin-warri template's properties that change a model.
 PROP_KEYS.push('radius', 'gates', 'shape', 'small');
 
+// A crater at sea is drawn differently.
+PROP_KEYS.push('sea');
 export function buildModel(T, kind, p = {}, id = '') {
   const b = baseKind(kind);
   // Emergency services and the beach (rescue-models.js); a building going up is a scaffold.
@@ -956,6 +975,7 @@ export function buildModel(T, kind, p = {}, id = '') {
     case 'bridge': return road(T, p, { bridge: true });
     case 'launch_pad': return launchPad(T);
     case 'rock': return rock(T, p, seed);
+    case 'crater': return crater(T, p, seed);
     case 'fence': return fence(T, p);
     case 'lamp': return lamp(T);
     case 'fountain': return fountain(T);

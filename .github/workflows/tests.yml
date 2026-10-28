@@ -62,6 +62,10 @@ jobs:
             echo "::error::Film tests were skipped: ffmpeg not found"
             exit 1
           fi
+      # The full log is long; a failing test is easier to find here.
+      - name: Show failing tests
+        if: failure()
+        run: grep -n -A30 '^ *not ok' "$RUNNER_TEMP/unit.tap" || true
       - name: Fail on any attempted network access
         if: always()
         env:

@@ -25,6 +25,7 @@ A deterministic engine steps the world: the same world and seed always give the 
 | `condition` | kind, `if {property, op, value}`, then? / remove? / emit? | when a rabbit's energy > 8, its mood becomes "happy" |
 | `travel` | kind, speed?, roam? (up to 12 kinds) | cars drive to their target at up to 90 m a step, then pick a house, shop or tower to go to next |
 | `orbit` | kind, around? | planets circle what their `orbits` property names |
+| `cosmos` | conflict? (false), hazards? (true) | other civilisations live their own lives, and crews in space meet radiation belts, flares and meteoroids (see **The wider cosmos**) |
 
 **Travel.** An entity with a `target` (another entity's id), or `target_x` / `target_y` / `target_z`, heads there at its speed. That is the rule's `speed`, else its own `speed` property, else the catalogue's.
 
@@ -137,12 +138,13 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - cars, taxis, a police car, buses, trucks, bikes and motorbikes driving;
   - planes, a small plane, a helicopter, a balloon and a drone flying;
   - a rocket taking its crew of three to a station in orbit and back.
-- **universe (Pg1-Universe):** a 12 km × 8 km world of sea and four island countries, plus the space above it (627 things at the start, and a road network on each island):
+- **universe (Pg1-Universe):** a 12 km × 8 km world of sea and four island countries, plus the space above it (629 things at the start, and a road network on each island):
   - **Aurelia,** the town above on its island, with a harbour, a beach, a hotel, a cinema, a theatre, a bar, a stadium, an amusement park and an airport terminal;
   - **Maravia** (tropical, ruled by a council, with an airstrip), **Nordheim** (cold, a monarchy, with an airstrip) and **Saltreach** (maritime, a democracy, with an airstrip), each with its own houses, harbour, hotel, people, names and money;
   - ferries (Sea Swallow, Northern Star, Coral Queen) and an airliner (Maravia Air 7) between them; army trucks and navy patrols;
   - a star, four planets (one ringed, one with clouds), moons, an asteroid belt, a station and a shuttle;
-  - two far worlds of other civilisations (the Vel and the Oru) at the very edge of the sky, hard to reach.
+  - four far worlds of other civilisations at the very edge of the sky, hard to reach, from far beyond the inhabitants to far behind them: the Vel (far beyond interstellar travel), the Kesh (space colonies), the Oru (industry) and the Amaru (settlement);
+  - radiation belts round Thalassa and Zephyr, and round the home world above the space altitude.
 - **meadow:** the first starter world: grass, rabbits and a fox.
 - **benin-warri:** Benin and Warri c. 1610, **a simulation inspired by history; its inhabitants are fictional** (see **Benin–Warri c. 1610** below).
 
@@ -168,6 +170,11 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
 - **Law and order:** crime by the dishonest and the desperate; police arrests; prison terms; fines while there is no prison.
 - **Holidays:** by sea (harbour, ferry or ship, fare 15) and, once flight is known, by air (airport, plane, fare 40); hotel nights; coming home. Someone with a ticket who has reached the harbour or airport waits there for the next ship or plane. No holidays to a country at war with, or standing off with, their own.
 - **Entertainment:** cinema, theatre, bar, stadium matches and shows, the beach and the amusement park; they cost a little and lift the mood.
+- **Conversations:** people passing say a line now and then. Sometimes two who meet stop for a proper conversation: they stand about a metre apart and face each other, and take turns, each line answering the last (a question gets an answer). A conversation lasts 6 to 15 steps; when either has nothing new to say, or the time is up, they say goodbye and go on their way. It is ten times as likely when both are at the same place (a café, a beach, a shrine, a landing, home) as in passing, and more likely between friends, so people gather where they spend their time. Nobody stops to talk while riding in something, in prison, starving, exhausted or on the way to a trip abroad.
+  - **How they talk:** partners talk like partners ("What shall we have for dinner tonight?"), grown-ups to children as grown-ups do ("Have you done your chores?"), children like children ("Race you to the trees!"). Nothing is said twice in one conversation.
+  - **In a period world** (the life rule's `progress: false`, such as Benin–Warri c. 1610), nothing of a later time is said: no shops, taxes, factories or machines. They talk of what the world holds and the sources support: the fish and the canoes from Warri, the ship at the anchorage, the brass casters and ivory carvers, the salt drying, the farms, the rains.
+  - In 1,500 steps of the universe about 600 conversations; of Benin–Warri, about 1,500 (more people at home together). `tests/sandbox-social.test.mjs`.
+  - **In the viewer:** the two turn to face each other; the one speaking moves a hand as they talk, the one listening leans in and nods; what is said shows in a speech bubble over the speaker (with **Names** off too, then without the name).
 - **Technology:** research from scientists and schools, through seven levels (from tools to interstellar flight), unlocking cars, flight, rockets, colonies and deep-space expeditions.
 - **Research and development** (`lib/sandbox/research.mjs`): each country's research is shared once a day between six branches, by need: **energy** (fire, water wheels, coal and steam, electricity, oil and gas, nuclear fission, solar and wind; then fusion and antimatter), **industry** (tools to factories, assembly lines, chemistry, automation, robotics; then nanofabrication), **weapons** (spears and bows to gunpowder, rifles, artillery, aircraft and warships, missiles, a nuclear deterrent; then energy weapons and orbital defence), **medicine** (remedies, sanitation, vaccines, antibiotics, surgery, genetics; then gene therapy and regeneration), **computing** (counting boards, printing, the telegraph, radio, computers, the network, thinking machines; then quantum computing) and **materials** (stone and wood to steel, concrete, alloys, composites; then room-temperature superconductors). Today's science comes first, in our order; the future ones only after it. A country under threat or led by a hawk leans to weapons and pays for arms.
   - **Effects:** energy makes work richer and research faster; coal, oil and gas pollute (shortening lives by up to six years) until solar and wind clean it up; fission now and then has a reactor accident (a clean-up bill and more pollution). Industry and materials make building cheaper. Weapons make an army stronger in a war, and when both sides of a quarrel hold a nuclear deterrent, war becomes far less likely. Medicine adds years to lives. Computing speeds research.
@@ -247,6 +254,33 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - blind-subject actions: at most 200 per run.
   - So about **150 MB plus 39 MB per invited key**, if every quota were used in full every day for six months.
 - `tests/sandbox-blackbox.test.mjs` fails if one simulated day of the universe writes more than 2,000 records.
+
+## The wider cosmos (the `cosmos` rule)
+
+`lib/sandbox/cosmos.mjs`. A simulation: rules and seeded dice, no AI engine; the same world and seed always give the same result. The cosmos rolls its own dice (from the seed and the step), so switching it on does not reshuffle the inhabitants' everyday lives; only what it does (a crater, a crew turned back) changes them. Whether a meteorite falls on land or water is decided by the world's own terrain (`terrain.mjs`).
+
+- **Other civilisations live lives of their own.** Each far world has a technology level on the inhabitants' own ladder, or beyond it (7, far beyond interstellar travel), set by the template or from the seed. They research and rise a level now and then (slowly: months of their days), and at space colonies found outposts of their own on unsettled worlds (two at most each). The events say "observed": the inhabitants do not know.
+- **They are met only when the inhabitants are ready** (`society.mjs`, unchanged here): by their own deep-space expedition, or by a visiting ship.
+- **They govern themselves:** each has a government (council, monarchy, democracy or collective) and a leader, a hawk, a dove or a pragmatist; leaders change in each one's own way (elections, rotation, a new consensus, a monarch's long reign); wealth and technology build their fleets.
+- **Between peoples who have met** (the inhabitants' countries and the civilisations they have contacted; two civilisations once both reach interstellar travel), the way the countries deal with each other: exchange of goods, learning, music and stories warms relations, and the less advanced side learns a little from the more advanced (research).
+- **Conflict, by the world's own rule** (`conflict: true`; on in the universe, so that peoples govern themselves fully): hawkish leaders, rivalry for the same worlds and incidents (the right to mine the asteroids) strain relations; at -60 a standoff, with envoys talking, doves and a friend of both mediating making peace likelier; after three days of talks, war only at the very worst (-85), with a hawk leading and fleets on both sides, a democracy less willing. A war is fought between ships in space, never on anyone's ground: clashes cost ships and crews (the inhabitants' losses are their astronauts), treasuries pay, weariness grows until an armistice, and the side that lost more pays reparations. Without the rule, peace only.
+- **The hazards of space** (`hazards: false` turns them off), for craft in space with people aboard:
+  - **radiation belts:** round the home world (a band above the space altitude) and round worlds with a belt (`belt_inner`, `belt_outer`, times the world's size);
+  - **solar flares:** every few days, for a while, a dose to everyone in space;
+  - **meteoroids:** in the asteroid field, damage to a craft.
+  - **meteorites:** every few days one strikes a moon or planet (a flash on its face), or the home world: never on a building or a person (at least 70 m from anything). On land it leaves a crater (at most eight; the oldest goes), at sea a splash; people nearby go to look, and scientists study what fell (research).
+  Shielding grows with technology. A crew's dose past a limit means radiation sickness (ill for a few days, never fatal here) and the craft turns back; a craft damaged past a limit turns back too, and is repaired at home.
+- **What you see when it happens** (`public/sandbox/effects.js`): the viewer plays each new event from the world's recent events, once.
+  - **A strike on land:** a glowing streak from the sky, a flash, a shockwave ring across the ground, a burst of debris and a dust cloud that drifts and settles. The crater stays: a raised rim, a dark bowl, rocks thrown round it.
+  - **At sea:** a streak and a column of spray.
+  - **On a moon or planet:** a flash on its face.
+  - **Meteoroids hitting a craft:** sparks. **A solar flare:** the sun pulses. **A battle in space:** lines of fire between the ships.
+  - Effects are drawn only, never stored, and fade in a few seconds; opening a world does not replay what already happened.
+- **What the inhabitants build** is unchanged: their countries grow, research and build by the life rule (homes, workplaces, roads, airfields, rockets, colonies), within the world's limits.
+- **Safety:** worlds stay data (rules and dice, no code, no agents); the hard limits hold (1,000 things, 256 KB, 100 steps a call), with outposts, craters and every event capped; wars are fought only between ships in space, never on the ground or against civilians, and only where a world's own rule allows them; everything is on the events log and every view says "Simulation".
+- **In the viewer:** the belts are faint glowing bands round their worlds.
+- **Sound** (`public/sandbox/sound.js`, `sound-ui.js`): **Sound** turns on the sound of the world, made in the browser (Web Audio; no recordings, nothing downloaded): wind, the surge of the sea on island worlds, the rumble of a town (more with more traffic, less at night), birds by day and crickets at night, the deep hum of space. **Voices:** people talking near where the camera looks are heard as speech (voiced syllables shaped by vowel resonances, in the rhythm of talk), more with more talkers, fading as the camera pulls back. A world without motor traffic (a period world such as Benin–Warri) is a **village**: no traffic rumble, but voices, birds and water. **Sirens** wail (two tones, hi-lo) when a fire engine or an ambulance on a call is near where the camera looks, louder the nearer; a **fire** nearby crackles; at a **beach** the surf is louder. **Music** adds a slow ambient score, its chords from a scale chosen by the world's own seed. Off until the person turns it on (browsers allow sound only after a tap); quiet when the tab is hidden or the Sandbox is closed; the volume and the music choice are remembered on this device.
+- Tests: `tests/sandbox-cosmos.test.mjs`, `tests/sandbox-sound.test.mjs`.
 
 ## Access: by invitation only
 
