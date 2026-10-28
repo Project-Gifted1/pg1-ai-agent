@@ -127,16 +127,22 @@ jobs:
       - run: npm ci
       - name: Install Chromium (version pinned by package-lock.json)
         run: npx playwright install --with-deps chromium
-      - name: npm run test:browser (network blocked)
+      # The sandbox's 3D tests run in the job below. npm run test:browser
+      # still runs every browser test, for running them all locally.
+      - name: Browser tests but the sandbox's (network blocked)
         env:
           NODE_OPTIONS: --import=./tests/ci/no-network.mjs
           PG1_NET_GUARD_LOG: ${{ runner.temp }}/network-violations.jsonl
         run: |
           set -o pipefail
-          npm run test:browser | tee "$RUNNER_TEMP/browser.tap"
+          files=$(ls tests/browser/*.test.mjs | grep -v '^tests/browser/sandbox')
+          node --import ./tests/helpers/spend-cap.mjs --test $files | tee "$RUNNER_TEMP/browser.tap"
           # The browser tests skip themselves when Chromium is missing;
           # here that would be a silent pass, so treat it as a failure.
           grep -qx '# skipped 0' "$RUNNER_TEMP/browser.tap" || { echo "::error::Browser tests were skipped"; exit 1; }
+      - name: Show failing tests
+        if: failure()
+        run: grep -n -A30 '^ *not ok' "$RUNNER_TEMP/browser.tap" || true
       - name: Fail on any attempted network access
         if: always()
         env:
@@ -153,6 +159,70 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: browser-screenshots
+          path: docs/screenshots/*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The sandbox viewer's tests draw 3D in software (SwiftShader), which uses
+  # every core. Run together in one job, several at once, they starved each
+  # other: 40 frames could take over four minutes and the job ran near its
+  # hour. Here each group has a runner of its own and runs one file at a time.
+  sandbox-browser:
+    name: sandbox browser tests (${{ matrix.group }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - group: look
+            files: tests/browser/sandbox-look.browser.test.mjs
+          - group: world
+            files: tests/browser/sandbox.browser.test.mjs tests/browser/sandbox-effects.browser.test.mjs
+          - group: life
+            files: tests/browser/sandbox-benin-warri.browser.test.mjs tests/browser/sandbox-rescue.browser.test.mjs tests/browser/sandbox-social.browser.test.mjs tests/browser/sandbox-sound.browser.test.mjs
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium (version pinned by package-lock.json)
+        run: npx playwright install --with-deps chromium
+      - name: Every sandbox browser file is in a group
+        run: |
+          for f in tests/browser/sandbox*.test.mjs; do
+            grep -q "$f" .github/workflows/tests.yml || { echo "::error::$f is in no sandbox group"; exit 1; }
+          done
+      - name: Sandbox browser tests, ${{ matrix.group }} (network blocked)
+        env:
+          NODE_OPTIONS: --import=./tests/ci/no-network.mjs
+          PG1_NET_GUARD_LOG: ${{ runner.temp }}/network-violations.jsonl
+        run: |
+          set -o pipefail
+          node --import ./tests/helpers/spend-cap.mjs --test --test-concurrency=1 ${{ matrix.files }} | tee "$RUNNER_TEMP/browser.tap"
+          grep -qx '# skipped 0' "$RUNNER_TEMP/browser.tap" || { echo "::error::Browser tests were skipped"; exit 1; }
+      - name: Show failing tests
+        if: failure()
+        run: grep -n -A30 '^ *not ok' "$RUNNER_TEMP/browser.tap" || true
+      - name: Fail on any attempted network access
+        if: always()
+        env:
+          PG1_NET_GUARD_LOG: ${{ runner.temp }}/network-violations.jsonl
+        run: |
+          if [ -s "$PG1_NET_GUARD_LOG" ]; then
+            echo "::error::Tests tried to reach hosts outside the runner:"
+            cat "$PG1_NET_GUARD_LOG"
+            exit 1
+          fi
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sandbox-screenshots-${{ matrix.group }}
           path: docs/screenshots/*.png
           if-no-files-found: ignore
           retention-days: 7
