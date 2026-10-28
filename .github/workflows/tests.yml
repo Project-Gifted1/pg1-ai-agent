@@ -25,7 +25,9 @@ jobs:
   unit:
     name: npm test
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The whole suite takes about 18 minutes on main and more with the
+    # sandbox's longer world runs; 20 cancelled good runs.
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v4
         with:
@@ -109,7 +111,7 @@ jobs:
   browser:
     name: browser tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
