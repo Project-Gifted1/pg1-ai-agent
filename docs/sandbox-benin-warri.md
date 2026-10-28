@@ -18,6 +18,7 @@ This was compiled from a build environment without access to the books or journa
 - **abstract**: the publisher's abstract or a review was read;
 - **cited**: the claim was found in a secondary work that cites this source (named), not read in the source itself;
 - **secondary**: the claim rests on the named secondary source itself (for example an encyclopaedia article), which is weaker.
+- **search**: the claim was read in a web-search summary of the named page; the page itself could not be opened from the build environment. Weaker than **record**: it should be checked on the page.
 
 A historian should check every **cited** and **secondary** entry against the original pages before this world is presented as accurate (see **Reviewed by** at the end).
 
@@ -44,6 +45,13 @@ A historian should check every **cited** and **secondary** entry against the ori
 | Smarthistory | Smarthistory, "Igun Eronmwon (brass casters' guild)" and "Benin art and its patrons" (smarthistory.org) | record |
 | Alagoa 1972 | E. J. Alagoa, *A History of the Niger Delta: An Historical Interpretation of Ịjọ Oral Tradition*, Ibadan University Press, 1972: in part **oral tradition** | cited (in "The Ijo (Ijaw) People of Delta State", core.ac.uk) |
 | Nok | Goethe University Frankfurt, Nok research project (Peter Breunig, Nicole Rupp); G. Franke, *Potsherds in time: the pottery of the Nigerian Nok Culture and its chronology* (dissertation, Goethe University Frankfurt, 2015) | record; dates cited |
+| Dapper 1668 | Olfert Dapper, *Naukeurige Beschrijvinge der Afrikaensche Gewesten*, Amsterdam, 1668 (English in John Ogilby, *Africa*, London, 1670). **Later than 1610**; Dapper never went to Africa and wrote from others' reports | **search** (quoted in secondary accounts of Benin City) |
+| BM plaques | The British Museum, collection records of the Benin palace plaques: Af1913,1211.1 (a cow held by attendants), Af1898,0115.200 (a leopard seizing a goat), and plaques showing the Oba on horseback; dated 16th–17th century | **search** (the museum's records) |
+| Met plaque | The Metropolitan Museum of Art, "Plaque with equestrian ọba (king) and attendants" (metmuseum.org, collection 310752) | **search** |
+| Penn altar | Penn Museum, *Museum Journal*, "Great Benin Royal Altar" (penn.museum/sites/journal/998), an early-20th-century article | **search**; its framing is of its time |
+| Digital Benin | Digital Benin, "Ọyanyan" (digitalbenin.org/iconography/oyanyan), citing Ryder 1969 | **search** |
+| Law | "African Cavalry" (lrgaf.org), on horses in West Africa's forest zone | **search**, **secondary** |
+| FAO shorthorn | FAO, *The Dwarf West African Shorthorn* (fao.org/4/x5468e); O. A. Adebambo, "The Muturu: a rare sacred breed of cattle in Nigeria" (funaab.edu.ng) | **search** |
 | Wikipedia | Wikipedia articles "Kingdom of Warri", "Ijala", "Atorongboye", "Olu Atuwatse I", "Benin Moat", "Igbesanmwan" (accessed October 2026) | **secondary**, used only where noted |
 
 ## The facts used
@@ -87,6 +95,18 @@ A historian should check every **cited** and **secondary** entry against the ori
 | N1 | In the salt-water belt of the delta, fishing was the occupation of most people, and making salt (from mangrove and from seawater) one of the oldest; the lower delta exchanged fish and salt for the vegetable produce of the upper delta. Mangrove wood was poor for canoes. | an Ijaw settlement of fishers on its own island, trading fish and salt; mangrove as its own land, never built on | Alagoa 1972 (cited; in part oral tradition) |
 | N2 | Moore records Ijaw, Urhobo ("Sobo") and Mahin communities in the region before the Itsekiri kingdom. **Oral tradition.** | Urhobo and Ijaw settlements of their own | Moore 1936 (oral tradition, cited) |
 
+### Animals and markets
+
+| # | fact | used in the world as | source |
+|---|---|---|---|
+| A1 | Benin's palace plaques (16th–17th century) show cattle: one shows a cow held by attendants for a sacrifice. Cattle, goats and fowl were offered at Benin's altars. | small herds of cattle grazing by the village enclosures and their farms | BM plaques (Af1913,1211.1); Penn altar |
+| A2 | The forest zone's cattle were the small West African dwarf shorthorn (muturu), tolerant of the sleeping sickness the tsetse fly carries; it was recorded in West Africa by the first half of the first millennium AD. | the cattle are small and plain (a cow with a colour of its own is drawn short-legged, without the black and white of a modern breed) | FAO shorthorn |
+| A3 | Goats and fowl: a plaque shows a leopard seizing a goat; goats and fowl were offered at altars. | goats at the compounds; fowl in the city's compound yards | BM plaques (Af1898,0115.200); Penn altar |
+| A4 | Horses were rare and royal in Benin: plaques show the Oba on horseback; the king of Portugal sent a horse to the Oba in 1505 and again in 1552; in the forest zone horses lived short lives (the tsetse fly), and Benin's soldiers went on foot. | two horses in the palace grounds, of the Oba's stable; nobody rides them in the world, and nobody else has a horse | BM plaques; Met plaque; Digital Benin (1505, citing Ryder 1969); Law (1552, and the tsetse) |
+| M1 | Dapper (1668, **later than 1610**) describes Benin's streets as long and broad, "in which continual markets are kept". | two markets in Benin City's streets, near the palace, where people buy food, work and meet; what is sold is not named | Dapper 1668 |
+
+Not found, so not in the world: livestock or a market at Warri, among the Urhobo or the Ijaw (see Open questions 3 and 12); the goods sold at Benin's markets in 1610 (a later account that names cattle, cotton, ivory and European wares could not be checked); the Edo four-day market week (found only in modern accounts).
+
 ### Deep history
 
 | # | fact | used in the world as | source |
@@ -121,9 +141,10 @@ Portuguese priests came to this region on trading ships, and were told to suppor
 4. Warri's **council of chiefs** in 1610: no source found for this period. Lloyd 1963 describes a highly centralised government around 1800. The world gives the Olu chiefs at the palace (a job), without naming offices.
 5. **Canoe building** as a craft at Warri c. 1610: no source found. Canoes are used; their building is not modelled.
 6. **Iron working** at Benin c. 1610: no source found in this pass (likely in Bradbury 1957). Not in the world's starting crafts.
-7. **Benin's market**, and the **rainforest** round the capital: no source found in this pass. The land round the capital is drawn as forest; this is scenery, not a claim.
+7. The **rainforest** round the capital: no source found in this pass. The land round the capital is drawn as forest; this is scenery, not a claim. (**Benin's markets** are now sourced, from a later account: M1.)
 8. The **Benin–Warri relationship** in 1610 (above).
 9. **Cassava** (above). 10. The **silver crowns** (above).
+12. **Animals outside Benin** (at Warri, the Urhobo and the Ijaw) c. 1610: no source found in this pass. Not in the world.
 11. **Personal names**: the inhabitants' names are common given names in Edo, Itsekiri, Urhobo, Ịjọ and Portuguese, chosen for the simulation. They should be reviewed by speakers of each language. None is the name of a ruler of either royal house.
 
 ## Reviewed by:

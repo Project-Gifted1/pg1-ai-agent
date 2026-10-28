@@ -18,7 +18,7 @@ import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { routeReplyFont } from '../helpers/replyFont.mjs';
 import { createSandboxStore } from '../../lib/sandbox/store.mjs';
-import { createWorld, pg1Principal } from '../../lib/sandbox/worlds.mjs';
+import { createWorld, stepWorldFor, pg1Principal } from '../../lib/sandbox/worlds.mjs';
 import sandboxViewer, { __setSandboxViewerStore } from '../../api/sandbox.mjs';
 import { handleSandboxCommand } from '../../lib/sandbox/chat.mjs';
 
@@ -117,7 +117,7 @@ test('Benin–Warri c. 1610 in the viewer: made from New universe, labelled Simu
       const w = (await store.listWorlds({})).find((x) => x.name === 'Benin–Warri c. 1610');
       await page.evaluate((id) => selectSandboxWorld(id), w.id);
     }
-    await page.waitForFunction(() => /^Step 0 · 3\d\d entities/.test(document.getElementById('sandbox-tick').textContent), null, { timeout: 60000 });
+    await page.waitForFunction(() => /^Step 0 · \d{3} entities/.test(document.getElementById('sandbox-tick').textContent), null, { timeout: 60000 });
     assert.equal((await page.locator('#sandbox-label').innerText()).trim(), 'Simulation');
     await page.waitForSelector('#sandbox-tab-history:not([hidden])');
     await page.waitForTimeout(reducedMotion === 'reduce' ? 300 : 2500);
@@ -139,4 +139,30 @@ test('Benin–Warri c. 1610 in the viewer: made from New universe, labelled Simu
     await context.close();
   }
   assert.deepEqual(log.missing.filter((p) => !/^\/api\/(?:usage|state|lessons|autonomous|core)/.test(p)), []);
+});
+
+test('Benin\'s markets and animals in the viewer: a market, cattle, goats and fowl, the Oba\'s horses, close up', { skip, timeout: 900000 }, async (t) => {
+  const store = createSandboxStore();
+  const w = await createWorld(store, pg1Principal(), { name: 'Benin–Warri c. 1610', template: 'benin-warri' });
+  await stepWorldFor(store, pg1Principal(), { world_id: w.id, steps: 60 });   // midday
+  const { server, origin } = await startServer(store);
+  const browser = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
+  t.after(async () => { await browser.close(); await new Promise((r) => server.close(r)); __setSandboxViewerStore(null); });
+  const { page, errors, context } = await signedInPage(browser, origin, { reducedMotion: 'no-preference' });
+  await page.evaluate(() => { try { localStorage.setItem('pg1_sandbox_quality', 'medium'); } catch (e) {} });
+  await page.evaluate((id) => openSandboxScreen(id), w.id);
+  await page.waitForFunction(() => /^Step 60 · \d{3} entities/.test(document.getElementById('sandbox-tick').textContent), null, { timeout: 60000 });
+  if (await page.locator('#sandbox-view').getAttribute('data-renderer') !== 'webgl') { t.skip('no WebGL'); await context.close(); return; }
+  const kinds = await page.locator('#sandbox-kinds').innerText();
+  for (const k of ['market', 'cow', 'goat', 'fowl', 'horse']) assert.match(kinds, new RegExp(`\\b${k}\\b`), `${k} in the world`);
+  const frames = async (n) => { const f0 = Number(await page.locator('#sandbox-view').getAttribute('data-frames')) || 0; await page.waitForFunction(([a, k]) => Number(document.getElementById('sandbox-view').dataset.frames || 0) >= a + k, [f0, n], { timeout: 300000 }); };
+  mkdirSync(SHOTS_DIR, { recursive: true });
+  for (const [id, name] of [['market-benin-1', 'market'], ['cow-benin-1', 'cattle'], ['goat-benin-village-1', 'goat'], ['horse-benin-1', 'horses']]) {
+    await page.evaluate((x) => sandboxScene.select(x), id);
+    await frames(60);
+    await page.evaluate(() => document.getElementById('sandbox-view').scrollIntoView({ block: 'center' }));
+    await page.screenshot({ path: join(SHOTS_DIR, `sandbox-benin-warri-${name}-380-dark.png`), clip: await page.locator('#sandbox-view').boundingBox(), timeout: 300000 });
+  }
+  assert.deepEqual(errors, []);
+  await context.close();
 });

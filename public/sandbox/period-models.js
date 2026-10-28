@@ -12,9 +12,9 @@
 export const PERIOD_CLASS = Object.freeze({
   canoe: 'vehicle', carrack: 'vehicle', gate: 'structure', compound: 'building', palace: 'building', brass_workshop: 'building', ivory_workshop: 'building', fishing_village: 'building',
   shrine: 'structure', earthwork: 'structure', canoe_landing: 'structure', anchorage: 'structure', royal_tomb: 'structure', heritage_site: 'structure',
-  mangrove: 'structure', forest: 'structure', river: 'structure', creek: 'structure', chronicle: 'structure', porter: 'person', visitor: 'person'
+  mangrove: 'structure', forest: 'structure', river: 'structure', creek: 'structure', chronicle: 'structure', porter: 'person', visitor: 'person', market: 'building'
 });
-export const PERIOD_FIXED = Object.freeze(['gate', 'compound', 'palace', 'brass_workshop', 'ivory_workshop', 'fishing_village', 'shrine', 'earthwork', 'canoe_landing', 'anchorage', 'royal_tomb', 'heritage_site', 'mangrove', 'forest', 'river', 'creek', 'chronicle']);
+export const PERIOD_FIXED = Object.freeze(['market', 'gate', 'compound', 'palace', 'brass_workshop', 'ivory_workshop', 'fishing_village', 'shrine', 'earthwork', 'canoe_landing', 'anchorage', 'royal_tomb', 'heritage_site', 'mangrove', 'forest', 'river', 'creek', 'chronicle']);
 // Drawn by waterways.js (or not at all), not as a model.
 export const PERIOD_GROUND = Object.freeze(['mangrove', 'forest', 'river', 'creek', 'chronicle', 'anchorage']);
 
@@ -111,6 +111,24 @@ export function periodModel(T, Kit, kind, p = {}, seed = 0) {
       for (const x of [9, 11]) k.cyl(0.05, 0.05, 2.4, 6, WOOD_D, x, 1.2, -1); k.box(2.2, 1.6, 0.02, '#cfc6a8', 10, 1.4, -1, { layer: 'glass' });
       for (const x of [-9, -4]) k.capsule(0.4, 5, WOOD, x, 0.3, 9, { rz: Math.PI / 2, sy: 0.55 });
       return out(k, { size: 30 });
+    }
+    case 'market': {
+      // Stalls along both sides of a street: thatch on posts, and under each
+      // a mat with goods (pots, cloth, baskets, ivory), the street bare earth.
+      k.box(34, 0.04, 9, '#9c7a52', 0, 0.02, 0);
+      const goods = ['#7a4a2a', '#c62828', '#c9a227', '#efe6d2', '#1565c0', '#6a9a3a'];
+      for (const side of [-1, 1]) for (let i = 0; i < 6; i++) {
+        const x = -14 + i * 5.6; const z = side * 6.5;
+        for (const [dx, dz] of [[-1.8, -1.4], [1.8, -1.4], [-1.8, 1.4], [1.8, 1.4]]) k.cyl(0.07, 0.09, 2.3, 6, WOOD_D, x + dx, 1.15, z + dz);
+        k.prism([[-1.9, 0], [1.9, 0], [0, 0.9]], 4.4, (i + side) % 2 ? THATCH : THATCH_D, x, 2.3, z, { ry: Math.PI / 2, jitter: 0.08 });
+        k.box(3.2, 0.03, 2.2, '#c8a96e', x, 0.03, z);
+        const g = goods[(i * 2 + (side > 0 ? 1 : 0)) % goods.length];
+        if (g === '#7a4a2a') for (let j = 0; j < 4; j++) k.lathe([[0, 0], [0.2, 0.04], [0.26, 0.24], [0.16, 0.44], [0.18, 0.48]], 10, j % 2 ? '#7a4a2a' : '#5d3a1e', x - 1.1 + j * 0.7, 0.03, z);
+        else if (g === '#efe6d2') for (let j = 0; j < 3; j++) k.cyl(0.07, 0.12, 1.2, 8, g, x - 0.6 + j * 0.6, 0.12, z, { rz: Math.PI / 2 });
+        else if (g === '#c9a227' || g === '#6a9a3a') for (let j = 0; j < 3; j++) k.cyl(0.32, 0.24, 0.3, 10, g === '#c9a227' ? '#b8913a' : '#8d6e3f', x - 0.9 + j * 0.9, 0.18, z, { open: true });
+        else for (let j = 0; j < 3; j++) k.box(0.7, 0.12 + j * 0.02, 0.5, g, x - 0.8 + j * 0.8, 0.09 + j * 0.03, z);
+      }
+      return out(k, { size: 34 });
     }
     case 'shrine': {
       // A low thatched shelter over an earth altar with pots and white chalk.

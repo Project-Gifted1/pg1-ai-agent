@@ -16,7 +16,7 @@ A deterministic engine steps the world: the same world and seed always give the 
 
 | rule | fields | in plain words |
 |---|---|---|
-| `move` | kind, `velocity {x,y,z}` or `wander` | rabbits wander up to 1 m a step |
+| `move` | kind, `velocity {x,y,z}` or `wander`; with `wander`, `range` (metres) keeps each within that of its `graze_x`, `graze_y` | rabbits wander up to 1 m a step; goats browse within 20 m of home |
 | `spawn` | kind, every, chance, near? | every 5 steps, with a 50% chance, a new grass appears |
 | `decay` / `grow` | kind, property, amount, remove_below? / max? | grass gain 0.5 size a step, up to 5 |
 | `interact` | a, b, radius, effect? / remove? / emit? | when a rabbit comes within 3 m of a grass, the rabbit's energy changes by 1 |
@@ -124,7 +124,7 @@ Any kind name works. The kinds in `lib/sandbox/catalog.mjs` also get a class, a 
 | structures | road, bridge, runway, launch_pad, lake, rock, fence, lamp, fountain |
 | vehicles | bike, motorbike, car, taxi, police_car, bus, truck, tractor, train, boat, ship, plane, small_plane, jet, helicopter, drone, hot_air_balloon, rocket, shuttle |
 | space | space_station, satellite, star, planet, moon, asteroid |
-| c. 1610 (the benin-warri template) | canoe, carrack (a sailing ship), compound, palace, brass_workshop, ivory_workshop, fishing_village, shrine, earthwork, canoe_landing, anchorage, royal_tomb, heritage_site, porter, visitor; and the land and water kinds forest, mangrove, river, creek |
+| c. 1610 (the benin-warri template) | canoe, carrack (a sailing ship), compound, palace, brass_workshop, ivory_workshop, fishing_village, shrine, earthwork, canoe_landing, anchorage, royal_tomb, heritage_site, market, goat, fowl, porter, visitor; and the land and water kinds forest, mangrove, river, creek |
 
 A kind with a suffix counts as its base kind: `car_red` is a car.
 
@@ -194,6 +194,7 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - Warri: an island among the creeks and mangroves of the delta. The capital, Ode-Itsekiri, with the Olu's residence, homes and three canoe landings; two fishing villages; the royal burial grove at Ijala.
   - The Urhobo (a farming people, inland, with a landing on a creek) and the Ijaw (fishers and salt makers, on their own island) as settlements of their own.
   - Offshore, two anchorages where a Portuguese merchant ship calls. Its traders are visitors aboard, not a country with a home here.
+  - **Markets and animals** (sourced in the doc, A1–A4 and M1): two markets in Benin City's streets, near the palace (stalls under thatch; people buy food, work and meet there); small forest cattle grazing by the village enclosures, goats at the compounds, fowl in the city's yards, and two horses of the Oba's stable in the palace grounds (rare and royal; nobody rides them). Each animal keeps near its grazing ground (the move rule's `range`). Only in Benin: no source found shows livestock or a market at Warri, the Urhobo or the Ijaw c. 1610, so none is built there.
   - One Nok heritage site (fired-clay finds), labelled with its date range, far older than the world. Benin's people can come upon it (a `discovery` event); no Nok people live here.
   - The terrain module (`lib/sandbox/terrain.mjs`): rivers and creeks are water, mangrove is land of its own type, forest is land.
 - **Period things only:** walking, porters (between the palace and Ughoton), canoes on the creeks and rivers, and the sailing ship at sea. No cars, bikes, planes, rockets or space. Nothing flies or goes to space, and a home gains things of its time (a woven mat, a carved stool, clay pots, a calabash, cloth, a wooden chest, a water jar, a basket), never a sofa or a television.
@@ -358,6 +359,7 @@ Open it from the `/sandbox` or `/world <id>` reply. It is a full-screen view in 
 - **On the view itself,** a badge in the bottom corner says which world you are watching (its name, "your first universe" on the first, and what kind of world it is), and the same full line as in the list is shown over the view.
 - **Labels** show a person's full name.
 - **Play** (1×, 2× or 4×), **Pause**, **Step** and **New universe:** Step calls `step_world`, on PG1's worlds only; invited agents' worlds are read only.
+- **Playing** asks for one step at a time: the next once the last is back, never two at once. When a step takes longer to come back than the speed allows (a slow connection, a busy server), each step glides over as long as steps really take, so people keep walking instead of stopping between steps.
 - **The events timeline, and the rules in plain words.**
 - **The Experiments panel.**
 

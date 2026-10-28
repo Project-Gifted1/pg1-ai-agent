@@ -18,7 +18,7 @@ import { PERIOD_CLASS, PERIOD_FIXED, periodModel } from './period-models.js';
 // The viewer's copy of the catalogue's classes (lib/sandbox/catalog.mjs).
 export const KIND_CLASS = {
   person: 'person', child: 'person', astronaut: 'person', alien: 'person',
-  dog: 'animal', cat: 'animal', rabbit: 'animal', fox: 'animal', deer: 'animal', horse: 'animal', cow: 'animal', bird: 'animal', fish: 'animal',
+  dog: 'animal', cat: 'animal', rabbit: 'animal', fox: 'animal', deer: 'animal', horse: 'animal', cow: 'animal', goat: 'animal', fowl: 'animal', bird: 'animal', fish: 'animal',
   grass: 'plant', flower: 'plant', bush: 'plant', tree: 'plant', pine: 'plant', palm: 'plant', crop: 'plant',
   police_station: 'building', prison: 'building', hotel: 'building', cinema: 'building', theatre: 'building', bar: 'building', stadium: 'building',
   beach: 'structure', amusement: 'structure', port: 'structure', monument: 'structure', island: 'structure', ferry: 'vehicle',
@@ -185,13 +185,16 @@ function quadruped(T, o) {
   const { len, h, w, color, belly = color, head = color, ear = null, tail = null, legColor = color } = o;
   k.capsule(w / 2, len - w, color, 0, h, 0, { rz: Math.PI / 2 });
   k.box(len * 0.6, w * 0.4, w * 0.8, belly, 0, h - w * 0.35, 0);
-  k.sphere(w * 0.55, head, len / 2 + w * 0.15, h + w * 0.45, 0, { sx: 1.25 });
-  k.cone(w * 0.22, w * 0.5, 8, head, len / 2 + w * 0.75, h + w * 0.38, 0, { rz: -Math.PI / 2 });    // snout
-  k.sphere(w * 0.08, '#111', len / 2 + w * 0.42, h + w * 0.6, w * 0.25);
-  k.sphere(w * 0.08, '#111', len / 2 + w * 0.42, h + w * 0.6, -w * 0.25);
-  if (ear === 'long') { k.box(w * 0.15, w * 1.1, w * 0.3, head, len / 2, h + w * 1.3, w * 0.18, { rz: 0.15 }); k.box(w * 0.15, w * 1.1, w * 0.3, head, len / 2, h + w * 1.3, -w * 0.18, { rz: 0.15 }); }
-  else if (ear === 'antlers') { for (const z of [w * 0.25, -w * 0.25]) { k.cyl(0.03, 0.04, w * 1.4, 6, '#6d4c2f', len / 2 + w * 0.1, h + w * 1.5, z, { rx: z > 0 ? -0.35 : 0.35 }); k.cyl(0.02, 0.03, w * 0.6, 6, '#6d4c2f', len / 2 + w * 0.3, h + w * 1.6, z * 1.6, { rz: -0.8 }); } }
-  else if (ear) { k.cone(w * 0.16, w * 0.35, 6, ear, len / 2 + w * 0.05, h + w * 0.95, w * 0.28); k.cone(w * 0.16, w * 0.35, 6, ear, len / 2 + w * 0.05, h + w * 0.95, -w * 0.28); }
+  if (o.neck) grazerHead(k, o);
+  else {
+    k.sphere(w * 0.55, head, len / 2 + w * 0.15, h + w * 0.45, 0, { sx: 1.25 });
+    k.cone(w * 0.22, w * 0.5, 8, head, len / 2 + w * 0.75, h + w * 0.38, 0, { rz: -Math.PI / 2 });    // snout
+    k.sphere(w * 0.08, '#111', len / 2 + w * 0.42, h + w * 0.6, w * 0.25);
+    k.sphere(w * 0.08, '#111', len / 2 + w * 0.42, h + w * 0.6, -w * 0.25);
+    if (ear === 'long') { k.box(w * 0.15, w * 1.1, w * 0.3, head, len / 2, h + w * 1.3, w * 0.18, { rz: 0.15 }); k.box(w * 0.15, w * 1.1, w * 0.3, head, len / 2, h + w * 1.3, -w * 0.18, { rz: 0.15 }); }
+    else if (ear === 'antlers') { for (const z of [w * 0.25, -w * 0.25]) { k.cyl(0.03, 0.04, w * 1.4, 6, '#6d4c2f', len / 2 + w * 0.1, h + w * 1.5, z, { rx: z > 0 ? -0.35 : 0.35 }); k.cyl(0.02, 0.03, w * 0.6, 6, '#6d4c2f', len / 2 + w * 0.3, h + w * 1.6, z * 1.6, { rz: -0.8 }); } }
+    else if (ear) { k.cone(w * 0.16, w * 0.35, 6, ear, len / 2 + w * 0.05, h + w * 0.95, w * 0.28); k.cone(w * 0.16, w * 0.35, 6, ear, len / 2 + w * 0.05, h + w * 0.95, -w * 0.28); }
+  }
   if (tail) k.cone(w * 0.2, len * 0.45, 8, tail, -len / 2 - len * 0.15, h + w * 0.1, 0, { rz: Math.PI / 2 + 0.5 });
   if (o.spots) for (let i = 0; i < 5; i++) k.sphere(w * 0.32, o.spots, (i - 2) * len * 0.18, h + w * 0.35, (i % 2 ? 1 : -1) * w * 0.33, { sy: 0.7, sz: 0.4 });
   const legs = [];
@@ -199,6 +202,41 @@ function quadruped(T, o) {
     legs.push(partOf(T, (q) => { q.cyl(w * 0.13, w * 0.1, h, 6, legColor, 0, -h / 2, 0); q.box(w * 0.24, h * 0.08, w * 0.22, '#2a1d14', w * 0.04, -h, 0); }, [x, h, z], role));
   }
   return { ...k.build(), parts: legs, size: len * 1.4 };
+}
+
+// A grazer's head (horse, cow, goat): a neck rising forward from the
+// shoulders, a long head angled down to a darker muzzle, small ears, and
+// horns (o.horns 'cow' curve out and up, 'goat' sweep back) or a mane.
+function grazerHead(k, o) {
+  const { len, h, w, color, head = color } = o;
+  const a = o.neckTilt ?? 0.75;                     // from upright, towards the front
+  const bx = len / 2 - w * 0.15, by = h + w * 0.15;
+  const tx = bx + Math.sin(a) * o.neck, ty = by + Math.cos(a) * o.neck;
+  k.cyl(w * 0.28, w * 0.4, o.neck + w * 0.3, 8, color, (bx + tx) / 2, (by + ty) / 2, 0, { rz: -a });
+  if (o.mane) k.box(w * 0.12, o.neck + w * 0.2, w * 0.14, o.mane, (bx + tx) / 2 - w * 0.22 * Math.cos(a), (by + ty) / 2 + w * 0.22 * Math.sin(a), 0, { rz: -a });
+  const hr = w * (o.headR ?? 0.3), hl = o.headLen ?? 1.9, d = -0.55;   // the head points forward and down
+  const hx = tx + Math.cos(d) * hr * hl * 0.55, hy = ty + Math.sin(d) * hr * hl * 0.55;
+  k.sphere(hr, head, hx, hy, 0, { sx: hl, sz: 0.85, rz: d });
+  k.sphere(hr * 0.72, o.muzzle || '#2b211b', hx + Math.cos(d) * hr * hl * 0.85, hy + Math.sin(d) * hr * hl * 0.85, 0, { sx: 1.1 });
+  for (const z of [hr * 0.7, -hr * 0.7]) {
+    k.sphere(hr * 0.16, '#111', tx + hr * 0.35, ty + hr * 0.2, z);
+    k.cone(hr * 0.28, hr * 0.8, 6, head, tx - hr * 0.2, ty + hr * 0.75, z * 1.15, { rx: z > 0 ? 0.5 : -0.5 });
+    if (o.horns === 'cow') k.cone(hr * 0.16, hr * 1.4, 6, '#e8dcc0', tx, ty + hr * 0.9, z * 1.9, { rx: z > 0 ? 1.0 : -1.0 });
+    if (o.horns === 'goat') k.cone(hr * 0.14, hr * 1.6, 6, '#6d5d4b', tx - hr * 0.5, ty + hr * 1.1, z * 0.6, { rz: 0.9 });
+  }
+}
+
+// A hen: a round body, a cocked tail, a red comb, a beak, two legs.
+function fowl(T, p) {
+  const k = new Kit(T);
+  const c = col(p.color, '#8d4a24');
+  k.sphere(0.16, c, 0, 0.28, 0, { sx: 1.3, sy: 1.05 });
+  k.sphere(0.09, c, 0.17, 0.42, 0);
+  k.box(0.08, 0.08, 0.02, '#c62828', 0.18, 0.53, 0);
+  k.cone(0.025, 0.06, 6, '#f9a825', 0.27, 0.42, 0, { rz: -Math.PI / 2 });
+  k.cone(0.09, 0.16, 6, c, -0.2, 0.36, 0, { rz: 0.9 });
+  for (const z of [0.05, -0.05]) k.cyl(0.012, 0.012, 0.14, 4, '#f9a825', 0.02, 0.07, z);
+  return { ...k.build(), parts: [], size: 0.5 };
 }
 
 function bird(T, p, seed) {
@@ -1353,8 +1391,13 @@ export function buildModel(T, kind, p = {}, id = '') {
     case 'rabbit': return quadruped(T, { len: 0.45, h: 0.18, w: 0.24, color: '#bcaaa4', belly: '#efebe9', ear: 'long', tail: '#fafafa' });
     case 'fox': return quadruped(T, { len: 0.9, h: 0.4, w: 0.28, color: '#e65100', belly: '#fafafa', ear: '#e65100', tail: '#e65100', legColor: '#3e2723' });
     case 'deer': return quadruped(T, { len: 1.5, h: 0.9, w: 0.42, color: '#8d6e63', belly: '#d7ccc8', ear: 'antlers', tail: '#efebe9' });
-    case 'horse': return quadruped(T, { len: 2.2, h: 1.2, w: 0.6, color: '#5d4037', ear: '#5d4037', tail: '#212121', legColor: '#4e342e' });
-    case 'cow': return quadruped(T, { len: 2.2, h: 0.9, w: 0.8, color: '#fafafa', spots: '#212121', ear: '#fafafa', tail: '#fafafa', head: '#fafafa' });
+    case 'horse': { const c = col(p.color, '#5d4037'); return quadruped(T, { len: 2.2, h: 1.2, w: 0.6, color: c, ear: c, tail: '#212121', legColor: c === '#5d4037' ? '#4e342e' : c, neck: 0.85, neckTilt: 0.55, headR: 0.32, headLen: 2.1, mane: '#212121' }); }
+    // A cow with a colour of its own is a small forest beast (the benin-warri
+    // template's), plain and short-legged; otherwise black and white.
+    case 'cow': if (p.color) { const c = col(p.color, '#3e2723'); return quadruped(T, { len: 1.6, h: 0.65, w: 0.62, color: c, ear: c, tail: c, head: c, neck: 0.3, neckTilt: 1.1, headR: 0.34, headLen: 1.6, horns: 'cow' }); }
+      return quadruped(T, { len: 2.2, h: 0.9, w: 0.8, color: '#fafafa', spots: '#212121', ear: '#fafafa', tail: '#fafafa', head: '#fafafa' });
+    case 'goat': { const c = col(p.color, '#e8e0d0'); return quadruped(T, { len: 0.85, h: 0.48, w: 0.3, color: c, ear: c, tail: c, head: c, neck: 0.25, neckTilt: 0.6, headR: 0.36, headLen: 1.7, muzzle: c, horns: 'goat' }); }
+    case 'fowl': return fowl(T, p);
     case 'fish': return quadruped(T, { len: 0.5, h: 0.05, w: 0.15, color: '#4fc3f7' });
     case 'bird': return bird(T, p, seed);
     case 'tree': return tree(T, p, seed);
