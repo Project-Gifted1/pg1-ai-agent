@@ -3,7 +3,15 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.20.2 — listing text only. The STIX feed (get_threat_indicators,
+ * Version: 1.21.0 — ADD: new free tool check_agent_message (lib/agentMessage.mjs),
+ *   also an A2A skill and a playground check: a pre-read check of a message
+ *   from another agent or a seller's skill.md (text, or an https url fetched
+ *   with netGuard safeFetch) for prompt injection, hidden content,
+ *   exfiltration, wallet and payment manipulation and tool hijack, with
+ *   optional enrichment through PG1's own domain and wallet checks. Rule-based,
+ *   no AI model; the content is never stored. 60/hour per caller. The other
+ *   tools' names, inputs and outputs are unchanged.
+ * 1.20.2 — listing text only. The STIX feed (get_threat_indicators,
  *   /api/ioc) is free with CVE records from NIST NVD and does not use the 5
  *   free paid calls a day. No tool, input or response changes.
  * 1.20.1 — DOCS: preflight_check positioned as the one decision
@@ -125,7 +133,7 @@ import { encodePaymentRequiredHeader, encodePaymentResponseHeader, decodePayment
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT, freeTierKey, freeTierWanted, setFreeTierHeaders } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
-import { isFeedPaid, X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX, IP_ABUSE_RATE_LIMIT_MAX, PACKAGE_CHECK_RATE_LIMIT_MAX, FREE_MCP_TOOLS, x402PriceUsd } from '../lib/x402Config.mjs';
+import { isFeedPaid, X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX, IP_ABUSE_RATE_LIMIT_MAX, PACKAGE_CHECK_RATE_LIMIT_MAX, AGENT_MESSAGE_RATE_LIMIT_MAX, FREE_MCP_TOOLS, x402PriceUsd } from '../lib/x402Config.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { detectIndicatorType, lookupIocContext } from '../lib/iocContext.mjs';
 import { fetchThreatTelemetry, isEpssPaidEnabled } from '../lib/sourcePolicy.mjs';
@@ -144,6 +152,7 @@ import { ABUSEIPDB_KEY_HEADER, ABUSEIPDB_ATTRIBUTION_TEXT, ABUSEIPDB_TIMEOUT_MS,
 import { checkPackage, normalizePackageInput, buildPackageResult, packageCheckFailureReasons, PACKAGE_SOURCES } from '../lib/packageCheck.mjs';
 import { PREFLIGHT_DEF, PREFLIGHT_TOOL, runPreflight } from '../lib/preflight.mjs';
 import { checkX402Endpoint, checkAgentCard } from '../lib/agentChecks.mjs';
+import { checkAgentMessage, AGENT_MESSAGE_KINDS, AGENT_MESSAGE_MAX_BYTES } from '../lib/agentMessage.mjs';
 import { signResult, verifySignedResult, publicJwks, addJwksLink, MCP_SIGNATURE_META, pg1Version } from '../lib/signing.mjs';
 import { cachedCheck } from '../lib/resultCache.mjs';
 import { HOSTING_DEF, HOSTING_TOOL, hostingAdvice } from '../lib/hosting/advisor.mjs';
@@ -241,9 +250,62 @@ export const TEST_FIXTURE_OUTPUT_PROPERTIES = {
 const FEED_PAID_AT_START = isFeedPaid();
 
 // 1.18.0 (P8): preflight_check comes first in tools/list: the one call an
-// agent makes before it acts. check_x402_endpoint, check_agent_card and
-// verify_result are always free.
-export const EDGE_FREE_TOOLS = Object.freeze(['check_x402_endpoint', 'check_agent_card', 'verify_result']);
+// agent makes before it acts. check_x402_endpoint, check_agent_card,
+// check_agent_message (1.21.0) and verify_result are always free.
+export const EDGE_FREE_TOOLS = Object.freeze(['check_x402_endpoint', 'check_agent_card', 'check_agent_message', 'verify_result']);
+
+const AGENT_MESSAGE_FINDING_CODES = ['AGENT_MESSAGE_INSTRUCTION_OVERRIDE', 'AGENT_MESSAGE_ROLE_HIJACK', 'AGENT_MESSAGE_AUTHORITY_CLAIM', 'AGENT_MESSAGE_CONCEALMENT', 'AGENT_MESSAGE_PROMPT_EXTRACTION', 'AGENT_MESSAGE_HIDDEN_TAG_CHARACTERS', 'AGENT_MESSAGE_ZERO_WIDTH', 'AGENT_MESSAGE_BIDI_CONTROL', 'AGENT_MESSAGE_HTML_COMMENT_INSTRUCTION', 'AGENT_MESSAGE_MIXED_SCRIPT', 'AGENT_MESSAGE_ENCODED_BLOB', 'AGENT_MESSAGE_DATA_URI', 'AGENT_MESSAGE_SECRET_EXFILTRATION', 'AGENT_MESSAGE_EXFILTRATION_URL', 'AGENT_MESSAGE_TEMPLATED_IMAGE_URL', 'AGENT_MESSAGE_REMOTE_SCRIPT', 'AGENT_MESSAGE_PAYMENT_REDIRECT', 'AGENT_MESSAGE_FUND_TRANSFER', 'AGENT_MESSAGE_UNLIMITED_ALLOWANCE', 'AGENT_MESSAGE_SPENDING_LIMIT', 'AGENT_MESSAGE_GUARD_BYPASS', 'AGENT_MESSAGE_TOOL_INVOCATION', 'AGENT_MESSAGE_SHELL_COMMAND', 'AGENT_MESSAGE_PACKAGE_INSTALL', 'WALLET_SANCTIONED', 'HOSTNAME_PHISHING_LISTED', 'HOSTNAME_LOOKALIKE'];
+
+// check_agent_message (1.21.0): lib/agentMessage.mjs.
+export const AGENT_MESSAGE_DEF = {
+  name: 'check_agent_message',
+  description: 'PG1 Sovereign Threat Intelligence: a pre-read check for a message from another agent or a seller\'s skill.md. Call it BEFORE your own model reads the content, to catch prompt injection and wallet or payment manipulation. Give exactly one of text (up to 64 KB) or url (https only; fetched once with the same private-address and no-redirect rules as check_x402_endpoint, 6 s timeout, text/markdown or text/plain only, up to 64 KB), and optionally kind (skill_md, message or other). PG1\'s own deterministic rules, no AI model: instruction override and role hijack (ignore previous instructions, "you are now", developer or jailbreak modes, claims to come from a system, an admin, an AI company or the wallet\'s developer); hidden content (zero-width and bidirectional control characters, Unicode tag characters, instructions in HTML comments, mixed-script look-alike words, long base64 or hex blobs, data: URIs; base64, hex and tag-character text is decoded and checked too); exfiltration (requests to reveal or send environment variables, keys, seed phrases, .env or ~/.ssh; image or link URLs carrying templated or secret-like values; curl | sh); wallet and payment manipulation (sign, approve, transfer or bridge instructions, unlimited allowances, a changed payTo or recipient, raised spending limits, presign-guard or other checks turned off); tool hijack (use your own tools or shell, install packages). Then, within 4 s, up to 5 domains and 5 wallet addresses named in the content go through check_domain_age, check_hostname_reputation, check_wallet_sanctions and check_wallet_age; if that does not finish, the rule results come back anyway (AGENT_MESSAGE_ENRICHMENT_INCOMPLETE). Returns verdict malicious (any high-severity finding: hidden tag characters, a secret-exfiltration instruction, a payment redirect, a sanctioned address), suspicious (medium findings only) or no_findings ("checked: no findings"), each finding with its reason code, severity, line and a masked excerpt (120 characters at most; keys, tokens and seed phrases masked), plus the URLs, domains and wallet addresses found and the sha256 and byte length of what was checked. No findings does not prove the content is harmless. The content is never stored; only its sha256, length, kind, verdict and reason codes are logged. Always free (60/hour per caller).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      text: { type: 'string', maxLength: AGENT_MESSAGE_MAX_BYTES, description: 'The message or skill.md content, up to 65536 bytes of UTF-8. Give this or url, not both.' },
+      url: { type: 'string', maxLength: 2048, description: 'An https URL serving the content as text/markdown or text/plain (up to 65536 bytes). Give this or text, not both.' },
+      kind: { type: 'string', enum: [...AGENT_MESSAGE_KINDS], default: 'other', description: 'What the content is: skill_md, message or other. Recorded and echoed; the rules are the same for every kind.' }
+    },
+    additionalProperties: false
+  },
+  outputSchema: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['no_findings', 'suspicious', 'malicious'] },
+      summary: { type: 'string', description: '"checked: no findings", or the number of findings by severity.' },
+      kind: { type: 'string', enum: [...AGENT_MESSAGE_KINDS] },
+      source: { type: 'string', enum: ['text', 'url'] },
+      url: { type: 'string' },
+      content_type: { type: 'string' },
+      sha256: { type: 'string', description: 'Lowercase hex SHA-256 of the UTF-8 content checked.' },
+      bytes: { type: 'integer' },
+      findings: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            code: { type: 'string', enum: AGENT_MESSAGE_FINDING_CODES },
+            severity: { type: 'string', enum: ['high', 'medium'] },
+            line: { type: 'integer' },
+            excerpt: { type: 'string', maxLength: 120, description: 'Masked: keys, tokens, seed phrases and private keys are replaced with [masked].' },
+            decoded_from: { type: 'string', enum: ['base64', 'hex', 'tag_characters', 'data_uri', 'html_comment'] }
+          },
+          required: ['code', 'severity', 'line', 'excerpt']
+        }
+      },
+      findings_truncated: { type: 'boolean' },
+      urls: { type: 'array', items: { type: 'string' } },
+      domains: { type: 'array', items: { type: 'string' } },
+      wallet_addresses: { type: 'array', items: { type: 'string' } },
+      enrichment: { type: 'object', description: 'Results of PG1\'s domain and wallet checks on what the content names: ran, budget_ms, timed_out, note, domains[], wallets[].' },
+      rules_version: { type: 'string' },
+      note: { type: 'string' },
+      ...RESPONSE_META_OUTPUT_PROPERTIES
+    },
+    required: ['verdict', 'summary', 'kind', 'source', 'sha256', 'bytes', 'findings', 'urls', 'domains', 'wallet_addresses']
+  }
+};
 const EDGE_TOOLS = [
   PREFLIGHT_DEF,
   {
@@ -256,6 +318,7 @@ const EDGE_TOOLS = [
     description: 'PG1 Sovereign Threat Intelligence: checks another agent before you trust it. Fetches its /.well-known/agent-card.json (https only; private addresses and redirects refused): is it a valid A2A agent card, does its name claim a well-known brand the domain does not belong to, how old is the domain, is the hostname on the phishing blocklist or a look-alike. Always free (60/hour per caller). Give url or domain. Returns status flagged / no_flags / unknown; no_flags means no flags found, never "safe".',
     inputSchema: { type: 'object', properties: { url: { type: 'string', maxLength: 2048, description: 'The agent\'s https URL or its agent card URL.' }, domain: { type: 'string', maxLength: 253, description: 'Or just the agent\'s domain.' } }, additionalProperties: false }
   },
+  AGENT_MESSAGE_DEF,
   {
     name: 'verify_result',
     description: 'PG1 Sovereign Threat Intelligence: verifies that a result really came from PG1, unchanged. Every PG1 tool result is signed (Ed25519) over its request hash, result, sources, timestamp and PG1 version; the signature is in result._meta["pg1/signature"] (MCP), the task\'s metadata["pg1.signature"] (A2A) or "signature" (REST). Give the result object and the signature block; optionally tool and arguments to check it answers that exact request. Public keys: https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key (JWKS); you can verify offline without this tool. Always free.',
@@ -3174,7 +3237,7 @@ export function resolveTestFixture(toolName, args) {
   return outcome;
 }
 
-const STRUCTURED_CONTENT_TOOLS = new Set(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_ip_abuse', 'check_package']);
+const STRUCTURED_CONTENT_TOOLS = new Set(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_ip_abuse', 'check_package', 'check_agent_message']);
 
 function sendMcpFixtureResponse(res, toolName, outcome, requestId, pg1RequestId) {
   if (outcome.type === 'service_unavailable') {
@@ -3632,6 +3695,7 @@ export const READ_ONLY_TOOL_RUNNERS = Object.freeze({
   get_threat_actor_profile: (args) => handleThreatActorProfile(args),
   check_x402_endpoint: (args, ctx) => edgeCheck('check_x402_endpoint', args, ctx),
   check_agent_card: (args, ctx) => edgeCheck('check_agent_card', args, ctx),
+  check_agent_message: (args, ctx) => handleCheckAgentMessage(args, ctx),
   verify_result: (args) => handleVerifyResult(args)
 });
 
@@ -3675,6 +3739,35 @@ async function edgeCheck(name, args, ctx = {}) {
   const run = name === 'check_x402_endpoint' ? checkX402Endpoint : checkAgentCard;
   // Short-TTL cache of completed results (lib/resultCache.mjs).
   return cachedCheck(name, args, () => run(args, { runTool: internalRunTool }));
+}
+// check_agent_message: its own 60/hour counter per caller, the same
+// rate_limited error as the other free checks. Never cached
+// (lib/resultCache.mjs would hold the content in memory).
+const agentMessageRateLimitState = new Map();
+function enforceAgentMessageRateLimit(identifier, licensed) {
+  if (licensed || !identifier || identifier === 'unknown') return;
+  const now = Date.now();
+  const state = agentMessageRateLimitState.get(identifier);
+  if (!state || (now - state.windowStart) >= RATE_LIMIT_WINDOW_MS) {
+    if (agentMessageRateLimitState.size > 20000) agentMessageRateLimitState.clear(); // bounded memory per instance
+    agentMessageRateLimitState.set(identifier, { count: 1, windowStart: now });
+    return;
+  }
+  if (state.count >= AGENT_MESSAGE_RATE_LIMIT_MAX) {
+    const retryAfterMin = Math.ceil((RATE_LIMIT_WINDOW_MS - (now - state.windowStart)) / 60000);
+    throw Object.assign(new RateLimitedError(`check_agent_message is limited to ${AGENT_MESSAGE_RATE_LIMIT_MAX} calls/hour per caller. Retry in about ${retryAfterMin} minute(s), or use a Gumroad license key (X-API-KEY) to bypass this limit.`), { retryAfter: retryAfterMin * 60 });
+  }
+  state.count += 1;
+}
+export function resetAgentMessageRateLimit() { agentMessageRateLimitState.clear(); }
+export async function handleCheckAgentMessage(args, ctx = {}, deps = {}) {
+  let licensed = ctx.licensed === true;
+  if (!licensed && ctx.licenseKey) {
+    const check = await verifyGumroadLicense(ctx.licenseKey).catch(() => ({ valid: false }));
+    licensed = !!check.valid;
+  }
+  enforceAgentMessageRateLimit(ctx.identifier, licensed);
+  return checkAgentMessage(args, { runTool: internalRunTool, ...deps });
 }
 function handleVerifyResult(args) {
   const out = verifySignedResult({ result: args && args.result, signature: args && args.signature, jwks: publicJwks(), tool: args && typeof args.tool === 'string' ? args.tool : null, args: args && args.arguments });
@@ -3791,6 +3884,7 @@ export const TOOL_SOURCE_LABELS = {
   preflight_check: 'PG1 checks',
   check_x402_endpoint: 'x402 endpoint',
   check_agent_card: 'agent card',
+  check_agent_message: 'PG1 message rules',
   verify_result: 'PG1 signing keys'
 };
 

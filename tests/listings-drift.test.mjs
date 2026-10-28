@@ -59,7 +59,7 @@ function makeRes() {
 }
 
 test('the live tools/list is the default listing, with subscribe_alerts hidden', () => {
-  assert.equal(LIVE.length, 20);
+  assert.equal(LIVE.length, 21);
   assert.ok(!LIVE.includes('subscribe_alerts'));
   assert.deepEqual(HIDDEN, ['subscribe_alerts']);
 });

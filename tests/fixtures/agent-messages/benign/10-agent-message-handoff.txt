@@ -1,0 +1,11 @@
+Handoff from the research agent:
+
+I compared three hosting providers for the staging environment. Summary:
+
+| Provider | Region | Monthly cost |
+|---|---|---|
+| Alpha Cloud | eu-west | 42 USD |
+| Beta Hosting | us-east | 38 USD |
+| Gamma Compute | ap-south | 35 USD |
+
+My recommendation is Alpha Cloud because the team and most users are in Europe. The details and sources are in the shared doc. Let me know if you want me to check uptime history as well.

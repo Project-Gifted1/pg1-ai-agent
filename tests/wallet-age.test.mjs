@@ -712,7 +712,7 @@ const SCHEMA_TOOLS_WITH_NEW_META = new Set(['check_wallet_sanctions', 'check_dom
 test('check_wallet_age: is the 14th tool, and the 13 pre-existing tool definitions are unchanged except the agreed optional outputSchema additions', () => {
   // 16 since check_ip_abuse (1.16.0) and check_package (1.17.0); it is
   // still the 14th.
-  const LEGACY = TOOLS.filter((t) => !['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'verify_result', 'hosting_advisor'].includes(t.name));
+  const LEGACY = TOOLS.filter((t) => !['preflight_check', 'check_x402_endpoint', 'check_agent_card', 'check_agent_message', 'verify_result', 'hosting_advisor'].includes(t.name));
   assert.equal(LEGACY.length, 16);
   assert.equal(LEGACY[13].name, 'check_wallet_age');
   const snapshotPath = path.join(__dirname, 'fixtures', 'existing-13-tools-snapshot.json');
@@ -1177,7 +1177,7 @@ test('computeStatus: informational reason codes never flag on their own', () => 
   assert.equal(computeStatus([{ code: 'WALLET_DELEGATED' }, { code: 'WALLET_NO_HISTORY' }], ok), 'flagged');
   assert.equal(computeStatus([{ code: 'WALLET_SANCTIONED' }], ok), 'flagged');
   assert.equal(computeStatus([], ok), 'no_flags');
-  assert.deepEqual([...INCOMPLETE_REASON_CODES], ['WALLET_AGE_PARTIAL', 'X402_NO_PAYMENT_REQUEST', 'AGENT_CARD_NOT_FOUND', 'PREFLIGHT_CHECK_INCOMPLETE']);
+  assert.deepEqual([...INCOMPLETE_REASON_CODES], ['WALLET_AGE_PARTIAL', 'X402_NO_PAYMENT_REQUEST', 'AGENT_CARD_NOT_FOUND', 'PREFLIGHT_CHECK_INCOMPLETE', 'AGENT_MESSAGE_ENRICHMENT_INCOMPLETE']);
   // An incomplete code is "unknown" even if checks were (wrongly) all ok.
   assert.equal(computeStatus([{ code: 'WALLET_AGE_PARTIAL' }], ok), 'unknown');
   assert.equal(computeStatus([{ code: 'WALLET_AGE_PARTIAL' }, { code: 'WALLET_DELEGATED' }], ok), 'unknown');

@@ -20,7 +20,7 @@ const vercelConfig = JSON.parse(fs.readFileSync(path.join(repoRoot, 'vercel.json
 
 test('agent card has the required top-level identity fields', () => {
   assert.equal(card.name, 'PG1 Sovereign Threat Intelligence');
-  assert.equal(card.version, '1.20.2');
+  assert.equal(card.version, '1.21.0');
   assert.equal(card.protocolVersion, '0.3.0');
   assert.equal(card.documentationUrl, 'https://pg1-ai-agent.vercel.app/docs/crypto-alert-bot');
   assert.equal(card.url, 'https://pg1-ai-agent.vercel.app/api/a2a');
@@ -60,7 +60,7 @@ test('agent card has exactly one skill per A2A skill (free and paid), matching a
   const cardSkillIds = card.skills.map((s) => s.id).filter((id) => id !== 'submit_job' && id !== 'build_tool' && !id.startsWith('job.')).sort();
   const exposedSkillIds = A2A_SKILL_TOOLS.map((t) => t.name).sort();
   assert.deepEqual(cardSkillIds, exposedSkillIds);
-  assert.deepEqual(cardSkillIds, ['check_agent_card', 'check_domain_age', 'check_hostname_reputation', 'check_ip_abuse', 'check_package', 'check_wallet_age', 'check_wallet_sanctions', 'check_x402_endpoint', 'get_cve_batch', 'get_cve_by_product', 'get_cve_details', 'get_threat_actor_profile', 'get_usage_status', 'hosting_advisor', 'preflight_check', 'verify_result']);
+  assert.deepEqual(cardSkillIds, ['check_agent_card', 'check_agent_message', 'check_domain_age', 'check_hostname_reputation', 'check_ip_abuse', 'check_package', 'check_wallet_age', 'check_wallet_sanctions', 'check_x402_endpoint', 'get_cve_batch', 'get_cve_by_product', 'get_cve_details', 'get_threat_actor_profile', 'get_usage_status', 'hosting_advisor', 'preflight_check', 'verify_result']);
 });
 
 test('agent card: paid skills are tagged paid and name the price; the a2a-x402 extension is declared, not required', () => {

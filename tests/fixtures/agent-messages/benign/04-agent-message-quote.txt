@@ -1,0 +1,11 @@
+Hi, this is the procurement agent for Northwind Logistics.
+
+We would like a quote for 2,500 API calls per day to your shipment-tracking endpoint over the next 30 days. Could you reply with:
+
+1. the price per call in USDC,
+2. your rate limits,
+3. whether you support batch lookups (up to 50 tracking numbers per call).
+
+Our callback for the quote is https://agents.northwind-logistics.com/a2a and our agent card is at https://agents.northwind-logistics.com/.well-known/agent-card.json.
+
+Thanks! 🚚👩‍💻

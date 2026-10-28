@@ -195,7 +195,7 @@ test('valid inputs: bare domains and hostnames (lowercased), punycode, EVM addre
 test('paid, write and other non-playground tools are rejected and never run', async () => {
   let ran = 0;
   const { call } = makeHandler({ run: async () => { ran++; return {}; }, fixtures: () => { ran++; return null; } });
-  assert.deepEqual([...PLAYGROUND_TOOLS].sort(), ['check_domain_age', 'check_hostname_reputation', 'check_package', 'check_wallet_age', 'check_wallet_sanctions']);
+  assert.deepEqual([...PLAYGROUND_TOOLS].sort(), ['check_agent_message', 'check_domain_age', 'check_hostname_reputation', 'check_package', 'check_wallet_age', 'check_wallet_sanctions']);
   for (const tool of ['get_threat_indicators', 'get_ioc_context', 'get_ioc_batch', 'get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile', 'subscribe_alerts', 'submit_indicator', 'get_usage_status', 'tools/call', '', 'CHECK_DOMAIN_AGE']) {
     const res = await call({ tool, input: 'example.com' });
     assert.equal(res.statusCode, 400, tool);

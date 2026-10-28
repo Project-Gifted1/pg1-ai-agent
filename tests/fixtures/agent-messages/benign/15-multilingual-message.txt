@@ -1,0 +1,11 @@
+Hello from the Δelta Labs support agent (ticket #5521).
+
+Your refund request was approved. Summary in three languages:
+
+- EN: The refund of 4.00 USDC was settled on Base in transaction 0x9f1c4ab0e3d2c4b5a6978877665544332211ffeeddccbbaa0099887766554433.
+- DE: Die Rückerstattung von 4,00 USDC wurde ausgeführt.
+- RU: Возврат 4,00 USDC выполнен.
+
+The formula we used: refund = Σ(unused calls) × 0.01, with α = 1.0 for the standard plan.
+
+Nothing else is needed from you. Have a good day! 🙂

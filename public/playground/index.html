@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#0a0a0b">
   <meta name="color-scheme" content="dark">
   <title>PG1 Tools Playground</title>
-  <meta name="description" content="Run PG1's free threat-intelligence checks in the browser: domain age, hostname reputation, wallet sanctions, wallet age and a pre-install package check. No sign-in.">
+  <meta name="description" content="Run PG1's free threat-intelligence checks in the browser: domain age, hostname reputation, wallet sanctions, wallet age a pre-install package check and a pre-read check of an agent message or skill.md. No sign-in.">
   <meta name="google-site-verification" content="uGL_2UHMj5e5ZTkPFZfQ4QqRIzZSEO2UtchPRE1nfPA" />
   <link rel="canonical" href="https://pg1-ai-agent.vercel.app/playground">
   <link rel="icon" href="/brand/pg1-shield.svg" type="image/svg+xml">
@@ -37,6 +37,7 @@
       <label class="pg-tool"><input type="radio" name="tool" value="check_wallet_sanctions"><span class="pg-tool-name">Wallet sanctions</span><span class="pg-tool-desc">Sanctions list screening</span></label>
       <label class="pg-tool"><input type="radio" name="tool" value="check_wallet_age"><span class="pg-tool-name">Wallet age</span><span class="pg-tool-desc">First on-chain activity</span></label>
       <label class="pg-tool"><input type="radio" name="tool" value="check_package"><span class="pg-tool-name">Package</span><span class="pg-tool-desc">Check an npm or PyPI package before you install it</span></label>
+      <label class="pg-tool"><input type="radio" name="tool" value="check_agent_message"><span class="pg-tool-name">Agent message</span><span class="pg-tool-desc">Check a skill.md or agent message for prompt injection before your agent reads it</span></label>
     </fieldset>
 
     <div class="pg-field" id="pg-ecosystem-field" hidden>
@@ -47,7 +48,30 @@
       </select>
     </div>
 
-    <div class="pg-field">
+    <div class="pg-field" id="pg-source-field" hidden>
+      <label for="pg-source">Source</label>
+      <select id="pg-source" name="source">
+        <option value="text" selected>Paste the text</option>
+        <option value="url">Fetch an https URL</option>
+      </select>
+    </div>
+
+    <div class="pg-field" id="pg-kind-field" hidden>
+      <label for="pg-kind">Kind</label>
+      <select id="pg-kind" name="kind">
+        <option value="skill_md" selected>skill.md</option>
+        <option value="message">Message from an agent</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+
+    <div class="pg-field" id="pg-text-field" hidden>
+      <label for="pg-text">Content</label>
+      <textarea id="pg-text" name="text" rows="10" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-describedby="pg-text-hint" placeholder="# Weather skill"></textarea>
+      <p class="pg-hint" id="pg-text-hint">Paste a skill.md or a message from another agent, up to 64 KB. Nothing you paste is stored.</p>
+    </div>
+
+    <div class="pg-field" id="pg-input-field">
       <label for="pg-input" id="pg-input-label">Domain</label>
       <input id="pg-input" name="input" type="text" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="255" placeholder="example.com" aria-describedby="pg-input-hint" required>
       <p class="pg-hint" id="pg-input-hint">A domain name, like example.com.</p>

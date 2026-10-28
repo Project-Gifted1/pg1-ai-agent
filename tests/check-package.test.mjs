@@ -201,7 +201,7 @@ test('registered everywhere a free check is: A2A skill, agent card, chat (operat
   assert.ok(skill);
   assert.equal(skill.security, undefined, 'no key needed');
   assert.ok(skill.description.includes(ATTRIBUTIONS_URL));
-  assert.equal(card.version, '1.20.2');
+  assert.equal(card.version, '1.21.0');
   assert.ok(chatToolsForRole('operator').some((t) => t === tool));
   assert.ok(chatToolsForRole('guest').some((t) => t === tool), 'guest set too');
   assert.ok(PLAYGROUND_TOOLS.includes('check_package'));
