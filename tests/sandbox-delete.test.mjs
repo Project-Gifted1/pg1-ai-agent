@@ -110,3 +110,25 @@ test('refuses another owner\'s world, a blind copy and a world with an active ex
   assert.equal(anon.status, 401);
   assert.ok(await store.getWorld(third.id));
 });
+
+test('the short id /sandbox shows works too, when it names one of PG1\'s worlds', async () => {
+  const store = storeWithClock();
+  const { second } = await threeWorlds(store);
+  const short = second.id.slice(0, 8);
+  const look = await say(store, `/sandbox delete ${short}`);
+  assert.match(look.reply, new RegExp(second.id));
+  assert.match(look.reply, /Nothing has been deleted/);
+  const out = await say(store, `/sandbox delete ${short} confirm`);
+  assert.equal(out.deleted, true);
+  assert.equal(await store.getWorld(second.id), null);
+  assert.match((await say(store, '/sandbox delete abc confirm')).reply, /^Usage/, 'too short');
+  assert.match((await say(store, '/sandbox delete 00000000 confirm')).reply, /No PG1 world has that id/);
+});
+
+test('a short id still never deletes PG1\'s oldest world', async () => {
+  const store = storeWithClock();
+  const { first } = await threeWorlds(store);
+  const out = await say(store, `/sandbox delete ${first.id.slice(0, 8)} confirm`);
+  assert.match(out.reply, /this is your first universe; it is kept/);
+  assert.ok(await store.getWorld(first.id));
+});
