@@ -301,8 +301,7 @@ function quadruped(T, o) {
   const { len, h, w, color, belly = color, head = color, ear = null, tail = null, legColor = color } = o;
   k.capsule(w / 2, len - w, color, 0, h, 0, { rz: Math.PI / 2 });
   k.box(len * 0.6, w * 0.4, w * 0.8, belly, 0, h - w * 0.35, 0);
-  if (o.neck) grazerHead(k, o);
-  else {
+  {
     k.sphere(w * 0.55, head, len / 2 + w * 0.15, h + w * 0.45, 0, { sx: 1.25 });
     k.cone(w * 0.22, w * 0.5, 8, head, len / 2 + w * 0.75, h + w * 0.38, 0, { rz: -Math.PI / 2 });    // snout
     k.sphere(w * 0.08, '#111', len / 2 + w * 0.42, h + w * 0.6, w * 0.25);
@@ -320,38 +319,108 @@ function quadruped(T, o) {
   return { ...k.build(), parts: legs, size: len * 1.4 };
 }
 
-// A grazer's head (horse, cow, goat): a neck rising forward from the
-// shoulders, a long head angled down to a darker muzzle, small ears, and
-// horns (o.horns 'cow' curve out and up, 'goat' sweep back) or a mane.
-function grazerHead(k, o) {
-  const { len, h, w, color, head = color } = o;
-  const a = o.neckTilt ?? 0.75;                     // from upright, towards the front
-  const bx = len / 2 - w * 0.15, by = h + w * 0.15;
-  const tx = bx + Math.sin(a) * o.neck, ty = by + Math.cos(a) * o.neck;
-  k.cyl(w * 0.28, w * 0.4, o.neck + w * 0.3, 8, color, (bx + tx) / 2, (by + ty) / 2, 0, { rz: -a });
-  if (o.mane) k.box(w * 0.12, o.neck + w * 0.2, w * 0.14, o.mane, (bx + tx) / 2 - w * 0.22 * Math.cos(a), (by + ty) / 2 + w * 0.22 * Math.sin(a), 0, { rz: -a });
-  const hr = w * (o.headR ?? 0.3), hl = o.headLen ?? 1.9, d = -0.55;   // the head points forward and down
-  const hx = tx + Math.cos(d) * hr * hl * 0.55, hy = ty + Math.sin(d) * hr * hl * 0.55;
-  k.sphere(hr, head, hx, hy, 0, { sx: hl, sz: 0.85, rz: d });
-  k.sphere(hr * 0.72, o.muzzle || '#2b211b', hx + Math.cos(d) * hr * hl * 0.85, hy + Math.sin(d) * hr * hl * 0.85, 0, { sx: 1.1 });
-  for (const z of [hr * 0.7, -hr * 0.7]) {
-    k.sphere(hr * 0.16, '#111', tx + hr * 0.35, ty + hr * 0.2, z);
-    k.cone(hr * 0.28, hr * 0.8, 6, head, tx - hr * 0.2, ty + hr * 0.75, z * 1.15, { rx: z > 0 ? 0.5 : -0.5 });
-    if (o.horns === 'cow') k.cone(hr * 0.16, hr * 1.4, 6, '#e8dcc0', tx, ty + hr * 0.9, z * 1.9, { rx: z > 0 ? 1.0 : -1.0 });
-    if (o.horns === 'goat') k.cone(hr * 0.14, hr * 1.6, 6, '#6d5d4b', tx - hr * 0.5, ty + hr * 1.1, z * 0.6, { rz: 0.9 });
+// A four-legged animal: a body turned on a lathe (deeper at the chest,
+// rounded at the rump) with shoulders and haunches, a neck rising forward
+// to a long head with eyes on its sides, a muzzle or a nose, ears of its
+// kind, horns or antlers; jointed legs ending in hooves or paws (they walk:
+// parts), and a tail of its kind (a horse's hanging hair, a cow's tuft, a
+// goat's or deer's flag, a dog's or fox's brush, a rabbit's puff).
+//   o: len, h (leg length), w (body width), color, belly, legColor, hoof,
+//      neck, neckTilt, headR, headLen, muzzle, nose, ears ('point' | 'droop'
+//      | 'side' | 'long'), horns ('cow' | 'goat' | 'antlers'), mane, tail
+//      ('hair' | 'tuft' | 'flag' | 'brush' | 'puff'), tailColor, spots,
+//      udder, beard, deep (the chest's depth)
+function beast(T, o) {
+  const k = new Kit(T);
+  const hi = DETAIL >= 2;
+  const { len, h, w, color, belly = color, legColor = color } = o;
+  const R = w / 2; const deep = o.deep || 1.1; const seg = hi ? 10 : 7;
+  const by = h + R * 0.35;                                              // the body's axis
+  // Body: rump to chest, along x.
+  const prof = [[0.001, 0], [0.45, 0.015], [0.62, 0.04], [0.9, 0.14], [0.95, 0.3], [0.88, 0.5], [0.92, 0.68], [1.0, 0.82], [0.82, 0.94], [0.4, 0.99], [0.001, 1.0]];
+  k.lathe(prof.map(([r, t]) => [r * R, t * len]), seg + 4, color, -len / 2, by, 0, { rz: -Math.PI / 2, sx: deep, jitter: hi ? 0.03 : 0 });
+  if (belly !== color) k.sphere(R * 0.8, belly, 0, by - R * deep * 0.45, 0, { sx: len / R * 0.42, sy: 0.4, sz: 0.95, seg, rings: seg >> 1 });
+  for (const s of [1, -1]) {
+    k.sphere(R * 0.55, color, len * 0.3, by - R * 0.15, s * R * 0.42, { sx: 1.1, sy: 1.5, sz: 0.8, seg, rings: seg >> 1 });     // shoulder
+    k.sphere(R * 0.62, color, -len * 0.3, by - R * 0.05, s * R * 0.45, { sx: 1.3, sy: 1.5, sz: 0.8, seg, rings: seg >> 1 });    // haunch
   }
+  if (o.spots) for (let i = 0; i < 6; i++) k.sphere(R * 0.55, o.spots, (i - 2.5) * len * 0.15, by + R * ((i % 3) - 1) * 0.3, (i % 2 ? 1 : -1) * R * 0.86, { sx: 1.3, sy: 0.9, sz: 0.25, seg: 10, rings: 6 });
+  if (o.udder) { k.sphere(R * 0.32, o.udder, -len * 0.22, by - R * deep * 0.95, 0, { sx: 1.1, sy: 0.75, seg: 10, rings: 6 }); for (const [dx, dz] of [[-0.1, -0.12], [-0.1, 0.12], [0.1, -0.12], [0.1, 0.12]]) k.cyl(R * 0.04, R * 0.05, R * 0.18, 5, o.udder, -len * 0.22 + dx * R, by - R * deep * 1.17, dz * R); }
+
+  // Neck and head: the neck from the chest, forward and up; the head angled down.
+  const a = o.neckTilt ?? 0.75; const nl = o.neck ?? R * 0.6;
+  const bx = len / 2 - R * 0.55, ny = by + R * 0.45;
+  const tx = bx + Math.sin(a) * nl, ty = ny + Math.cos(a) * nl;
+  k.cyl(R * 0.42, R * 0.62, nl + R * 0.5, seg, color, (bx + tx) / 2, (ny + ty) / 2, 0, { rz: -a });
+  if (o.mane) { k.box(R * 0.14, nl + R * 0.6, R * 0.12, o.mane, (bx + tx) / 2 - R * 0.42 * Math.cos(a), (ny + ty) / 2 + R * 0.42 * Math.sin(a), 0, { rz: -a, jitter: 0.1 }); }
+  const hr = w * (o.headR ?? 0.3), hl = o.headLen ?? 1.9, d = o.headDip ?? -0.55;
+  const ax = Math.cos(d), ay = Math.sin(d);                             // along the head, towards the nose
+  const hx = tx + ax * hr * hl * 0.5, hy = ty + ay * hr * hl * 0.5;
+  k.sphere(hr, color, tx, ty, 0, { sx: 1.0, sy: 1.0, sz: 0.9, seg, rings: seg >> 1 });                          // the poll and cheeks
+  k.sphere(hr * 0.86, color, hx, hy, 0, { sx: hl * 0.8, sz: 0.85, rz: d, seg, rings: seg >> 1 });              // the face
+  const nx = tx + ax * hr * hl * 1.0, nyy = ty + ay * hr * hl * 1.0;
+  if (o.nose) k.sphere(hr * 0.24, o.nose, nx + ax * hr * 0.25, nyy + ay * hr * 0.25, 0, { seg: 8, rings: 6 });  // a dog's, a cat's nose
+  else { k.sphere(hr * 0.62, o.muzzle || shade(T, color, 0.55), nx, nyy, 0, { sx: 1.0, sy: 0.9, seg: 10, rings: 8 }); if (hi) for (const z of [0.25, -0.25]) k.sphere(hr * 0.12, '#140d08', nx + ax * hr * 0.5, nyy + ay * hr * 0.5 + hr * 0.1, z * hr, { seg: 6, rings: 4 }); }
+  if (o.beard) k.cone(hr * 0.22, hr * 1.1, 6, o.beard, nx - ax * hr * 0.4, nyy - hr * 0.75, 0, { rz: Math.PI });
+  for (const s of [1, -1]) {
+    const ex = tx + ax * hr * 0.35, ey = ty + ay * hr * 0.35 + hr * 0.38;
+    k.sphere(hr * 0.17, '#120c08', ex, ey, s * hr * 0.78, { seg: 8, rings: 6 });                                           // eyes
+    if (hi) k.sphere(hr * 0.05, '#ffffff', ex + hr * 0.08, ey + hr * 0.06, s * hr * 0.9, { seg: 4, rings: 3, layer: 'glow' });
+    const ear = o.ears || 'point';
+    if (ear === 'point') k.cone(hr * 0.3, hr * 0.9, 6, color, tx - hr * 0.2, ty + hr * 1.05, s * hr * 0.55, { rx: s * 0.3 });
+    if (ear === 'droop') k.sphere(hr * 0.42, shade(T, color, 0.8), tx - hr * 0.15, ty + hr * 0.15, s * hr * 1.0, { sx: 0.7, sy: 1.4, sz: 0.3, rx: s * 0.3, seg: 8, rings: 6 });
+    if (ear === 'side') k.sphere(hr * 0.35, color, tx - hr * 0.2, ty + hr * 0.55, s * hr * 1.15, { sx: 0.55, sy: 0.35, sz: 1.3, seg: 8, rings: 6 });
+    if (ear === 'long') k.capsule(hr * 0.22, hr * 2.0, color, tx - hr * 0.3, ty + hr * 1.7, s * hr * 0.35, { rx: s * 0.18, rz: 0.25, sz: 0.5, rseg: 8 });
+    if (o.horns === 'cow') k.cone(hr * 0.16, hr * 1.4, 6, '#e8dcc0', tx - hr * 0.1, ty + hr * 1.0, s * hr * 1.3, { rx: s * 1.0 });
+    if (o.horns === 'goat') k.cone(hr * 0.15, hr * 1.7, 6, '#6d5d4b', tx - hr * 0.6, ty + hr * 1.35, s * hr * 0.35, { rz: 0.9 });
+    if (o.horns === 'antlers') {
+      const at = '#6d4c2f'; const b0x = tx - hr * 0.1, b0y = ty + hr * 0.9, z0 = s * hr * 0.4;
+      k.cyl(hr * 0.06, hr * 0.09, hr * 2.4, 6, at, b0x - hr * 0.2, b0y + hr * 1.1, z0 * 1.6, { rx: s * -0.45, rz: 0.2 });
+      for (let i = 0; i < 3; i++) k.cyl(hr * 0.04, hr * 0.06, hr * 0.9, 5, at, b0x - hr * (0.05 + i * 0.15), b0y + hr * (0.8 + i * 0.6), z0 * (1.4 + i * 0.5), { rz: -0.7 + i * 0.1, rx: s * -0.3 });
+    }
+  }
+
+  // Tail, from the top of the rump.
+  const tc = o.tailColor || color; const rx0 = -len / 2 - R * 0.05, ry0 = by + R * 0.55;
+  if (o.tail === 'hair') for (let i = 0; i < (hi ? 5 : 2); i++) k.capsule(R * 0.1, h * 0.75, tc, rx0 - R * 0.25 - i * R * 0.05, ry0 - h * 0.42, (i - 2) * R * 0.06, { rz: -0.25 - i * 0.03, rseg: 6 });
+  if (o.tail === 'tuft') { k.cyl(R * 0.05, R * 0.06, h * 0.85, 5, tc, rx0 - R * 0.1, ry0 - h * 0.42, 0, { rz: -0.08 }); k.sphere(R * 0.14, shade(T, tc, 0.6), rx0 - R * 0.17, ry0 - h * 0.85, 0, { sy: 1.6, seg: 6, rings: 4 }); }
+  if (o.tail === 'flag') { k.cone(R * 0.16, R * 0.75, 6, tc, rx0 - R * 0.2, ry0 + R * 0.15, 0, { rz: 0.6 }); if (o.tailUnder) k.cone(R * 0.12, R * 0.55, 6, o.tailUnder, rx0 - R * 0.18, ry0 + R * 0.05, 0, { rz: 0.6 }); }
+  if (o.tail === 'brush') { k.capsule(R * (o.bushy ? 0.3 : 0.14), len * 0.42, tc, rx0 - len * 0.2, ry0 + R * 0.05, 0, { rz: 1.05, rseg: 8 }); if (o.tailTip) k.sphere(R * 0.24, o.tailTip, rx0 - len * 0.43, ry0 + R * 0.16, 0, { seg: 8, rings: 6 }); }
+  if (o.tail === 'puff') k.sphere(R * 0.35, tc, rx0 - R * 0.1, ry0, 0, { seg: 8, rings: 6 });
+
+  // Legs: a strong upper leg, a joint, a slender lower leg, a hoof or a paw.
+  const hoof = o.hoof; const legs = [];
+  for (const [x, z, role] of [[len * 0.3, R * 0.42, 'legL'], [len * 0.3, -R * 0.42, 'legR'], [-len * 0.3, R * 0.45, 'legR'], [-len * 0.3, -R * 0.45, 'legL']]) {
+    legs.push(partOf(T, (q) => {
+      const up = h * 0.5, lo = h * 0.44;
+      limb(q, R * 0.3, R * 0.18, up, legColor, 0, 0, 0, seg);
+      limb(q, R * 0.15, R * 0.12, lo, legColor, 0, -up, 0, seg);
+      if (hoof) { q.cyl(R * 0.13, R * 0.16, h * 0.07, seg, hoof, 0, -h + h * 0.035, 0); if (hi && o.feather) q.cyl(R * 0.17, R * 0.15, h * 0.06, seg, o.feather, 0, -h + h * 0.1, 0); }
+      else q.sphere(R * 0.17, shade(T, legColor, 0.85), R * 0.08, -h + R * 0.07, 0, { sx: 1.5, sy: 0.6, seg: 8, rings: 5 });
+    }, [x, h, z], role));
+  }
+  return { ...k.build(), parts: legs, size: len * 1.4 };
 }
 
-// A hen: a round body, a cocked tail, a red comb, a beak, two legs.
+// A hen: an egg-shaped body, a wing folded on each side, a fan of tail
+// feathers, a comb and wattles, a beak, eyes, legs with toes.
 function fowl(T, p) {
   const k = new Kit(T);
   const c = col(p.color, '#8d4a24');
-  k.sphere(0.16, c, 0, 0.28, 0, { sx: 1.3, sy: 1.05 });
-  k.sphere(0.09, c, 0.17, 0.42, 0);
-  k.box(0.08, 0.08, 0.02, '#c62828', 0.18, 0.53, 0);
-  k.cone(0.025, 0.06, 6, '#f9a825', 0.27, 0.42, 0, { rz: -Math.PI / 2 });
-  k.cone(0.09, 0.16, 6, c, -0.2, 0.36, 0, { rz: 0.9 });
-  for (const z of [0.05, -0.05]) k.cyl(0.012, 0.012, 0.14, 4, '#f9a825', 0.02, 0.07, z);
+  const dk = shade(T, c, 0.7);
+  k.lathe([[0.001, 0], [0.11, 0.04], [0.16, 0.13], [0.15, 0.24], [0.1, 0.32], [0.001, 0.37]], 12, c, -0.2, 0.28, 0, { rz: -Math.PI / 2, sx: 0.95 });
+  k.sphere(0.058, c, 0.15, 0.44, 0, { seg: 10, rings: 8 });                                      // head
+  k.cyl(0.045, 0.06, 0.12, 8, c, 0.12, 0.37, 0, { rz: -0.4 });                                   // neck
+  for (let i = 0; i < 3; i++) k.sphere(0.022, '#c62828', 0.12 + i * 0.025, 0.5 + (i === 1 ? 0.012 : 0), 0, { sz: 0.45, seg: 6, rings: 4 });   // comb
+  k.sphere(0.02, '#c62828', 0.19, 0.38, 0, { sy: 1.4, sz: 0.5, seg: 6, rings: 4 });             // wattle
+  k.cone(0.02, 0.05, 6, '#f9a825', 0.225, 0.43, 0, { rz: -Math.PI / 2 });                          // beak
+  for (const z of [0.04, -0.04]) k.sphere(0.01, '#111', 0.17, 0.45, z, { seg: 5, rings: 4 });
+  for (const z of [0.1, -0.1]) k.sphere(0.1, dk, -0.03, 0.29, z, { sx: 1.3, sy: 0.75, sz: 0.3, seg: 10, rings: 6 });   // wings
+  for (let i = 0; i < 5; i++) k.box(0.03, 0.18, 0.06, i % 2 ? dk : '#2b2b2b', -0.2, 0.38 + i * 0.012, (i - 2) * 0.025, { rz: 0.5 + i * 0.05, rx: (i - 2) * 0.15 });   // tail feathers
+  for (const z of [0.045, -0.045]) {
+    k.cyl(0.012, 0.012, 0.14, 4, '#f9a825', 0.0, 0.08, z);
+    for (const t of [-0.5, 0, 0.5]) k.box(0.05, 0.008, 0.01, '#f9a825', 0.025, 0.006, z + t * 0.02, { ry: t });
+  }
   return { ...k.build(), parts: [], size: 0.5 };
 }
 
@@ -1781,17 +1850,17 @@ export function buildModel(T, kind, p = {}, id = '') {
     case 'person': return person(T, p, seed);
     case 'child': return person(T, p, seed, { child: true });
     case 'astronaut': return person(T, p, seed, { astronaut: true });
-    case 'dog': return quadruped(T, { len: 0.9, h: 0.45, w: 0.3, color: '#a1887f', ear: '#6d4c41', tail: '#a1887f' });
-    case 'cat': return quadruped(T, { len: 0.55, h: 0.25, w: 0.2, color: '#ff9800', ear: '#ff9800', tail: '#ff9800' });
-    case 'rabbit': return quadruped(T, { len: 0.45, h: 0.18, w: 0.24, color: '#bcaaa4', belly: '#efebe9', ear: 'long', tail: '#fafafa' });
-    case 'fox': return quadruped(T, { len: 0.9, h: 0.4, w: 0.28, color: '#e65100', belly: '#fafafa', ear: '#e65100', tail: '#e65100', legColor: '#3e2723' });
-    case 'deer': return quadruped(T, { len: 1.5, h: 0.9, w: 0.42, color: '#8d6e63', belly: '#d7ccc8', ear: 'antlers', tail: '#efebe9' });
-    case 'horse': { const c = col(p.color, '#5d4037'); return quadruped(T, { len: 2.2, h: 1.2, w: 0.6, color: c, ear: c, tail: '#212121', legColor: c === '#5d4037' ? '#4e342e' : c, neck: 0.85, neckTilt: 0.55, headR: 0.32, headLen: 2.1, mane: '#212121' }); }
+    case 'dog': return beast(T, { len: 0.8, h: 0.4, w: 0.3, color: '#a1887f', belly: '#d7ccc8', neck: 0.14, neckTilt: 0.5, headR: 0.42, headLen: 1.5, headDip: -0.2, nose: '#1a1a1a', ears: 'droop', tail: 'brush', deep: 1.05 });
+    case 'cat': return beast(T, { len: 0.5, h: 0.22, w: 0.2, color: '#ff9800', neck: 0.06, neckTilt: 0.4, headR: 0.5, headLen: 1.1, headDip: -0.1, nose: '#d81b60', ears: 'point', tail: 'brush', deep: 1.0 });
+    case 'rabbit': return beast(T, { len: 0.42, h: 0.12, w: 0.24, color: '#bcaaa4', belly: '#efebe9', neck: 0.04, neckTilt: 0.3, headR: 0.42, headLen: 1.2, headDip: -0.2, nose: '#8d6e63', ears: 'long', tail: 'puff', tailColor: '#fafafa', deep: 1.15 });
+    case 'fox': return beast(T, { len: 0.85, h: 0.36, w: 0.26, color: '#e65100', belly: '#fafafa', legColor: '#3e2723', neck: 0.12, neckTilt: 0.6, headR: 0.42, headLen: 1.7, headDip: -0.2, nose: '#1a1a1a', ears: 'point', tail: 'brush', bushy: true, tailTip: '#fafafa', deep: 1.0 });
+    case 'deer': return beast(T, { len: 1.35, h: 0.85, w: 0.4, color: '#8d6e63', belly: '#d7ccc8', hoof: '#2a1d14', neck: 0.45, neckTilt: 0.35, headR: 0.36, headLen: 1.8, ears: 'point', horns: 'antlers', tail: 'flag', tailUnder: '#fafafa', deep: 1.1 });
+    case 'horse': { const c = col(p.color, '#5d4037'); return beast(T, { len: 2.1, h: 1.15, w: 0.62, color: c, legColor: c === '#5d4037' ? '#4e342e' : c, hoof: '#2a2a2a', neck: 0.95, neckTilt: 0.5, headR: 0.3, headLen: 2.3, muzzle: shade(T, c, 0.7), ears: 'point', mane: '#1c1c1c', tail: 'hair', tailColor: '#1c1c1c', deep: 1.15 }); }
     // A cow with a colour of its own is a small forest beast (the benin-warri
     // template's), plain and short-legged; otherwise black and white.
-    case 'cow': if (p.color) { const c = col(p.color, '#3e2723'); return quadruped(T, { len: 1.6, h: 0.65, w: 0.62, color: c, ear: c, tail: c, head: c, neck: 0.3, neckTilt: 1.1, headR: 0.34, headLen: 1.6, horns: 'cow' }); }
-      return quadruped(T, { len: 2.2, h: 0.9, w: 0.8, color: '#fafafa', spots: '#212121', ear: '#fafafa', tail: '#fafafa', head: '#fafafa' });
-    case 'goat': { const c = col(p.color, '#e8e0d0'); return quadruped(T, { len: 0.85, h: 0.48, w: 0.3, color: c, ear: c, tail: c, head: c, neck: 0.25, neckTilt: 0.6, headR: 0.36, headLen: 1.7, muzzle: c, horns: 'goat' }); }
+    case 'cow': if (p.color) { const c = col(p.color, '#3e2723'); return beast(T, { len: 1.5, h: 0.62, w: 0.64, color: c, hoof: '#1a1a1a', neck: 0.3, neckTilt: 1.05, headR: 0.32, headLen: 1.7, ears: 'side', horns: 'cow', tail: 'tuft', deep: 1.2 }); }
+      return beast(T, { len: 2.2, h: 0.85, w: 0.82, color: '#fafafa', spots: '#212121', hoof: '#2a2a2a', neck: 0.35, neckTilt: 1.1, headR: 0.3, headLen: 1.7, muzzle: '#f2b8a8', ears: 'side', horns: 'cow', tail: 'tuft', udder: '#f2b8a8', deep: 1.25 });
+    case 'goat': { const c = col(p.color, '#e8e0d0'); return beast(T, { len: 0.8, h: 0.45, w: 0.32, color: c, hoof: '#2a2a2a', neck: 0.22, neckTilt: 0.45, headR: 0.36, headLen: 1.7, muzzle: shade(T, c, 0.85), ears: 'side', horns: 'goat', beard: shade(T, c, 0.8), tail: 'flag', deep: 1.15 }); }
     case 'fowl': return fowl(T, p);
     case 'fish': return quadruped(T, { len: 0.5, h: 0.05, w: 0.15, color: '#4fc3f7' });
     case 'bird': return bird(T, p, seed);
