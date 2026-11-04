@@ -352,6 +352,12 @@ Open it from the `/sandbox` or `/world <id>` reply. It is a full-screen view in 
   - **Smoothness:** a step does not rebuild the scene. Movers, static batches and the ground are kept and only what changed is updated, and the frame loop allocates nothing: reused objects, no closures, and the clock and labels rewritten only when their words change. A step's answer carries only what changed since the tick the viewer has (`world.changes` with the changed entities and the ids that went, and no roads; `lib/sandbox/stepDiff.mjs`). On the universe that is about 98 KB a step instead of 172 KB.
   - Auto starts from the device and steps down a tier when frames keep running slow (30 fps on a mid-range phone at Medium). Reduced motion or no WebGL gives the 2D map.
   - What a live browser view cannot do: the offline, path-traced look of a scene modelled and rendered in Blender. That takes minutes per frame on a desktop GPU; a phone browser has about 30 ms. This viewer gets as close as it can live.
+- **Recording** (**Record**, or **V**): for videos of how the world develops.
+  - The quality tier never changes while recording. An automatic change rebuilds the whole 3D view, and that was the freeze seen in recordings. The render scale adapts instead when frames run slow.
+  - The tour stays longer on each thing, and the camera glides between them.
+  - The panels under the view update at most every 10 s, and the minimap and other overlays step aside. The clock, which says "Simulation", stays.
+  - The browser records the view itself (`public/sandbox/capture.js`): every drawn frame once, at up to 30 frames a second and 16 Mbit/s, as MP4 (H.264) where the browser can and WebM (VP9) otherwise, with "Simulation · day · time" burnt in. Stopping (or closing the Sandbox) saves the file on this device; nothing is uploaded. Play keeps running while recording.
+  - A screen recorder works too, with the same steady view.
 - **Drawn by the viewer, not world data:** the ground, sky, water ripples, grass tufts, close-up grass, stones and rocks, street markings and lamps, clouds and scenery woods. They come from the world's size and seed, stay clear of every entity, and nothing in the world can use them.
 - **Between steps,** everything glides from where it was to where the engine put it, along a curve through its recent steps (Catmull-Rom), not a straight line: cars round corners and turn their front wheels, planes bank into turns and pitch on the climb and descent, and wheels stay on the ground through the take-off roll.
 - **The coast and the roads** come from the world's data: the same terrain module as the engine, and the road network drawn from the road graph.
@@ -359,6 +365,13 @@ Open it from the `/sandbox` or `/world <id>` reply. It is a full-screen view in 
   - drag to turn, pinch or scroll to zoom, two fingers or right-drag to move;
   - tap something to follow it; its details show under the view;
   - **Overview** (the town), **Follow**, **Tour** (the camera visits what is moving: rockets, planes, buses), **Space** (the sky above), **Explore** (at eye height where the camera looks: drag to look round, tap the ground to walk there, pinch to step back);
+  - **Tour** (`public/sandbox/tour.js`): the camera shows what has just happened first (a birth, a launch, a landing, a fire, an arrival), then craft and buses, then anything moving. It never shows the same thing twice in a row, and it stays 14 s on each (20 s while recording). It glides from one to the next over a couple of seconds, with no jump. **◀ Prev** and **Next ▶** (or **B** and **N**) step through everything that moves, one by one, and follow it;
+  - **Keys**, whenever the Sandbox is open and no text field has focus (on a computer):
+    - **W A S D** or the arrows move;
+    - **Q / E** turn and **R / F** tilt;
+    - **+ / −** zoom;
+    - **N / B** next and previous;
+    - **T** tour, **O** overview, **Space** play and pause, **V** record;
   - **Full screen**.
 - **On the view:** a clock ("Simulation · day 1 · 09:24 · in space") and a minimap (tap to go there). Every view, and every screenshot, says "Simulation".
 - **A 2D map** instead with reduced motion or no WebGL.

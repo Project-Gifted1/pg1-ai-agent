@@ -47,6 +47,8 @@ import { createPost } from './post.js';
 import { loadTextures, addSurfaceDetail } from './materials.js';
 import { buildWaterways, waterwaysSignature } from './waterways.js';
 import { buildTerrain } from './terrain.js';
+import { pickTourTarget, cycleFollow, TOUR_DWELL_MS, TOUR_DWELL_RECORDING_MS } from './tour.js';
+import { createCapture } from './capture.js';
 
 const MAX_ENTITIES = 1000;
 // Depth of field focuses on a followed thing nearer than this (metres); farther, all is sharp.
@@ -799,6 +801,30 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
 
   // --- views ------------------------------------------------------------------------------
   let mode = 'overview'; let selectedId = null; let tourNext = 0;
+  // The tour's recent picks, the world's latest events, a glide to a new
+  // target, and recording (no quality changes, longer looks, the video).
+  const tourRecent = []; let latestEvents = []; let glideUntil = 0; let recording = false; let capture = null;
+  function glideTo(id) {
+    selectedId = id; glideUntil = performance.now() + 2500;
+    const e = world.entities.find((x) => x.id === id);
+    if (onSelect && e) onSelect(describe(e));
+  }
+  // Things the tour and Next / Previous can show: what moves on its own (not riding inside something).
+  function moverCandidates() {
+    const out = [];
+    for (const m of movers.values()) if (m.e && !m.e.props.inside && !m.celestial) out.push({ id: m.id, base: m.e.base, cls: m.e.cls, moving: m.from.distanceTo(m.to) > 0.5 });
+    return out;
+  }
+  // Next (dir 1) or previous (-1) moving thing, followed with a glide.
+  function followNext(dir = 1) {
+    const c = cycleFollow(moverCandidates().filter((x) => x.moving), selectedId, dir) || cycleFollow(moverCandidates(), selectedId, dir);
+    if (!c) return null;
+    glideTo(c.id);
+    if (mode !== 'follow') setMode('follow', { quiet: false });
+    else { const se = world.entities.find((x) => x.id === c.id); if (se) controls.flyTo({ dist: Math.max(6, sizeOf(c.id) * 3) }); }
+    marker.visible = true;
+    return c.id;
+  }
   const controls = createControls(THREE, canvas, camera, { onTap: (x, y) => pick(x, y) });
   controls.ease = settings.ease || 5;
   controls.onPan = () => { if (mode === 'follow' || mode === 'tour') setMode('free'); };
@@ -989,11 +1015,14 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   let post = null;
   let viewW = 1; let viewH = 1;
   // Cinematic draws fewer pixels when frames run over 33 ms (quality.js).
-  const renderScale = tier === 'cinematic' ? createRenderScale({ onChange: (sc) => { container.dataset.renderScale = String(sc); resize(); } }) : null;
+  // While recording, every tier adapts its pixels this way instead of
+  // switching tier (a switch rebuilds the whole view: a freeze on video).
+  const renderScale = createRenderScale({ onChange: (sc) => { container.dataset.renderScale = String(sc); resize(); } });
+  const scaling = () => tier === 'cinematic' || recording;
   function resize() {
     const r = container.getBoundingClientRect();
     viewW = Math.max(1, r.width); viewH = Math.max(1, r.height);
-    const pr = Math.min(settings.pixelRatio, window.devicePixelRatio || 1) * (renderScale ? renderScale.scale : 1);
+    const pr = Math.min(settings.pixelRatio, window.devicePixelRatio || 1) * (renderScale && scaling() ? renderScale.scale : 1);
     renderer.setPixelRatio(pr);
     renderer.setSize(Math.max(1, r.width), Math.max(1, r.height), false);
     camera.aspect = Math.max(1, r.width) / Math.max(1, r.height);
@@ -1185,7 +1214,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     raf = requestAnimationFrame(frame);
     if (acc < 1 / targetFps - 0.002) return;
     const step = acc; acc = 0;
-    if (lastRender) { governor.sample(Math.min(1000, now - lastRender)); if (renderScale) renderScale.sample(now - lastRender); }
+    if (lastRender) { governor.sample(Math.min(1000, now - lastRender)); if (renderScale && scaling()) renderScale.sample(now - lastRender); }
     lastRender = now;
     animateFires(now);
     const tickF = animate(step, now);
@@ -1196,19 +1225,21 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     if ((mode === 'follow' || mode === 'tour') && selectedId) {
       const p = entityPos(selectedId);
       // Locked on: the camera keeps up with fast things (a car covers 90 m a step).
-      if (p) { controls.goalTarget.copy(p).add(tmpB.set(0, Math.min(6, sizeOf(selectedId) * 0.3), 0)); controls.target.lerp(controls.goalTarget, 1 - Math.exp(-step * 9)); }
+      // Moving on to something new, the camera glides there over a couple of
+      // seconds instead of jumping (no cut in a recording).
+      const lock = now < glideUntil ? 1.4 : 9;
+      if (p) { controls.goalTarget.copy(p).add(tmpB.set(0, Math.min(6, sizeOf(selectedId) * 0.3), 0)); controls.target.lerp(controls.goalTarget, 1 - Math.exp(-step * lock)); }
     }
     if (mode === 'tour' && now > tourNext) {
-      const pool = [...movers.values()].filter((m) => m.e && !m.e.props.inside && !m.celestial && m.from.distanceTo(m.to) > 0.5);
-      const pref = pool.filter((m) => ['rocket', 'plane', 'helicopter', 'shuttle', 'bus', 'small_plane', 'ship', 'hot_air_balloon'].includes(m.e.base));
-      const list = pref.length && Math.random() < 0.6 ? pref : pool;
-      if (list.length) {
-        const m = list[Math.floor(Math.random() * list.length)];
-        selectedId = m.id;
-        if (onSelect) onSelect(describe(m.e));
-        controls.flyTo({ dist: Math.max(16, m.size * 4), phi: 1.1 + Math.random() * 0.25, theta: controls.goalTheta + 0.8 });
+      // What is newsworthy first, nothing shown twice in a row, and a long,
+      // calm look at each (longer while recording).
+      const m = movers.get((pickTourTarget(moverCandidates(), { recent: tourRecent, events: latestEvents }) || {}).id);
+      if (m) {
+        tourRecent.push(m.id); if (tourRecent.length > 8) tourRecent.shift();
+        glideTo(m.id);
+        controls.flyTo({ dist: Math.max(16, m.size * 4), phi: 1.1 + Math.random() * 0.25, theta: controls.goalTheta + 0.6 });
       }
-      tourNext = now + 9000;
+      tourNext = now + (recording ? TOUR_DWELL_RECORDING_MS : TOUR_DWELL_MS);
     }
     controls.update(step);
     checkInside();
@@ -1284,6 +1315,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     if (sc !== drawnScene) { drawnScene = sc; if (post && post.setScene) post.setScene(sc); }
     if (!surface) env.beforeRender(camera);
     if (post) post.render(still); else renderer.render(sc, camera);
+    if (capture && capture.recording) capture.frame();
   }
   // A still of the view (a PNG data URL), stamped "Simulation" with the day and time.
   function screenshot() {
@@ -1311,6 +1343,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       const prevTick = world.tick;
       const prevId = world.id;
       world = normalizeWorld(next);
+      latestEvents = next && Array.isArray(next.recent_events) ? next.recent_events : [];
       // A scene rebuilt for another tier shows the clock before its first frame.
       if (!clockEl.textContent) { const c = clockOf(world); clockEl.textContent = `Simulation · day ${c.day} · ${c.hh}:${c.mm}`; }
       // Another world: start afresh (camera, things, selection, clock).
@@ -1385,6 +1418,16 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       schedule();
     },
     setXray(on) { setXray(on); schedule(); }, xray: () => xray,
+    // Recording: no automatic quality changes (the page keeps the tier), the
+    // render scale adapts instead, longer tour looks, overlays hidden.
+    setRecording(on) { recording = !!on; governor.setAuto(false); container.classList.toggle('is-recording', recording); container.dataset.recording = recording ? '1' : '0'; schedule(); },
+    recording: () => recording,
+    // A video of the view, made in the browser (capture.js); stopCapture
+    // resolves to { blob, mime, seconds, frames }.
+    startCapture(o = {}) { if (capture && capture.recording) return true; capture = createCapture(renderer.domElement, { ...o, stamp: () => clockEl.textContent || 'Simulation' }); if (!capture) return false; capture.start(); return true; },
+    stopCapture() { const c = capture; capture = null; return c ? c.stop() : Promise.resolve(null); },
+    followNext(dir) { const id = followNext(dir); schedule(); return id; },
+    key(e) { const used = controls.key(e); if (used) schedule(); return used; },
     setNames(on) { showNames = !!on; schedule(); }, names: () => showNames,
     view: () => mode,
     tier: () => governor.tier,
@@ -1428,11 +1471,14 @@ export async function createSandboxScene(container, { reducedMotion = false, coa
   let auto = !saved || saved === 'auto';
   let current = tier || pickTier({ coarse, memory: (typeof navigator !== 'undefined' && navigator.deviceMemory) || 0, cores: (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 0, saved });
   let inner = null; let lastWorld = null; let lastDuration = 1200; let busy = null; let destroyed = false;
-  const opts = () => ({ coarse, threeUrl, onSelect, tier: current, onTierChange: (t) => { if (auto) switchTo(t, { manual: false }); } });
+  // Recording: the tier stays as it is (a change rebuilds the view: a freeze on video).
+  let recordingOn = false;
+  const opts = () => ({ coarse, threeUrl, onSelect, tier: current, onTierChange: (t) => { if (auto && !recordingOn) switchTo(t, { manual: false }); } });
   async function build(state) {
     const s = await create3d(container, opts());
     if (!s) return null;
-    s.governor.setAuto(auto);
+    s.governor.setAuto(auto && !recordingOn);
+    if (recordingOn) s.setRecording(true);
     if (lastWorld) s.update(lastWorld, { duration: lastDuration });
     if (state) s.restoreCamera(state);
     return s;
@@ -1468,6 +1514,12 @@ export async function createSandboxScene(container, { reducedMotion = false, coa
     setNames: (on) => call('setNames', on), names: () => !!call('names'),
     select: (id) => call('select', id), selected: () => call('selected'),
     clock: () => call('clock'),
+    followNext: (dir) => call('followNext', dir) || null,
+    key: (e) => !!call('key', e),
+    setRecording(on) { recordingOn = !!on; if (inner) { inner.setRecording(recordingOn); inner.governor.setAuto(auto && !recordingOn); } },
+    recording: () => recordingOn,
+    startCapture: (o) => !!call('startCapture', o),
+    stopCapture: () => call('stopCapture') || Promise.resolve(null),
     screenshot: () => call('screenshot') || null,
     quality: () => ({ tier: current, auto, tiers: TIERS.slice() }),
     // 'auto', or a tier to keep (remembered on this device).

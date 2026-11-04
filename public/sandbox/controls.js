@@ -65,7 +65,18 @@ export function createControls(THREE, canvas, camera, { onTap } = {}) {
   };
   const onCtx = (e) => e.preventDefault();
   const keys = new Set();
-  const onKey = (e) => { if (/^(?:w|a|s|d|q|e|arrow\w+)$/i.test(e.key) && document.activeElement === canvas) { e.type === 'keydown' ? keys.add(e.key.toLowerCase()) : keys.delete(e.key.toLowerCase()); e.preventDefault(); } };
+  // Held keys move the camera: W A S D or the arrows pan, Q / E turn,
+  // R / F tilt, + / - zoom. On the canvas when it has focus, and from the
+  // page (c.key) whenever the Sandbox is open and no text field has focus.
+  const HELD = /^(?:w|a|s|d|q|e|r|f|\+|=|-|_|arrow\w+)$/i;
+  c.key = (e) => {
+    if (!HELD.test(e.key) || e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (e.type === 'keydown') keys.add(e.key.toLowerCase()); else keys.delete(e.key.toLowerCase());
+    c.userActive = 3;
+    return true;
+  };
+  const onKey = (e) => { if (document.activeElement === canvas && c.key(e)) e.preventDefault(); };
+  c.releaseKeys = () => keys.clear();
   canvas.tabIndex = 0;
   canvas.addEventListener('pointerdown', onDown);
   canvas.addEventListener('pointermove', onMove);
@@ -93,6 +104,9 @@ export function createControls(THREE, canvas, camera, { onTap } = {}) {
       if (keys.has('a') || keys.has('arrowleft')) pan(-sp, 0);
       if (keys.has('d') || keys.has('arrowright')) pan(sp, 0);
       if (keys.has('q')) c.goalTheta -= dt; if (keys.has('e')) c.goalTheta += dt;
+      if (keys.has('r')) c.goalPhi = Math.max(0.08, c.goalPhi - dt * 0.6); if (keys.has('f')) c.goalPhi = Math.min(1.52, c.goalPhi + dt * 0.6);
+      if (keys.has('+') || keys.has('=')) c.goalDist = Math.max(c.minDist, c.goalDist * Math.exp(-dt * 1.2));
+      if (keys.has('-') || keys.has('_')) c.goalDist = Math.min(c.maxDist, c.goalDist * Math.exp(dt * 1.2));
     }
     c.userActive = Math.max(0, c.userActive - dt);
     if (c.autoRotate && c.userActive <= 0) c.goalTheta += c.autoRotate * dt;

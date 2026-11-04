@@ -102,8 +102,9 @@ test('3: Cinematic lowers its render scale when frames run over 33 ms, and raise
   assert.equal(rs.scale, 1);
   assert.ok(changes.length >= 3);
   const scene = read('public/sandbox/sandbox-scene.js');
-  assert.match(scene, /const renderScale = tier === 'cinematic' \? createRenderScale/);
-  assert.match(scene, /\* \(renderScale \? renderScale\.scale : 1\)/);
+  assert.match(scene, /const renderScale = createRenderScale\(/);
+  assert.match(scene, /const scaling = \(\) => tier === 'cinematic' \|\| recording;/);
+  assert.match(scene, /\* \(renderScale && scaling\(\) \? renderScale\.scale : 1\)/);
 });
 
 test('3: on a phone the shadow map is at most 4096 and foliage scales with the device', () => {
