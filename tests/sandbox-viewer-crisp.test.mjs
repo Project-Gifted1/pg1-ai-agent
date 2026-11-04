@@ -54,6 +54,13 @@ test('1: stars and the galaxy band are at least 2 px and just below bloom\'s thr
   assert.match(read('public/sandbox/surface.js'), /new THREE\.PointsMaterial\(\{ color: 0xd9d9d9, size: 2, sizeAttenuation: false/);
 });
 
+test('1: from space the sky is black from the space altitude up, and the sea never reflects day-blue', () => {
+  const env = read('public/sandbox/environment.js');
+  assert.match(env, /env\.space = smooth\(spaceAlt \* 0\.45, spaceAlt, cameraAlt\);/);
+  assert.match(env, /u\.uZenith\.value\.copy\(skyU\.uTop\.value\)\.lerp\(SPACE_SEA_SKY, sp\); u\.uHorizon\.value\.copy\(skyU\.uHorizon\.value\)\.lerp\(SPACE_SEA_SKY, sp\);/);
+  assert.match(env, /\.lerp\(SPACE_SEA, sp\); continue; \}/);
+});
+
 // --- 2. planet fog --------------------------------------------------------------------------------
 
 test('2: each planet\'s air: the ground clear for 20 to 40 km, a light haze at the horizon, thinner with height', () => {

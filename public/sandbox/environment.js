@@ -43,6 +43,9 @@ void main() {
 // smears them).
 export const STAR_PX = 2;
 export const STAR_PEAK = 0.85;
+// What the sea reflects, and looks like, seen from space: dark, deep blue.
+export const SPACE_SEA_SKY = Object.freeze({ r: 0.0, g: 0.004, b: 0.012, isColor: true });
+export const SPACE_SEA = Object.freeze({ r: 0.01, g: 0.05, b: 0.12, isColor: true });
 const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -587,7 +590,9 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     const day = smooth(-0.12, 0.25, elev);
     const dusk = 1 - Math.abs(smooth(-0.25, 0.25, elev) * 2 - 1);
     env.night = 1 - day;
-    env.space = smooth(spaceAlt * 0.45, spaceAlt * 1.05, cameraAlt);
+    // Fully space (a black sky) from the space altitude up, never a trace of
+    // day-blue around it.
+    env.space = smooth(spaceAlt * 0.45, spaceAlt, cameraAlt);
     const sp = env.space;
     skyU.uSunDir.value.copy(sunDir);
     skyU.uTop.value.setRGB(lerp(0.01, 0.16, day), lerp(0.02, 0.42, day), lerp(0.06, 0.86, day));
@@ -646,12 +651,14 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
         u.uTime.value = t;
         u.uSunDir.value.copy(sunDir);
         u.uSunColor.value.setRGB(lerp(0.05, 1, day), lerp(0.05, 0.95, day * (1 - dusk * 0.4)), lerp(0.08, 0.88, day * (1 - dusk * 0.6)));
-        u.uZenith.value.copy(skyU.uTop.value); u.uHorizon.value.copy(skyU.uHorizon.value);
+        // From space the sea reflects black space, not the day's blue sky: it
+        // reads as deep ocean, never a sky-blue haze round the world.
+        u.uZenith.value.copy(skyU.uTop.value).lerp(SPACE_SEA_SKY, sp); u.uHorizon.value.copy(skyU.uHorizon.value).lerp(SPACE_SEA_SKY, sp);
         u.uDeep.value.setRGB(lerp(0.005, 0.03, day), lerp(0.01, 0.17, day), lerp(0.03, 0.27, day));
         u.uShallow.value.setRGB(lerp(0.01, 0.12, day), lerp(0.03, 0.58, day), lerp(0.05, 0.6, day));
         continue;
       }
-      if (w.userData.sea) { w.material.color.setRGB(lerp(0.03, 0.12, day), lerp(0.07, 0.43, day), lerp(0.14, 0.62, day)); continue; }
+      if (w.userData.sea) { w.material.color.setRGB(lerp(0.03, 0.12, day), lerp(0.07, 0.43, day), lerp(0.14, 0.62, day)).lerp(SPACE_SEA, sp); continue; }
       const p = w.geometry.attributes.position; const b = w.userData.base;
       for (let i = 0; i < p.count; i++) p.array[i * 3 + 1] = Math.sin(b[i * 3] * 0.05 + t * 1.3) * 0.12 + Math.cos(b[i * 3 + 2] * 0.07 + t) * 0.1;
       p.needsUpdate = true;
