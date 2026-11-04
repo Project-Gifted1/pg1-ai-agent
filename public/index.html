@@ -5749,6 +5749,17 @@
       };
     })();
 
+    // SESSION HINT: a flag (no token, nothing secret) that this browser had
+    // a cookie session, so a reload asks /api/security whether it is still
+    // live. Without it the page never asks: a guest's load sends nothing.
+    const SESSION_HINT_KEY = 'pg1_session_hint';
+    function setSessionHint(on) {
+      try { if (on) localStorage.setItem(SESSION_HINT_KEY, '1'); else localStorage.removeItem(SESSION_HINT_KEY); } catch (e) {}
+    }
+    function hasSessionHint() {
+      try { return localStorage.getItem(SESSION_HINT_KEY) === '1'; } catch (e) { return false; }
+    }
+
     function sessionEnded() {
       if (!cookieSession) return;
       cookieSession = false;
@@ -6187,6 +6198,7 @@
           // A session cookie was set: the password is not kept or sent again.
           if (data.session === true) {
             cookieSession = true;
+            setSessionHint(true);
             sessionUser = SESSION_PLACEHOLDER;
             sessionPass = SESSION_PLACEHOLDER;
             document.getElementById('auth-pass').value = '';
@@ -6225,6 +6237,7 @@
 
     function startCookieSession() {
       cookieSession = true;
+      setSessionHint(true);
       sessionUser = SESSION_PLACEHOLDER;
       sessionPass = SESSION_PLACEHOLDER;
       afterSignIn();
@@ -6254,10 +6267,11 @@
     // On load: a session cookie still live (12 h) signs the page in without
     // the gate.
     async function resumeCookieSession() {
-      if (typeof PG1Passkey === 'undefined' || sessionUser) return;
+      if (typeof PG1Passkey === 'undefined' || sessionUser || !hasSessionHint()) return;
       const st = await PG1Passkey.status();
       if (st && st.signedIn && !sessionUser) startCookieSession();
       else if (st && st.passkeyRequired) setAuthMessage('Sign in with your passkey.', false);
+      if (!st || !st.signedIn) setSessionHint(!!(st && st.passkeyRequired));
     }
 
     // /security passkey add: the phone's passkey prompt, then the server
