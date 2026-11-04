@@ -10,8 +10,12 @@
 //     -> { scene, heightAt(x, z), sun, dispose() }
 //   model(kind, props, id) -> an Object3D (the page's own model meshes)
 //
-// The ground is 4 km across, shaped by seeded noise; the sky is the world's
-// air (or space, with stars, where it has none); its colony, if it has one,
+// The ground is 4 km across in detail, shaped by seeded noise, and goes on
+// to the horizon (60 km) in less detail; the sky is the world's air (or
+// space, with stars, where it has none). The air is a fog of its own
+// (ATMOSPHERE, atmosphereFog): the ground reads clearly for 20 to 40 km,
+// with a light haze at the horizon, thinner higher up (height fog); the sky
+// and the stars are never fogged, and no quality tier thickens it. Its colony, if it has one,
 // stands at the middle with astronauts and a rover; after first contact, a
 // far world shows its people's city.
 
@@ -37,6 +41,43 @@ const SKY = {
   ocean: { top: '#2a6fd6', horizon: '#bcd9f2', air: true },
   alien: { top: '#2b0f3a', horizon: '#d78ad0', air: true }
 };
+
+// Each world's air: how far the ground stays clear (visibility, metres: the
+// fog is half way at this distance) and how fast the haze thins with
+// height (scale height, metres). Airless worlds have no fog at all.
+export const ATMOSPHERE = Object.freeze({
+  rocky: null,
+  ice: Object.freeze({ visibility: 40000, scaleHeight: 1200 }),
+  ocean: Object.freeze({ visibility: 32000, scaleHeight: 1500 }),
+  alien: Object.freeze({ visibility: 22000, scaleHeight: 2000 })
+});
+// FogExp2's density for a visibility V: fog = 1 - exp(-(d·density)²) is a half at V.
+export const fogDensityFor = (visibility) => Math.sqrt(Math.LN2) / visibility;
+// How much fog at distance d and height y (0..1): what the shader below draws.
+export function fogAmount(kind, d, y = 0) {
+  const a = ATMOSPHERE[kind];
+  if (!a) return 0;
+  const k = fogDensityFor(a.visibility) * d;
+  return (1 - Math.exp(-k * k)) * Math.exp(-Math.max(0, y) / a.scaleHeight);
+}
+
+// Height fog on a material: the scene's FogExp2, thinning with height
+// above the ground (scale height). Sky and stars set fog: false and are
+// never touched.
+function heightFog(material, scaleHeight) {
+  if (!material || !material.fog || material.isShaderMaterial || material.userData.heightFog) return;
+  material.userData.heightFog = true;
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.fogScaleHeight = { value: scaleHeight };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <fog_pars_vertex>', '#include <fog_pars_vertex>\nvarying float vFogWorldY;')
+      .replace('#include <fog_vertex>', '#include <fog_vertex>\nvFogWorldY = (inverse(viewMatrix) * mvPosition).y;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <fog_pars_fragment>', '#include <fog_pars_fragment>\nvarying float vFogWorldY;\nuniform float fogScaleHeight;')
+      .replace('#include <fog_fragment>', '#ifdef USE_FOG\n  #ifdef FOG_EXP2\n    float fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );\n  #else\n    float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );\n  #endif\n  fogFactor *= exp( - max( vFogWorldY, 0.0 ) / fogScaleHeight );\n  gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );\n#endif');
+  };
+  material.customProgramCacheKey = () => `heightfog-${scaleHeight}`;
+}
 
 function noiseOf(seed) {
   const P = 256; const g = new Float32Array(P * P); let s = seed >>> 0 || 7;
@@ -82,10 +123,31 @@ export function buildSurface(THREE, { kind, name = 'a world', color = '#888888',
   const ground = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: kind === 'ice' ? 0.35 : 0.95, metalness: 0, flatShading: kind === 'rocky' }));
   ground.receiveShadow = true;
   scene.add(ground);
-  if (kind === 'ocean') { const sea = new THREE.Mesh(new THREE.CircleGeometry(S * 0.75, 64), new THREE.MeshStandardMaterial({ color: base, roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.85 })); sea.rotation.x = -Math.PI / 2; sea.position.y = 0.5; scene.add(sea); }
+  // Beyond the detailed ground, on to the horizon: the same land in less
+  // detail (60 km across), a little lower so the near ground always covers it.
+  const FAR = 60000; const NF = coarse ? 60 : 96;
+  const farGeo = new THREE.PlaneGeometry(FAR, FAR, NF, NF); farGeo.rotateX(-Math.PI / 2);
+  const fp = farGeo.attributes.position; const fcols = new Float32Array(fp.count * 3);
+  for (let i = 0; i < fp.count; i++) {
+    const x = fp.getX(i); const z = fp.getZ(i);
+    fp.setY(i, (Math.abs(x) < S / 2 && Math.abs(z) < S / 2 ? Math.min(heightAt(x, z), 0) - 8 : heightAt(x, z) - 1.5));
+    const n = noise(x / 900 + 11, z / 900 - 7, 3);
+    if (kind === 'ocean') c.copy(grass).lerp(new THREE.Color('#7d6b4a'), 0.3).offsetHSL(0, 0, (n - 0.5) * 0.1);
+    else if (kind === 'ice') c.copy(snow).lerp(base, 0.25 + (n - 0.5) * 0.4);
+    else if (kind === 'alien') c.copy(base).offsetHSL((n - 0.5) * 0.1, 0, (n - 0.5) * 0.3 - 0.15);
+    else c.copy(base).offsetHSL(0, -0.1, (n - 0.5) * 0.3 - 0.05);
+    fcols[i * 3] = c.r; fcols[i * 3 + 1] = c.g; fcols[i * 3 + 2] = c.b;
+  }
+  farGeo.setAttribute('color', new THREE.BufferAttribute(fcols, 3));
+  farGeo.computeVertexNormals();
+  const farGround = new THREE.Mesh(farGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: kind === 'ice' ? 0.4 : 0.95, metalness: 0, flatShading: kind === 'rocky' }));
+  farGround.receiveShadow = false;
+  scene.add(farGround);
+  if (kind === 'ocean') { const sea = new THREE.Mesh(new THREE.CircleGeometry(FAR * 0.5, 96), new THREE.MeshStandardMaterial({ color: base, roughness: 0.15, metalness: 0.3, transparent: true, opacity: 0.85 })); sea.rotation.x = -Math.PI / 2; sea.position.y = 0.5; scene.add(sea); }
 
-  // The sky: a dome of the world's air, or the black of space with stars.
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(30000, 32, 16), new THREE.ShaderMaterial({
+  // The sky: a dome of the world's air, or the black of space with stars
+  // (beyond the far ground; crisp 2 px points, never fogged).
+  const dome = new THREE.Mesh(new THREE.SphereGeometry(55000, 32, 16), new THREE.ShaderMaterial({
     uniforms: { uTop: { value: new THREE.Color(sky.top) }, uHor: { value: new THREE.Color(sky.horizon) } },
     vertexShader: 'varying vec3 vP; void main() { vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
     fragmentShader: 'uniform vec3 uTop; uniform vec3 uHor; varying vec3 vP; void main() { gl_FragColor = vec4(mix(uHor, uTop, pow(clamp(vP.y, 0.0, 1.0), 0.45)), 1.0); }',
@@ -94,11 +156,13 @@ export function buildSurface(THREE, { kind, name = 'a world', color = '#888888',
   scene.add(dome);
   if (!sky.air || kind === 'alien') {
     const n = coarse ? 1500 : 4000; const sp = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) { const u = rnd() * 2 - 1; const a = rnd() * Math.PI * 2; const q = Math.sqrt(1 - u * u); sp[i * 3] = q * Math.cos(a) * 25000; sp[i * 3 + 1] = Math.abs(u) * 25000; sp[i * 3 + 2] = q * Math.sin(a) * 25000; }
+    for (let i = 0; i < n; i++) { const u = rnd() * 2 - 1; const a = rnd() * Math.PI * 2; const q = Math.sqrt(1 - u * u); sp[i * 3] = q * Math.cos(a) * 50000; sp[i * 3 + 1] = Math.abs(u) * 50000; sp[i * 3 + 2] = q * Math.sin(a) * 50000; }
     const sg = new THREE.BufferGeometry(); sg.setAttribute('position', new THREE.BufferAttribute(sp, 3));
-    scene.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 1.4, sizeAttenuation: false, transparent: true, opacity: sky.air ? 0.35 : 0.9, depthWrite: false, fog: false })));
+    scene.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xd9d9d9, size: 2, sizeAttenuation: false, transparent: true, opacity: sky.air ? 0.35 : 0.9, depthWrite: false, fog: false })));
   }
-  if (sky.air) scene.fog = new THREE.FogExp2(new THREE.Color(sky.horizon), kind === 'alien' ? 0.00035 : 0.00022);
+  // The air: clear for 20 to 40 km, a light haze at the horizon (ATMOSPHERE).
+  const air = ATMOSPHERE[kind] || null;
+  if (air) scene.fog = new THREE.FogExp2(new THREE.Color(sky.horizon), fogDensityFor(air.visibility));
 
   // Light: their star, and the sky's.
   const sun = new THREE.DirectionalLight(kind === 'alien' ? 0xffd6f0 : 0xfff2d6, sky.air ? 2.2 : 2.8);
@@ -150,8 +214,10 @@ export function buildSurface(THREE, { kind, name = 'a world', color = '#888888',
     for (let i = 0; i < 6; i++) put('alien', { civ: city }, `${city}-${i}`, Math.cos(i) * 40, Math.sin(i) * 40, i);
     put('alien_ship', {}, `${city}-ship`, 70, -60, 0.6);
   }
+  // Height fog on everything the fog touches (never the sky or the stars: fog false).
+  if (air) scene.traverse((o) => { if (o.material) [].concat(o.material).forEach((m) => heightFog(m, air.scaleHeight)); });
   return {
-    scene, heightAt, sun, name, kind,
+    scene, heightAt, sun, name, kind, fog: air ? { density: fogDensityFor(air.visibility), ...air } : null,
     dispose() { scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) [].concat(o.material).forEach((m) => m.dispose()); }); }
   };
 }

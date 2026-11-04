@@ -3,13 +3,23 @@
 //   scene render -> ambient occlusion (GTAO, High and Ultra) -> subtle bloom
 //   (glows, lamps, the sun; Medium and up) -> anti-aliasing (SMAA; Ultra
 //   adds temporal accumulation while the camera is still) -> depth of
-//   field on what the camera looks at (Cinematic) -> ACES tone mapping and
+//   field on what the camera follows (Cinematic) -> ACES tone mapping and
 //   sRGB output (OutputPass).
+//
+// The sky stays crisp (setSky): looking at space, or with nothing nearby
+// followed, depth of field is off (nothing is out of focus at infinity),
+// TAA takes one unjittered sample (its sub-pixel jitter would smear the
+// stars, which are single points), and bloom is held under the stars'
+// brightness (environment.js draws them at least 2 px and just below the
+// bloom threshold), so stars, planets and moons stay sharp.
 //
 // Low draws straight to the screen with the renderer's own tone mapping.
 // The add-ons are three.js r180's own (public/vendor/three/addons/, MIT).
 
 const ADDONS = '/vendor/three/addons/postprocessing/';
+// Bloom never picks up what is dimmer than this: the stars (environment.js
+// STAR_PEAK is below it), so they never smear into glows.
+export const STAR_BLOOM_FLOOR = 0.9;
 // A glow, not a surface: sprites, and see-through things that write no depth.
 const isFlat = (o) => o.isSprite || o.isPoints || (o.material && !Array.isArray(o.material) && o.material.transparent && o.material.depthWrite === false);
 
@@ -67,17 +77,29 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     composer.addPass(smaa);
   }
   composer.addPass(new OutputPass());
+  let skyView = false;
   return {
     composer, passes: { taa, gtao, bloom, bokeh, smaa },
     // TAA accumulates only while nothing moves on screen; otherwise it is plain rendering.
-    render(still) { if (taa) { taa.accumulate = !!still; } composer.render(); },
-    // The distance in metres to keep sharp (the camera's target), eased.
-    setFocus(d) { if (bokeh) { const u = bokeh.uniforms; u.focus.value += (Math.max(1, d) - u.focus.value) * 0.15; u.aperture.value = 0.004 / Math.max(10, d); } },
+    // Looking at the sky, it takes one sample, unjittered: points stay points.
+    render(still) { if (taa) { taa.sampleLevel = skyView ? 0 : 2; taa.accumulate = !!still && !skyView; } composer.render(); },
+    // The distance in metres to keep sharp (the followed thing), eased; with
+    // focus null (nothing nearby followed) depth of field is off.
+    setFocus(d) {
+      if (!bokeh) return;
+      bokeh.enabled = d != null && !skyView;
+      if (!bokeh.enabled) return;
+      const u = bokeh.uniforms; u.focus.value += (Math.max(1, d) - u.focus.value) * 0.15; u.aperture.value = 0.004 / Math.max(10, d);
+    },
+    // In space, or looking at the night sky: the crisp-sky settings above.
+    setSky(on) { skyView = !!on; if (bokeh && skyView) bokeh.enabled = false; },
+    get skyView() { return skyView; },
     // Draw another scene (a world's surface) through the same passes.
     setScene(sc) { for (const p of composer.passes) if ('scene' in p) p.scene = sc; },
     setSize(w, h, pr) { composer.setPixelRatio(pr); composer.setSize(w, h); if (gtao) gtao.setSize(w * pr, h * pr); },
     // Night makes the windows and lamps the brightest things on screen: a little more bloom.
-    setNight(n) { if (bloom) { bloom.strength = 0.22 + n * 0.35; bloom.threshold = 0.95 - n * 0.2; } },
+    // (Never down to the stars' brightness: STAR_PEAK in environment.js.)
+    setNight(n) { if (bloom) { bloom.strength = (0.22 + n * 0.35) * (skyView ? 0.5 : 1); bloom.threshold = Math.max(STAR_BLOOM_FLOOR, 0.95 - n * 0.2); } },
     dispose() { for (const p of composer.passes) if (p.dispose) p.dispose(); composer.dispose(); }
   };
 }
