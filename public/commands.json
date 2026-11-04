@@ -120,6 +120,24 @@
       "client": false
     },
     {
+      "command": "/report today",
+      "area": "Keys & usage",
+      "description": "PG1's latest daily report on its own service, with approvals",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/report week",
+      "area": "Keys & usage",
+      "description": "PG1's latest weekly report: trends, unserved demand, discovery, experiments",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
       "command": "/usage",
       "area": "Keys & usage",
       "description": "Tool usage by agents (default 7 days)",

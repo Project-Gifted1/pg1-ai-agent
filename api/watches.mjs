@@ -41,6 +41,11 @@
 //
 // Failures are neutral: no Supabase detail reaches the page.
 
+import { createOperatorStore } from '../lib/operator/store.mjs';
+import { decideTask } from '../lib/operator/tasks.mjs';
+import { createOperatorGithub } from '../lib/operator/merge.mjs';
+import { approvedMerger } from '../lib/operator/run.mjs';
+import { startLabExperiment } from '../lib/lab/chat.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { resolveOperatorSession } from '../lib/operatorSession.mjs';
 import { createWatchStore } from '../lib/watches/store.mjs';
@@ -92,6 +97,18 @@ export function cleanSubscription(sub) {
 const TEST_TITLE = 'PG1 test notification';
 const TEST_BODY = 'Notifications work on this device.';
 
+// The operator's decision on a report item (signed-in operator only, which
+// the handler checked): actor 'operator', so nothing PG1 runs can approve.
+async function decideTaskForOperator(id, decision, opStore) {
+  const { supUrl, supKey } = getSupabaseCreds();
+  return decideTask({
+    id, decision, actor: 'operator', opStore, env: process.env, audit: { supUrl, supKey },
+    gh: createOperatorGithub({ env: process.env }),
+    startLab: ({ kind, goal, input, action }) => startLabExperiment({ env: process.env, supUrl, supKey, kind, goal, input, action }),
+    mergeApproved: approvedMerger({ env: process.env, supUrl, supKey, deps: { opStore } })
+  });
+}
+
 // AUTONOMOUS MODE (lib/autonomous/state.mjs): the header switch and its
 // timeline. Rows go out as stored (already scrubbed); never a Supabase detail.
 const TIMELINE_FIELDS = ['id', 'at', 'type', 'reason', 'inputs_summary', 'status', 'result', 'cost_usd', 'link', 'finished_at'];
@@ -108,7 +125,7 @@ export function approvalCard(r) {
   const a = r.approval && typeof r.approval === 'object' ? r.approval : {};
   return { id: r.id, at: r.at, type: r.type, label: ACTION_TYPES[r.type] || r.type, title: String(a.title || r.result || '').slice(0, 200), detail: String(a.detail || '').slice(0, 400), kind: ['sql_proposal', 'promote'].includes(a.kind) ? a.kind : 'other', sql: a.kind === 'sql_proposal' ? String(a.sql || '').slice(0, 1500) : null, link: r.link || null };
 }
-async function autonomousOp(body, res, store) {
+async function autonomousOp(body, res, store, opStore = null) {
   if (body.op === 'auto_state') {
     const state = await store.getState();
     const today = state.error ? { count: 0, pendingApprovals: 0, costUsd: 0 } : await todaySummary(store);
@@ -138,12 +155,32 @@ async function autonomousOp(body, res, store) {
   }
   if (body.op === 'auto_inbox') {
     const rows = await store.listActions({ type: 'daily_briefing', limit: 5 });
-    return res.status(200).json({ ok: true, reports: rows.filter((r) => r.body && !r.delivered_at && r.status === 'done').map((r) => ({ id: r.id, at: r.at, title: 'PG1 daily briefing', body: r.body })) });
+    const reports = rows.filter((r) => r.body && !r.delivered_at && r.status === 'done').map((r) => ({ id: r.id, at: r.at, title: 'PG1 daily briefing', body: r.body }));
+    // THE OPERATOR REPORTS (lib/operator): the daily and weekly reports,
+    // each with its card and the items waiting for approval.
+    if (opStore) {
+      try {
+        for (const r of await opStore.undeliveredReports(5)) reports.push({ id: r.id, at: r.created_at, kind: 'operator_report', title: r.title, body: `${r.title}\nThe full report is in the card below and in the media library as a PDF.`, card: { ...(r.card || {}), approvals: Array.isArray(r.approvals) ? r.approvals : [] } });
+      } catch (e) { /* the reports table may not be set up yet */ }
+    }
+    return res.status(200).json({ ok: true, reports });
   }
   if (body.op === 'auto_ack') {
     const ids = (Array.isArray(body.ids) ? body.ids : []).filter((x) => UUID_RE.test(String(x))).slice(0, 10);
-    for (const id of ids) await store.updateAction(id, { delivered_at: new Date().toISOString() });
+    for (const id of ids) await store.updateAction(id, { delivered_at: new Date().toISOString() }).catch(() => null);
+    if (opStore) await opStore.ackReports(ids).catch(() => 0);
     return res.status(200).json({ ok: true, acknowledged: ids.length });
+  }
+  if (body.op === 'task_decide') {
+    // An item from a report: the operator's Approve or Decline. A task runs
+    // under its APPROVAL action (lib/operator/tasks.mjs); an Autonomous mode
+    // card goes the auto_decide way.
+    const id = typeof body.id === 'string' ? body.id.trim() : '';
+    if (!UUID_RE.test(id) || !['approve', 'decline'].includes(body.decision)) return res.status(400).json({ error: 'bad_request', message: 'id and decision (approve or decline) are required' });
+    if (body.source === 'action') return autonomousOp({ op: 'auto_decide', id, decision: body.decision === 'approve' ? 'approve' : 'reject' }, res, store, opStore);
+    if (!opStore) return res.status(503).json({ error: 'unavailable', message: 'Reports are not set up on this deployment.' });
+    const out = await decideTaskForOperator(id, body.decision, opStore);
+    return res.status(out.ok ? 200 : 409).json({ ok: out.ok, decision: out.decision || null, message: out.message });
   }
   if (body.op === 'auto_log') {
     const before = typeof body.before === 'string' && !Number.isNaN(Date.parse(body.before)) ? new Date(body.before).toISOString() : null;
@@ -191,9 +228,11 @@ export function createWatchesHandler({ webpushImpl = null } = {}) {
         const { supUrl, supKey } = getSupabaseCreds();
         return res.status(200).json({ ok: true, scene: await labSceneState({ supUrl, supKey }) });
       }
-      if (typeof body.op === 'string' && body.op.startsWith('auto_')) {
+      if (typeof body.op === 'string' && (body.op.startsWith('auto_') || body.op === 'task_decide')) {
         const { supUrl, supKey } = getSupabaseCreds();
-        return await autonomousOp(body, res, createAutonomousStore({ supUrl, supKey }));
+        let opStore = null;
+        try { opStore = createOperatorStore({ supUrl, supKey }); } catch (e) { opStore = null; }
+        return await autonomousOp(body, res, createAutonomousStore({ supUrl, supKey }), opStore);
       }
       if (body.op === 'inbox') {
         const reports = await store.inbox(Array.isArray(body.threadKeys) ? body.threadKeys : []);
