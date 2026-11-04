@@ -3,7 +3,13 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.21.0 — ADD: new free tool check_agent_message (lib/agentMessage.mjs),
+ * Version: 1.21.1 — FIX: check_agent_message flags only instructions aimed at
+ *   the reader; naming, negated and quoted lines are skipped (a clause
+ *   classifier in lib/agentMessage.mjs, before each negatable rule; hidden
+ *   content is not relaxed). An unlimited allowance to a specific address
+ *   is now AGENT_MESSAGE_PAYMENT_REDIRECT (high). rules_version 1.21.1. No
+ *   tool, input or output shape changes.
+ * 1.21.0 — ADD: new free tool check_agent_message (lib/agentMessage.mjs),
  *   also an A2A skill and a playground check: a pre-read check of a message
  *   from another agent or a seller's skill.md (text, or an https url fetched
  *   with netGuard safeFetch) for prompt injection, hidden content,

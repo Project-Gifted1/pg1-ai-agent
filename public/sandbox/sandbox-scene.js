@@ -21,7 +21,13 @@
 // camera visits what is moving), space (the sky above).
 //
 // Between steps, everything glides from where it was to where the engine
-// put it, so a step of the simulation plays out over `duration` ms.
+// put it, so a step of the simulation plays out over `duration` ms. With
+// keyframes (several steps a call, the faster paces), it goes through each
+// step's position in turn. A road vehicle or a boat goes along exactly the
+// way the engine kept clear (vehicle-path.js: where it was, the corners it
+// turned, where it ended), never a curve that could cut into another lane;
+// people, animals and aircraft curve through the steps (Catmull-Rom).
+// Walkers' legs swing with their speed (gait.js), so feet never slide.
 // With prefers-reduced-motion, or no WebGL, a still 2D map instead, redrawn
 // only when the world changes.
 //
@@ -49,6 +55,8 @@ import { buildWaterways, waterwaysSignature } from './waterways.js';
 import { buildTerrain } from './terrain.js';
 import { pickTourTarget, cycleFollow, TOUR_DWELL_MS, TOUR_DWELL_RECORDING_MS } from './tour.js';
 import { createCapture } from './capture.js';
+import { wayPoints, parseWaypoints, pointOnWay, VEHICLE_BODIES } from './vehicle-path.js';
+import { gait } from './gait.js';
 
 const MAX_ENTITIES = 1000;
 // Depth of field focuses on a followed thing nearer than this (metres); farther, all is sharp.
@@ -71,6 +79,9 @@ KEEP_PROPS.push('chat_with', 'sea', 'belt_inner', 'belt_outer');
 const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
 // Fires, sirens and the beach (rescue-models.js) add to what the viewer keeps.
 KEEP_PROPS.push('fire', 'siren', 'emergency', 'activity', 'swimming', 'injured', 'in_trouble', 'rescuing');
+// A vehicle's heading and the corners it turned within the last step (the engine's vehicleSpace).
+KEEP_PROPS.push('hdg', 'wp');
+const LONG_PROPS = new Set(['wp']);
 
 export function normalizeWorld(w) {
   const world = w && typeof w === 'object' ? w : {};
@@ -79,7 +90,7 @@ export function normalizeWorld(w) {
   const entities = (Array.isArray(world.entities) ? world.entities : []).filter((e) => e && typeof e.id === 'string').slice(0, MAX_ENTITIES).map((e) => {
     const props = {};
     const p = e.properties && typeof e.properties === 'object' ? e.properties : {};
-    for (const k of KEEP_PROPS) if (p[k] !== undefined && (typeof p[k] !== 'string' || p[k].length <= 80)) props[k] = p[k];
+    for (const k of KEEP_PROPS) if (p[k] !== undefined && (typeof p[k] !== 'string' || p[k].length <= (LONG_PROPS.has(k) ? 200 : 80))) props[k] = p[k];
     const kind = String(e.kind || 'thing').slice(0, 32);
     return {
       id: e.id.slice(0, 64), kind, base: baseKind(kind), cls: classOf(kind), props,
@@ -678,8 +689,27 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     }
   }
 
-  function syncMovers(duration) {
+  // The steps a mover goes through before the next update: [{ a, b, pts? }]
+  // (scene positions; pts: a vehicle's way on the ground, as x and z).
+  const isWayMover = (e) => e.cls === 'vehicle' && !!VEHICLE_BODIES[e.base];
+  const sceneXZ = (x, y) => ({ x: x - world.size.x / 2, y: -(y - world.size.y / 2) });
+  function trackOf(m, e, frames) {
+    const steps = [];
+    let a = m.pos.clone();
+    const way = isWayMover(e);
+    const push = (b, wp) => {
+      const st = { a, b };
+      if (way) st.pts = wayPoints({ x: a.x, y: a.z }, { x: b.x, y: b.z }, parseWaypoints(wp).map((q) => sceneXZ(q.x, q.y)));
+      steps.push(st); a = b;
+    };
+    for (const f of frames) { const r = f.get(e.id); push(r ? new THREE.Vector3(r[1] - world.size.x / 2, r[3], -(r[2] - world.size.y / 2)) : a.clone(), r && r[4]); }
+    push(m.to.clone(), e.props.wp);
+    return steps;
+  }
+
+  function syncMovers(duration, keyframes = null) {
     const seen = new Set();
+    const frames = Array.isArray(keyframes) ? keyframes.slice(0, 20).map((k) => new Map((Array.isArray(k && k.m) ? k.m : []).filter((r) => Array.isArray(r) && typeof r[0] === 'string').map((r) => [r[0], r]))) : [];
     for (const e of world.entities) {
       if (FIXED_KINDS.has(e.base) || e.base === 'lake' || e.base === 'island') continue;
       seen.add(e.id);
@@ -691,17 +721,20 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         m = makeMover(e);
         m.key = key; m.id = e.id;
         m.from = to.clone(); m.to = to.clone(); m.pos = to.clone();
-        m.yaw = yawFromHeading(e.props.heading); m.pitch = 0; m.roll = 0; m.phase = Math.random() * 6;
+        m.yaw = typeof e.props.hdg === 'number' ? e.props.hdg * Math.PI / 180 : yawFromHeading(e.props.heading); m.pitch = 0; m.roll = 0; m.phase = Math.random() * 6;
         m.group.position.copy(to);
         m.group.userData.entityId = e.id;
         scene.add(m.group);
         movers.set(e.id, m);
+        m.track = [{ a: to.clone(), b: to.clone() }];
       } else {
         // The step before too, for a curved path through the steps (Catmull-Rom).
         m.prev = m.from.clone();
         m.from = m.pos.clone();
         m.to = to;
+        m.track = trackOf(m, e, frames);
       }
+      m.way = isWayMover(e);
       m.e = e;
       syncProp(m, e);
     }
@@ -710,6 +743,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     stepDur = Math.max(200, duration || 1200);
     stepStart = performance.now();
     container.dataset.markers = String(world.entities.length);
+    container.dataset.keyframes = String(frames.length);
   }
 
   function syncOrbits() {
@@ -1094,6 +1128,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     if (minute !== clkOut.minute) { const c = clockOf(world, tickF); clkOut.day = c.day; clkOut.hh = c.hh; clkOut.mm = c.mm; clkOut.minute = minute; }
     return clkOut;
   }
+  const wayPt = {};
+  const wayLen = (st) => (st.len === undefined ? (st.len = st.pts.reduce((L, q, i) => (i ? L + Math.hypot(q.x - st.pts[i - 1].x, q.y - st.pts[i - 1].y) : 0), 0)) : st.len);
   const tmpA = new THREE.Vector3(); const tmpB = new THREE.Vector3(); const proj = new THREE.Vector3(); const tmpM4 = new THREE.Matrix4(); const tmpT = new THREE.Vector3();
 
   const farM4 = new THREE.Matrix4(); const farS = new THREE.Vector3(); const farP = new THREE.Vector3();
@@ -1121,24 +1157,45 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
         continue;
       }
       m.group.visible = !held.has(m.id);
-      // Along a curve through the last steps (Catmull-Rom), not a straight
-      // line between two of them: a car rounds a corner, a plane turns.
-      const span0 = m.prev ? m.prev.distanceTo(m.from) : 0; const span1 = m.from.distanceTo(m.to);
-      const curve = m.prev && !m.celestial && span0 > 0.05 && span1 > 0.05 && span0 < span1 * 4 + 20 && span1 < span0 * 4 + 20;
-      if (curve) catmull(m.prev, m.from, m.to, t, m.pos, tmpT);
-      else { m.pos.lerpVectors(m.from, m.to, t); tmpT.subVectors(m.to, m.from); }
-      if (m.from.y < 0.05 && m.to.y < 0.05) m.pos.y = Math.max(0, Math.min(m.from.y, m.to.y));  // wheels stay on the ground
-      const dx = tmpT.x; const dz = tmpT.z; const dy = m.to.y - m.from.y;
-      const dh = Math.hypot(m.to.x - m.from.x, m.to.z - m.from.z);
+      // Which of this update's steps it is in (one, or several with keyframes).
+      const track = m.track && m.track.length ? m.track : [{ a: m.from, b: m.to }];
+      const nSteps = track.length;
+      const seg = Math.min(nSteps - 1, Math.floor(t * nSteps));
+      const u = t >= 1 ? 1 : t * nSteps - seg;
+      const st = track[seg];
+      const A = st.a; const B = st.b;
+      if (m.way && st.pts) {
+        // A road vehicle or a boat: exactly along its way (vehicle-path.js).
+        const q = pointOnWay(st.pts, u, wayPt);
+        m.pos.set(q.x, A.y + (B.y - A.y) * u, q.y);
+        tmpT.set(q.hx, 0, q.hy);
+      } else {
+        // Along a curve through the steps (Catmull-Rom), not a straight
+        // line between two of them: a walker rounds a corner, a plane turns.
+        const P = seg > 0 ? track[seg - 1].a : m.prev;
+        const span0 = P ? P.distanceTo(A) : 0; const span1 = A.distanceTo(B);
+        const curve = P && !m.celestial && span0 > 0.05 && span1 > 0.05 && span0 < span1 * 4 + 20 && span1 < span0 * 4 + 20;
+        if (curve) catmull(P, A, B, u, m.pos, tmpT);
+        else { m.pos.lerpVectors(A, B, u); tmpT.subVectors(B, A); }
+      }
+      if (A.y < 0.05 && B.y < 0.05) m.pos.y = Math.max(0, Math.min(A.y, B.y));  // wheels stay on the ground
+      const dx = tmpT.x; const dz = tmpT.z; const dy = B.y - A.y;
+      const dh = Math.hypot(B.x - A.x, B.z - A.z);
       const moving = dh > 0.05 || Math.abs(dy) > 0.05;
-      const speed = (Math.hypot(dh, dy) / (stepDur / 1000));
+      // Metres a second on screen: this step's way over its share of the glide.
+      const stepLen = m.way && st.pts ? wayLen(st) : Math.hypot(dh, dy);
+      const speed = stepLen / (stepDur / nSteps / 1000);
       let yawRate = 0;
       if (dh > 0.05 && !m.celestial && !m.upright) {
         const goal = Math.atan2(-dz, dx);
         let d = goal - m.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
-        const step = d * (1 - Math.exp(-dt * 6));
+        const step = d * (1 - Math.exp(-dt * (m.way ? 12 : 6)));
         m.yaw += step;
         yawRate = dt > 0 ? step / dt : 0;
+      } else if (m.way && typeof e.props.hdg === 'number') {
+        // Standing: facing as the engine has it.
+        let d = e.props.hdg * Math.PI / 180 - m.yaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+        m.yaw += d * (1 - Math.exp(-dt * 6));
       }
       // In a conversation, standing: turned to face the other.
       const partner = !moving && e.props.chat_with ? movers.get(e.props.chat_with) : null;
@@ -1167,7 +1224,11 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       // Listening: a slight lean in and a nod now and then.
       if (e.cls === 'person' && !flyer) m.inner.rotation.z = partner && !e.props.saying ? -0.05 + Math.max(0, Math.sin(now / 520 + m.phase)) * 0.06 : 0;
       const dist = speed * dt;
-      m.phase += dt * Math.min(12, 2 + speed * 1.6);
+      // Legs: the swing and its rate from the speed and the hip's height (gait.js).
+      const legPart = m.legs === undefined ? (m.legs = m.parts.find((x) => x.role === 'legL') || null) : m.legs;
+      const g = legPart ? gait(moving ? speed : 0, legPart.r) : null;
+      m.phase += g ? dt * g.rate : dt * Math.min(12, 2 + speed * 1.6);
+      const legAmp = g ? g.amp : 0.55;
       for (const p of m.parts) {
         switch (p.role) {
           case 'wheel': p.node.rotation.z -= moving ? dist / p.r : 0; if (p.front) p.node.rotation.y = m.steer; break;
@@ -1175,11 +1236,11 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
           case 'ring': p.node.rotation.y += dt * 0.12; break;   // a station's habitat ring turns slowly
           case 'rotorZ': p.node.rotation.z += dt * ((moving || e.z > 0.5) ? 40 : 6); break;
           case 'propX': p.node.rotation.x += dt * ((moving || e.z > 0.5) ? 50 : 0); break;
-          case 'legL': case 'legR': { const a = moving ? Math.sin(m.phase) * 0.55 : 0; p.node.rotation.z += ((p.role === 'legL' ? a : -a) - p.node.rotation.z) * Math.min(1, dt * 10); break; }
+          case 'legL': case 'legR': { const a = moving ? Math.sin(m.phase) * legAmp : 0; p.node.rotation.z += ((p.role === 'legL' ? a : -a) - p.node.rotation.z) * Math.min(1, dt * 10); break; }
           case 'armL': case 'armR': {
             // Walking: arms swing. Speaking in a conversation: a hand raised and moving as they talk.
             const talking = !moving && partner && e.props.saying;
-            const a = moving ? Math.sin(m.phase) * 0.45 : 0;
+            const a = moving ? Math.sin(m.phase) * legAmp * 0.8 : 0;
             const goal = talking && p.role === 'armR' ? 0.9 + Math.sin(now / 260 + m.phase) * 0.35 : talking ? -0.15 : (p.role === 'armL' ? -a : a);
             p.node.rotation.z += (goal - p.node.rotation.z) * Math.min(1, dt * 10);
             break;
@@ -1363,7 +1424,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   let firstWorld = true;
   return {
     renderer: 'webgl',
-    update(next, { duration } = {}) {
+    update(next, { duration, keyframes = null } = {}) {
       const prevTick = world.tick;
       const prevId = world.id;
       world = normalizeWorld(next);
@@ -1407,7 +1468,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       // Rivers, creeks and mangroves (waterways.js).
       const ws = waterwaysSignature(world);
       if (ws !== waterSig) { waterSig = ws; if (waterGroup) { scene.remove(waterGroup); waterGroup.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); } waterGroup = buildWaterways(THREE, world, env.setupMaterial); if (waterGroup) scene.add(waterGroup); }
-      syncMovers(duration);
+      syncMovers(duration, world.id === prevId ? keyframes : null);
       if (world.id !== prevId) effects.reset();
       effects.onWorld(next);
       syncOrbits();

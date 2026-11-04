@@ -9,12 +9,19 @@
 //                                  words, recent events
 //   { op: 'step', id, steps? }     runs one of PG1's worlds forward (the
 //                                  viewer's Step and Play): step_world, on
-//                                  PG1's quota; invited worlds are read only.
-//                                  With since (the tick the viewer has) and
-//                                  have_roads, the answer carries only what
-//                                  changed: world.changes { from, upserts,
-//                                  removed } instead of every entity, and no
-//                                  roads (lib/sandbox/stepDiff.mjs)
+//                                  PG1's steps quota only (never its changes:
+//                                  lib/sandbox/worlds.mjs asViewer); with
+//                                  several steps (the faster paces, at most
+//                                  VIEWER_MAX_STEPS) the answer carries each
+//                                  step's keyframes for smooth playback;
+//                                  invited worlds are read only. With since
+//                                  (the tick the viewer has) and have_roads,
+//                                  the answer carries only what changed:
+//                                  world.changes { from, upserts, removed }
+//                                  instead of every entity, and no roads
+//                                  (lib/sandbox/stepDiff.mjs)
+// A refusal for a quota says which one and when it resets: { error, message,
+// quota: 'steps' | 'changes', used, max, resets_at }.
 //   { op: 'create', template?, name? }  a new PG1 world from a template
 //                                  (universe by default), on PG1's quota
 //   { op: 'blackbox', id, actor?, limit? }  a world's black box: every action,
@@ -35,6 +42,8 @@ import { SIMULATION_LABEL, BLIND_LABEL } from '../lib/sandbox/describe.mjs';
 import { entitySnapshot, worldChanges } from '../lib/sandbox/stepDiff.mjs';
 
 export const config = { maxDuration: 15 };
+// The most steps the viewer asks for in one call (10x: about two seconds of play).
+export const VIEWER_MAX_STEPS = 10;
 
 let storeFactory = () => defaultSandboxStore();
 export function __setSandboxViewerStore(f) { storeFactory = f || (() => defaultSandboxStore()); }
@@ -74,16 +83,19 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, world: { ...v, readOnly: w.owner !== 'pg1', blind: !!w.blind } });
     }
     if (body.op === 'step') {
+      const n = body.steps === undefined ? 1 : Math.trunc(Number(body.steps));
+      if (!(n >= 1 && n <= VIEWER_MAX_STEPS)) return res.status(400).json({ error: 'limit_exceeded', message: `The viewer steps 1 to ${VIEWER_MAX_STEPS} steps a call.` });
       // The viewer already has the world at tick `since`: only what changes is sent back.
       const had = Number.isInteger(body.since) ? await store.getWorld(String(body.id || '')) : null;
       const snap = had && had.owner === 'pg1' && had.tick === body.since && had.state ? entitySnapshot(had.state.entities) : null;
-      const out = await stepWorldFor(store, pg1, { world_id: String(body.id || ''), steps: body.steps === undefined ? 1 : body.steps });
+      const out = await stepWorldFor(store, pg1, { world_id: String(body.id || ''), steps: n }, { asViewer: true, keyframes: n > 1 });
       const v = await observeWorld(store, pg1, { world_id: out.id, events: 30 });
+      const extra = { events: out.events, steps: n, ...(out.keyframes ? { keyframes: out.keyframes.slice(0, -1) } : {}) };
       if (snap) {
         const { entities, roads, ...rest } = v;
-        return res.status(200).json({ ok: true, world: { ...rest, ...(body.have_roads ? {} : { roads }), readOnly: false, changes: { from: body.since, ...worldChanges(snap, entities) } }, events: out.events });
+        return res.status(200).json({ ok: true, world: { ...rest, ...(body.have_roads ? {} : { roads }), readOnly: false, changes: { from: body.since, ...worldChanges(snap, entities) } }, ...extra });
       }
-      return res.status(200).json({ ok: true, world: { ...v, readOnly: false }, events: out.events });
+      return res.status(200).json({ ok: true, world: { ...v, readOnly: false }, ...extra });
     }
     if (body.op === 'create') {
       const template = TEMPLATE_NAMES.includes(body.template) ? body.template : 'universe';
@@ -103,7 +115,7 @@ export default async function handler(req, res) {
     if (body.op === 'experiments') return res.status(200).json({ ok: true, ...(await experimentsView(store, { limit: 50 })) });
     return res.status(400).json({ error: 'bad_request', message: 'Unknown sandbox op' });
   } catch (e) {
-    if (e instanceof SandboxError) return res.status(e.status).json({ error: e.code, message: e.message });
+    if (e instanceof SandboxError) return res.status(e.status).json({ error: e.code, message: e.message, ...(e.quota ? { quota: e.quota, used: e.used, max: e.max, resets_at: e.resets_at } : {}) });
     console.error('[sandbox viewer] unhandled:', e && e.message);
     return res.status(500).json({ error: 'internal_error', message: 'The Sandbox could not be reached right now.' });
   }

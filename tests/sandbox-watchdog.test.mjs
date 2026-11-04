@@ -9,6 +9,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { catalogFor } from '../lib/sandbox/catalog.mjs';
 import { initialState, stepWorld, validateSpec } from '../lib/sandbox/engine.mjs';
 import { templateSpec } from '../lib/sandbox/templates.mjs';
 import { moveContext } from '../lib/sandbox/movement.mjs';
@@ -30,7 +31,9 @@ function overlapsOver(spec, steps) {
     const idx = new Map(st.entities.map((e) => [e.id, e]));
     const travelling = st.entities.filter((e) => family(e.kind) && !(e.properties.inside && idx.has(e.properties.inside)) && (e.position.z || 0) <= 1 && e.properties.target).filter((e) => {
       const g = idx.get(e.properties.target);
-      return !g || Math.hypot(g.position.x - e.position.x, g.position.y - e.position.y) > 6;
+      // At their door (a place's door is at the edge of its footprint, and
+      // someone within a few metres of it goes in): not on the way any more.
+      return !g || Math.hypot(g.position.x - e.position.x, g.position.y - e.position.y) > (catalogFor(g.kind).footprint || 0) + 6;
     });
     for (let i = 0; i < travelling.length; i++) for (let j = i + 1; j < travelling.length; j++) {
       const a = travelling[i]; const b = travelling[j];
