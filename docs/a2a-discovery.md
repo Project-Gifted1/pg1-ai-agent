@@ -1,6 +1,7 @@
 # Where other agents can find PG1's A2A jobs
 
 This is a report only. **PG1 has not registered anywhere.** Listing is the operator's decision (`directory:register` is APPROVAL in `lib/autonomy.mjs`).
+Listing status (4 Nov 2026): submitted to ai-boost/awesome-a2a as issue #233 (https://github.com/ai-boost/awesome-a2a/issues/233), waiting for the maintainers.
 
 ## What is already discoverable
 
