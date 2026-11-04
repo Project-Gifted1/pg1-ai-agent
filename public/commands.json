@@ -140,6 +140,15 @@
       "client": false
     },
     {
+      "command": "/usage verify",
+      "area": "Keys & usage",
+      "description": "Check usage and revenue against server request counts, the chain and licence sales (read-only)",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
       "command": "/spend",
       "area": "Keys & usage",
       "description": "Estimated AI spend per PG1 engine today, with each daily cap",

@@ -86,6 +86,8 @@ import { isHostingCommand, handleHostingCommand } from '../lib/hosting/admin.mjs
 import { isScreeningCommand, handleScreeningCommand } from '../lib/screeningAdmin.mjs';
 import { createJobStore } from '../lib/a2aJobs/store.mjs';
 import { getUsageStats } from '../lib/usageStats.mjs';
+import { verifyUsage, verifyReport, verifyLead, verifyCardView, verifyContextLines } from '../lib/usageVerify.mjs';
+import { prepareUsageTurn, usageTurnNotes, gaveUsageFigures, NO_RETURN_PROMISE_DIRECTIVE } from '../lib/usageClaims.mjs';
 import { authorize, autonomyMode, commandAction, tierOf, logAutonomy, recentAutonomy, autonomyReport, TIERS } from '../lib/autonomy.mjs';
 import { activeSkills, createSkillStore } from '../lib/skills/store.mjs';
 import { skillsIndexBlock, matchSkills, loadedSkillResult, LOAD_SKILL_TOOL } from '../lib/skills/skill.mjs';
@@ -2815,6 +2817,7 @@ async function chatRequest(req, res) {
     // (lib/capabilities/offers.mjs): anything the reply offers that the
     // capability registry does not allow, and the operator-only licence
     // warning for a package that relies on an unsettled licence.
+    var usageTurn = null;
     var turnFactNotes = async function (text, result) {
       var r = result || {};
       var sources = (r.sources && r.sources.length) ? await resolveSources(r.sources, { fetchImpl: function (u, o) { return globalThis.fetch(u, o); } }) : [];
@@ -2829,7 +2832,11 @@ async function chatRequest(req, res) {
         figureChangeNote(figureChanges(turnCtx.state.figures, text)),
         tierChangeNote(tierChanges(turnCtx.state.figures, text, { columns: turnCtx.state.columns || [] })),
         offerNote(offerViolations(text)),
-        isOperator ? licenceReviewNote(text) : ''
+        isOperator ? licenceReviewNote(text) : '',
+        // USAGE FIGURES: the checked figures, the payout warning, the
+        // period and offer under a usage answer, and a correction under a
+        // reply that promised a return (lib/usageClaims.mjs).
+        usageTurnNotes(usageTurn, text)
       ].filter(Boolean).join('\n\n');
     };
     var turnResult = function (reply) {
@@ -3383,6 +3390,8 @@ async function chatRequest(req, res) {
             return { markdown: turnGuard(stripTranscriptLabels(scrubIdentity(written.text))) };
           },
           usageMarkdown: async function (period) {
+            // /pdf usage verify: the /usage verify report.
+            if (/^verify\b/i.test(String(period || ''))) return verifyReport(await verifyUsage({ env: process.env, fetchImpl: function (u, o) { return fetch(u, o); } }));
             var outcome = await createToolExecutor({ role: sessionRole, identifier: clientIp })({ id: 'usage-pdf', name: USAGE_STATS_TOOL, args: { period: period || '' } });
             return outcome && outcome.ok ? usageReport(outcome) : null;
           }
@@ -3396,6 +3405,22 @@ async function chatRequest(req, res) {
           reply: `### [ SYSTEM STATUS & TELEMETRY ]\n- **Runtime**: Vercel Serverless Functions (lhr1, London)\n- **Vault Status**: ${supabaseStatus}\n- **Threat Indicators**: not counted by this command (live feed at /api/ioc)\n- **Fleet Target**: 1,500 Sovereign Nodes // €750k Facility`,
           traceId: requestTraceId
         });
+      } else if (lower === '/usage verify') {
+        // USAGE VERIFY (signed-in operator only, lib/usageVerify.mjs):
+        // telemetry vs the server's request counts, settled revenue vs USDC
+        // received on chain, licence sales. Read-only: nothing is paid,
+        // signed or spent. A source that cannot be read is named and the
+        // rest still runs; no gap is filled with an estimate.
+        if (!isOperator) {
+          log401('USAGE', 'unauthenticated', supUrl, supKey);
+          return sendJSON(res, 401, { reply: `[AGENT] Usage Aborted: Authentication required.`, traceId: requestTraceId });
+        }
+        if (chatStream) chatStream.step('verify', 'Checking usage against the server, the chain and licence sales');
+        var verified = await verifyUsage({ env: process.env, fetchImpl: function (u, o) { return fetch(u, o); } });
+        if (chatStream) chatStream.stepDone('verify', { label: 'Checked usage', result: verified.verdict.status === 'verified' ? 'figures verified' : verified.verdict.status === 'mismatch' ? 'does not match' : 'not fully verified', failed: verified.verdict.status !== 'verified' });
+        var verifyCard = { id: 'usage-verify', tool: 'usage_verify', title: 'Usage verify', status: 'report', status_label: 'Report', fields: [], reasons: [], checks: [], usage: verifyCardView(verified) };
+        if (chatStream) chatStream.toolResult(verifyCard);
+        return sendJSON(res, 200, { reply: verifyLead(verified), toolResults: [verifyCard], cards: verifyContextLines(verified), traceId: requestTraceId });
       } else if (lower === '/usage' || lower.startsWith('/usage ')) {
         // USAGE (signed-in operator only): the same aggregates and card as
         // the operator's get_usage_stats chat tool, through the same
@@ -4932,7 +4957,17 @@ async function chatRequest(req, res) {
     // A relay turn runs nothing: the relayed text does not decide the blocks.
     if (relayTurn) turnNeed = relayNeeds(turnNeed);
     if (turnNeed.smallTalk && turnRecent.length > RECENT_TURNS_SMALL_TALK) turnConversation = renderConversation({ summary: null, recent: turnRecent.slice(-RECENT_TURNS_SMALL_TALK) });
+    // USAGE FIGURES (lib/usageClaims.mjs, signed-in operator only): a
+    // question about usage, lookups, traffic, callers, payments or revenue
+    // is answered from the usage report (and /usage verify when it asks
+    // "is that real" / "verify"), with the period and the /usage offer; a
+    // relayed or pasted message that states PG1 figures gets each one
+    // checked against the report; a promised payout or return gets the
+    // warning. Read-only; a report that cannot be read gives no figure.
+    usageTurn = await prepareUsageTurn({ isOperator: isOperator, relayTurn: relayTurn, promptText: typeof promptText === 'string' ? promptText : '', skipClaims: !!offerTurn, afterUsage: (turnCtx.history || []).slice(-2).some(function (h) { return h && h.role === 'model' && gaveUsageFigures(h.text); }) });
     var turnDirectives = PG1_VOICE_DIRECTIVE + '\n' + SELF_CHECK_DIRECTIVE + '\n' + (turnNeed.smallTalk ? '' : SOURCED_FIGURES_DIRECTIVE + '\n') + (turnNeed.offers ? offersDirective() + '\n' : '') + (turnNeed.pdf ? PDF_CHAT_DIRECTIVE + '\n' : '') + (turnNeed.smallTalk || relayTurn ? '' : COMMAND_FORMS_DIRECTIVE + '\n' + commandRegistryDirective() + '\n' + HONEST_ACTIONS_DIRECTIVE + '\n') + (turnNeed.relay ? RELAY_DIRECTIVE + '\n' : '') + (relayTurn ? relayTurnDirective(relayTurn, relayTurn.found) + '\n' : '') + (referenceLine(turnReference) ? referenceLine(turnReference) + '\n' : '') + (skillsOn && !relayTurn ? skillsIndexBlock(turnSkills) + '\n' : '');
+    if (!turnNeed.smallTalk) turnDirectives += NO_RETURN_PROMISE_DIRECTIVE + '\n';
+    if (usageTurn && usageTurn.directives) turnDirectives += usageTurn.directives + '\n';
     var sysInstruction = `${turnPreamble}You are PG1, an autonomous AI agent built by Project-Gifted1™.
 ${whatPG1DoesDirective()}
 [STRICT DIRECTIVE - GROUNDING & HONESTY]: Be absolutely honest at all times about the actual factual content of your answers. Never lie or fabricate results. Never state system health, uptime, integrity, file counts, pipeline status or runtime details unless that exact value appears in [CONTEXT]; if asked about status, say you cannot verify it here and point the operator to the /status command. The vault file list in [CONTEXT] is capped at 20 entries, so never present its length as a total. Stay completely grounded in the factual reality of the project. We operate an automated cybersecurity architecture deploying GitHub workflows and Supabase vault integration.
