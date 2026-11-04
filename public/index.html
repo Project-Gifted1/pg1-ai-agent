@@ -1627,6 +1627,15 @@
     .usage-value { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
     .usage-num { font-weight: 600; color: var(--text-strong); white-space: nowrap; }
     .usage-link { color: var(--accent, var(--text-strong)); text-decoration: underline; text-underline-offset: 2px; }
+    .report-approvals { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+    .report-approval { padding: var(--sp-2) 0; border-top: 1px solid var(--border); }
+    .report-approval:first-child { border-top: 0; }
+    .report-approval-title { color: var(--text-strong); font-weight: 600; overflow-wrap: anywhere; }
+    .report-approval-reason, .report-approval-note, .report-approval-result { font-size: var(--fs-xs); color: var(--text-3); overflow-wrap: anywhere; margin-top: 2px; }
+    .report-approval-actions { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); flex-wrap: wrap; }
+    .report-approve, .report-decline { min-height: 36px; padding: 0 14px; border-radius: var(--r-full); border: 1px solid var(--border); background: transparent; color: var(--text-strong); font: inherit; font-weight: 600; cursor: pointer; }
+    .report-approve { background: var(--text-strong); color: var(--bg); border-color: var(--text-strong); }
+    .report-approve:disabled, .report-decline:disabled { opacity: .5; cursor: default; }
     .usage-row-sub { grid-column: 1 / -1; margin: 0; justify-self: end; max-width: 100%; text-align: right; font-size: var(--fs-xs); color: var(--text-3); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
     .usage-tag { display: inline-block; margin-left: var(--sp-2); padding: 0 6px; border: 1px solid var(--warn-line); border-radius: var(--r-full); background: var(--warn-soft); color: var(--warn-text); font-family: inherit; font-size: var(--fs-2xs); font-weight: 600; line-height: 1.5; vertical-align: 1px; }
     .usage-bar { grid-column: 1 / -1; display: block; height: 6px; margin: 4px 0 0; border-radius: var(--r-full); background: var(--surface-3); overflow: hidden; }
@@ -3795,7 +3804,7 @@
           if (!chat) continue;
           const el = document.createElement('div');
           el.className = 'message-bubble is-report';
-          el.innerHTML = `<span class="msg-timestamp">${escapeHTML(new Date(r.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}</span>${markdownBlock(String(r.body || r.title || '').replace(/^([^\n]+)/, '**$1**'))}`;
+          el.innerHTML = `<span class="msg-timestamp">${escapeHTML(new Date(r.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))}</span>${markdownBlock(String(r.body || r.title || '').replace(/^([^\n]+)/, '**$1**'))}${r.card && typeof r.card === 'object' ? usageCardHtml(r.card) : ''}`;
           chat.appendChild(el);
           shown.push(r.id);
         }
@@ -8772,8 +8781,33 @@
     function usageCardHtml(view) {
       const sections = Array.isArray(view.sections) ? view.sections : [];
       const body = sections.map((sec) => `<div class="usage-sec" data-section="${escapeHTML(String(sec.id || ''))}"><div class="usage-h" role="heading" aria-level="4">${escapeHTML(String(sec.title || ''))}</div>${(Array.isArray(sec.groups) ? sec.groups : []).map(usageGroupHtml).join('')}</div>`).join('');
-      return `<section class="usage-card" aria-label="Usage report"><div class="usage-head"><span class="usage-title">${escapeHTML(String(view.title || 'Usage'))}</span><span class="tool-chip is-report">Report</span></div>`
-        + body + (view.note ? `<p class="usage-note">${escapeHTML(String(view.note))}</p>` : '') + '</section>';
+      return `<section class="usage-card" aria-label="${escapeHTML(String(view.title || 'Usage'))}"><div class="usage-head"><span class="usage-title">${escapeHTML(String(view.title || 'Usage'))}</span><span class="tool-chip is-report">Report</span></div>`
+        + body + reportApprovalsHtml(view.approvals) + (view.note ? `<p class="usage-note">${escapeHTML(String(view.note))}</p>` : '') + '</section>';
+    }
+    // THE OPERATOR REPORTS (lib/operator): each item waiting for approval
+    // with its one-line reason and Approve / Decline. The decision goes to
+    // the server as the signed-in operator's (op task_decide); nothing
+    // approves itself.
+    function reportApprovalsHtml(list) {
+      const items = Array.isArray(list) ? list.filter((a) => a && typeof a.id === 'string' && /^[0-9a-f-]{36}$/i.test(a.id)) : [];
+      if (!items.length) return '';
+      return `<div class="usage-sec" data-section="approvals"><div class="usage-h" role="heading" aria-level="4">Waiting for approval</div><ul class="report-approvals">${items.map((a) => `<li class="report-approval" data-id="${escapeHTML(a.id)}" data-source="${a.source === 'action' ? 'action' : 'task'}"><div class="report-approval-title">${escapeHTML(String(a.title || ''))}</div>${a.reason ? `<div class="report-approval-reason">${escapeHTML(String(a.reason))}</div>` : ''}<div class="report-approval-actions">${a.approvable === false ? '<span class="report-approval-note">Cannot be approved as it stands</span>' : '<button type="button" class="report-approve" onclick="reportDecide(this, \'approve\')">Approve</button>'}<button type="button" class="report-decline" onclick="reportDecide(this, \'decline\')">Decline</button></div></li>`).join('')}</ul></div>`;
+    }
+    async function reportDecide(btn, decision) {
+      const li = btn.closest('.report-approval');
+      if (!li) return;
+      li.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+      let msg = '';
+      try {
+        const data = await watchesRequest({ op: 'task_decide', id: li.dataset.id, source: li.dataset.source, decision });
+        msg = (data && data.message) || (decision === 'approve' ? 'Approved.' : 'Declined.');
+        li.classList.add(decision === 'approve' ? 'is-approved' : 'is-declined');
+      } catch (e) {
+        msg = 'The decision could not be sent. Try again.';
+        li.querySelectorAll('button').forEach((b) => { b.disabled = false; });
+      }
+      const note = li.querySelector('.report-approval-result') || li.appendChild(Object.assign(document.createElement('div'), { className: 'report-approval-result' }));
+      note.textContent = msg;
     }
     function toggleUsageMore(btn) {
       const target = document.getElementById(btn.getAttribute('aria-controls'));

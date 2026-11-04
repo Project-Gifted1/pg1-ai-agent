@@ -29,7 +29,11 @@
     },
     {
       "path": "/api/opportunities/weekly",
-      "schedule": "41 6 * * 1"
+      "schedule": "30 7 * * 1"
+    },
+    {
+      "path": "/api/operator/daily",
+      "schedule": "15 7 * * *"
     },
     {
       "path": "/api/watchlists/recheck",

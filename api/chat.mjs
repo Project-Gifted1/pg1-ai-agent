@@ -84,6 +84,7 @@ import { isWatchlistsCommand, handleWatchlistsCommand } from '../lib/watchlists.
 import { isFoundryCommand, handleFoundryCommand } from '../lib/foundry/admin.mjs';
 import { isHostingCommand, handleHostingCommand } from '../lib/hosting/admin.mjs';
 import { isScreeningCommand, handleScreeningCommand } from '../lib/screeningAdmin.mjs';
+import { isReportCommand, handleReportCommand } from '../lib/operator/chat.mjs';
 import { createJobStore } from '../lib/a2aJobs/store.mjs';
 import { getUsageStats } from '../lib/usageStats.mjs';
 import { verifyUsage, verifyReport, verifyLead, verifyCardView, verifyContextLines } from '../lib/usageVerify.mjs';
@@ -3329,6 +3330,15 @@ async function chatRequest(req, res) {
       if (isOpportunitiesCommand(promptText)) {
         var oppOut = await handleOpportunitiesCommand({ text: promptText, env: process.env, supUrl: supabaseUrl, supKey: supabaseKey, isOperator: isOperator, fetchImpl: function (u, o) { return fetch(u, o); }, getStats: function (o) { return getUsageStats(o); } });
         return sendJSON(res, 200, { ...oppOut, traceId: requestTraceId });
+      }
+
+      // REPORTS (lib/operator/chat.mjs): /report today | week, and
+      // /report approve | decline <id> for an item waiting in a report.
+      // Operator only.
+      if (isReportCommand(promptText)) {
+        if (!isOperator) log401('REPORT', 'unauthenticated', supUrl, supKey);
+        var reportOut = await handleReportCommand({ text: promptText, isOperator: isOperator, env: process.env, supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: function (u, o) { return fetch(u, o); } });
+        return sendJSON(res, reportOut.status || 200, { reply: reportOut.reply, ...(reportOut.toolResults ? { toolResults: reportOut.toolResults } : {}), traceId: requestTraceId });
       }
 
       // AUTONOMOUS MODE (lib/autonomous): /auto on|off|status|log, /auto
