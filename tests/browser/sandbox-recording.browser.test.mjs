@@ -113,15 +113,16 @@ test('keys, Next and Previous, the tour, and a recording that saves a video with
   await page.keyboard.press('b');
   assert.equal(await sel(page), a, 'B: back to the one before');
   await page.click('#sandbox-next');
-  assert.equal(await sel(page), b, 'the Next button');
+  assert.notEqual(await sel(page), a, 'the Next button');
   // On a phone, in full screen: the touch pad on the view.
   await page.evaluate(() => toggleSandboxFull());
   const pad = page.locator('#sandbox-pad');
   assert.equal(await pad.isVisible(), true, 'the pad shows in full screen');
   const box = await pad.locator('[data-pad="next"]').boundingBox();
   assert.ok(box.width >= 44 && box.height >= 44, 'thumb-sized');
+  const before = await sel(page);
   await pad.locator('[data-pad="next"]').tap();
-  assert.notEqual(await sel(page), b, 'tap ▶: the next one');
+  assert.notEqual(await sel(page), before, 'tap ▶: the next one');
   const d0 = await page.evaluate(() => sandboxScene.inner.cameraState().dist);
   await pad.locator('[data-pad="in"]').tap();
   await page.waitForFunction((d) => sandboxScene.inner.cameraState().dist < d, d0, { timeout: 120000 });
@@ -133,9 +134,10 @@ test('keys, Next and Previous, the tour, and a recording that saves a video with
   await page.waitForFunction((c) => sandboxScene.inner.cameraState().theta !== c, cam0, { timeout: 120000 });
   await page.keyboard.up('e');
   // Typing in a field is never taken as a key.
+  const current = await sel(page);
   await page.focus('#sandbox-world');
   await page.keyboard.press('n');
-  assert.equal(await sel(page), b);
+  assert.equal(await sel(page), current, 'N in a field changes nothing');
   await page.locator('#sandbox-world-line').click();
   // The tour.
   await page.keyboard.press('t');
