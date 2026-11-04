@@ -58,8 +58,8 @@ export function createCapture(canvas, { fps = CAPTURE_FPS, bitsPerSecond = CAPTU
       const now = performance.now();
       if (now - lastAt < minGap) return;
       lastAt = now;
-      const sz = captureSize(canvas.width, canvas.height, maxEdge);
-      if (out.width !== sz.w || out.height !== sz.h) { out.width = sz.w; out.height = sz.h; }
+      // The video keeps the size it started with (an encoder fails if it
+      // changes mid-stream); a view drawn with fewer pixels is scaled into it.
       g.drawImage(canvas, 0, 0, out.width, out.height);
       const text = stamp();
       const fs = Math.max(14, Math.round(out.height / 40));
@@ -75,8 +75,13 @@ export function createCapture(canvas, { fps = CAPTURE_FPS, bitsPerSecond = CAPTU
       if (!rec) return Promise.resolve(null);
       const r = rec; rec = null;
       return new Promise((resolve) => {
-        r.onstop = () => { for (const t of stream.getTracks()) t.stop(); resolve({ blob: new Blob(chunks, { type: mime }), mime, seconds: (performance.now() - started) / 1000, frames }); };
-        r.stop();
+        let done = false;
+        const finish = () => { if (done) return; done = true; for (const t of stream.getTracks()) t.stop(); resolve({ blob: new Blob(chunks, { type: mime }), mime, seconds: (performance.now() - started) / 1000, frames }); };
+        r.onstop = finish;
+        r.onerror = finish;
+        // Whatever happens, Stop ends within a few seconds with what was recorded.
+        setTimeout(finish, 5000);
+        try { if (r.state !== 'inactive') r.stop(); else finish(); } catch (e) { finish(); }
       });
     }
   };
