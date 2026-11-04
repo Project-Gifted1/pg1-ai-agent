@@ -176,7 +176,7 @@ jobs:
       matrix:
         include:
           - group: look
-            files: tests/browser/sandbox-look.browser.test.mjs
+            files: tests/browser/sandbox-look.browser.test.mjs tests/browser/sandbox-recording.browser.test.mjs
           - group: world
             files: tests/browser/sandbox.browser.test.mjs tests/browser/sandbox-effects.browser.test.mjs
           - group: life
