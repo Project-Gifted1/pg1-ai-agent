@@ -51,6 +51,10 @@ create table if not exists public.pg1_operator_tasks (
   decided_at timestamptz,
   detail text check (char_length(detail) <= 1000)
 );
+-- A database where this migration ran before pr_opened_at was added keeps
+-- its table ("create table if not exists" adds nothing to it): add the
+-- column there. A no-op on a fresh run.
+alter table public.pg1_operator_tasks add column if not exists pr_opened_at timestamptz;
 create index if not exists pg1_operator_tasks_status_idx on public.pg1_operator_tasks (status, updated_at desc);
 alter table public.pg1_operator_tasks enable row level security;
 

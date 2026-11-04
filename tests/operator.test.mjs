@@ -664,3 +664,30 @@ test('stuck required checks: pending under 24 h waits; over 24 h, or never start
   const r = qualifyPr({ ...qBase(), ci: pending, now: NOW, checksSince: Math.max(NOW - 30 * 3600000, NOW - 2 * 3600000) });
   assert.equal(waitOnly(r.reasons), true);
 });
+
+// --- the migration -------------------------------------------------------------------------
+
+test('migration: pr_opened_at is in the create table and added to a table made by the earlier run', async () => {
+  const { readFileSync } = await import('node:fs');
+  const sql = readFileSync(new URL('../supabase/migrations/20261113120000_pg1_operator.sql', import.meta.url), 'utf8');
+  assert.match(sql, /^alter table public\.pg1_operator_tasks add column if not exists pr_opened_at timestamptz;$/m);
+  const create = sql.slice(sql.indexOf('create table if not exists public.pg1_operator_tasks'), sql.indexOf('alter table public.pg1_operator_tasks add column'));
+  assert.match(create, /^\s+pr_opened_at timestamptz,$/m, 'the column stays in the create table');
+  // A database where the migration already ran without the column: running
+  // the file again adds it and keeps the rows.
+  const { makeDb } = await import('./helpers/pgrest.mjs');
+  const db = await makeDb(['20261104120000_pg1_autonomous.sql']);
+  const earlier = sql.replace(/\s+-- When the task's PR was found open[^\n]*\n\s+pr_opened_at timestamptz,/, '').replace(/^alter table public\.pg1_operator_tasks add column if not exists pr_opened_at timestamptz;$/m, '');
+  assert.ok(!earlier.split('\n').some((l) => !l.trim().startsWith('--') && /pr_opened_at/.test(l)), 'the earlier file has no pr_opened_at');
+  await db.exec(earlier);
+  await db.exec("insert into public.pg1_operator_tasks (finding_key, kind, title) values ('k1', 'fix', 'kept')");
+  const cols = async () => (await db.query("select column_name from information_schema.columns where table_schema = 'public' and table_name = 'pg1_operator_tasks'")).rows.map((r) => r.column_name);
+  assert.ok(!(await cols()).includes('pr_opened_at'));
+  await db.exec(sql);
+  assert.ok((await cols()).includes('pr_opened_at'));
+  assert.equal((await db.query('select title from public.pg1_operator_tasks')).rows[0].title, 'kept');
+  await db.exec(sql); // and again: a no-op
+  // A fresh database gets it from the create table.
+  const fresh = await makeDb(['20261104120000_pg1_autonomous.sql', '20261113120000_pg1_operator.sql']);
+  assert.ok((await fresh.query("select 1 from information_schema.columns where table_name = 'pg1_operator_tasks' and column_name = 'pr_opened_at'")).rows.length === 1);
+});
