@@ -826,8 +826,11 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       if (c) { glideTo(c.id); if (mode !== 'follow') setMode('follow', { quiet: false }); marker.visible = true; return c.id; }
     }
     const all = moverCandidates();
+    // What is moving now (and what is followed, to step on from it); with
+    // nothing else moving, everything that can move.
     const moving = all.filter((x) => x.moving || x.id === selectedId);
-    c = cycleFollow(moving, selectedId, dir) || cycleFollow(all, selectedId, dir);
+    c = cycleFollow(moving.length > 1 ? moving : all, selectedId, dir);
+    if (c && c.id === selectedId) c = cycleFollow(all, selectedId, dir);
     if (!c) return null;
     if (dir > 0 && selectedId) { followed.push(selectedId); if (followed.length > 50) followed.shift(); }
     glideTo(c.id);
@@ -1028,8 +1031,12 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   // Cinematic draws fewer pixels when frames run over 33 ms (quality.js).
   // While recording, every tier adapts its pixels this way instead of
   // switching tier (a switch rebuilds the whole view: a freeze on video).
-  const renderScale = createRenderScale({ onChange: (sc) => { container.dataset.renderScale = String(sc); resize(); } });
-  const scaling = () => tier === 'cinematic' || recording;
+  // On a phone (coarse pointer) too, always: when frames run slow it first
+  // draws a few fewer pixels (down to 65%), keeping every effect, and only
+  // when that is not enough does the governor step the tier down (which
+  // rebuilds the view). A Pixel-class phone keeps High's look.
+  const renderScale = createRenderScale({ budgetMs: (1000 / targetFps) * 1.15, min: coarse && tier !== 'cinematic' ? 0.65 : 0.5, onChange: (sc) => { container.dataset.renderScale = String(sc); resize(); } });
+  const scaling = () => tier === 'cinematic' || recording || coarse;
   function resize() {
     const r = container.getBoundingClientRect();
     viewW = Math.max(1, r.width); viewH = Math.max(1, r.height);
@@ -1226,7 +1233,12 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     raf = requestAnimationFrame(frame);
     if (acc < 1 / targetFps - 0.002) return;
     const step = acc; acc = 0;
-    if (lastRender) { governor.sample(Math.min(1000, now - lastRender)); if (renderScale && scaling()) renderScale.sample(now - lastRender); }
+    if (lastRender) {
+      const ms = Math.min(1000, now - lastRender);
+      if (renderScale && scaling()) renderScale.sample(ms);
+      // The tier steps down only once fewer pixels were not enough.
+      if (!scaling() || renderScale.atMin) governor.sample(ms);
+    }
     lastRender = now;
     animateFires(now);
     const tickF = animate(step, now);

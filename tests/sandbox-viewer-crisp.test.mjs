@@ -102,8 +102,14 @@ test('3: Cinematic lowers its render scale when frames run over 33 ms, and raise
   assert.equal(rs.scale, 1);
   assert.ok(changes.length >= 3);
   const scene = read('public/sandbox/sandbox-scene.js');
-  assert.match(scene, /const renderScale = createRenderScale\(/);
-  assert.match(scene, /const scaling = \(\) => tier === 'cinematic' \|\| recording;/);
+  assert.match(scene, /const renderScale = createRenderScale\(\{ budgetMs: \(1000 \/ targetFps\) \* 1\.15, min: coarse && tier !== 'cinematic' \? 0\.65 : 0\.5,/);
+  // On a phone: fewer pixels first (every effect kept); the tier steps down only once that is not enough.
+  assert.match(scene, /if \(!scaling\(\) \|\| renderScale\.atMin\) governor\.sample\(ms\);/);
+  const phone = createRenderScale({ min: 0.65 });
+  for (let i = 0; i < 400; i++) phone.sample(120);
+  assert.equal(phone.atMin, true);
+  assert.equal(phone.scale, 0.65);
+  assert.match(scene, /const scaling = \(\) => tier === 'cinematic' \|\| recording \|\| coarse;/);
   assert.match(scene, /\* \(renderScale && scaling\(\) \? renderScale\.scale : 1\)/);
 });
 

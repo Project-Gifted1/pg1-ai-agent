@@ -69,7 +69,7 @@ test('recording: no tier changes (they rebuild the view), the render scale adapt
   const scene = read('public/sandbox/sandbox-scene.js');
   assert.match(scene, /onTierChange: \(t\) => \{ if \(auto && !recordingOn\) switchTo\(t, \{ manual: false \}\); \}/);
   assert.match(scene, /inner\.governor\.setAuto\(auto && !recordingOn\)/);
-  assert.match(scene, /const scaling = \(\) => tier === 'cinematic' \|\| recording;/);
+  assert.match(scene, /const scaling = \(\) => tier === 'cinematic' \|\| recording \|\| coarse;/);
   assert.match(scene, /const lock = now < glideUntil \? 1\.4 : 9;/, 'a new target is glided to');
   assert.match(scene, /if \(capture && capture\.recording\) capture\.frame\(\);/, 'every drawn frame, once');
   const html = read('public/index.html');

@@ -102,6 +102,7 @@ export function createRenderScale({ budgetMs = 1000 / 30, min = 0.5, window = 30
   let scale = 1; let n = 0; let sum = 0;
   return {
     get scale() { return scale; },
+    get atMin() { return scale <= min + 1e-9; },
     sample(ms) {
       if (!(ms > 0) || ms > 1000) return scale;
       n++; sum += ms;
