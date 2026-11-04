@@ -264,7 +264,7 @@ for (const [name, change, re] of DISQUALIFY) {
 }
 
 // GitHub and Vercel for a merge.
-function mergeWorld({ deployState = 'READY', before = { total: 1000, errors: 2, p95: 600 }, after = { total: 1000, errors: 2, p95: 600 }, ci = GREEN, files = FILES, serving = null, extraChecks = [] } = {}) {
+function mergeWorld({ deployState = 'READY', before = { total: 1000, errors: 2, p95: 600 }, after = { total: 1000, errors: 2, p95: 600 }, ci = GREEN, files = FILES, serving = null, extraChecks = [], headAt = NOW - 3600000 } = {}) {
   const calls = [];
   const notes = [];
   const fetchImpl = async (url, opts = {}) => {
@@ -290,6 +290,7 @@ function mergeWorld({ deployState = 'READY', before = { total: 1000, errors: 2, 
     }
     if (u.endsWith('/pulls/77')) return Response.json(PR);
     if (u.includes('/pulls/77/files')) return Response.json(new URL(u).searchParams.get('page') === '1' ? files : []);
+    if (u.endsWith('/commits/h77')) return Response.json({ commit: { committer: { date: new Date(headAt).toISOString() } } });
     if (u.includes('/commits/h77/check-runs')) return Response.json({ check_runs: [...ci.checks, ...extraChecks].map((c) => ({ ...c })) });
     if (u.endsWith('/pulls/77/merge')) return Response.json({ merged: true, sha: 'm77' });
     if (u.startsWith(SUP)) return new Response(null, { status: 201 });
@@ -598,4 +599,66 @@ test('the lab is blocked from every newly protected path', () => {
     assert.equal(checkCodePath(p).ok, false, p);
   }
   assert.equal(checkCodePath('lib/walletAge.mjs').ok, true);
+});
+
+// --- follow-ups: weakened tests and stuck checks -------------------------------------------
+
+const testFile = (patch, filename = 'tests/wallet-age.test.mjs') => ({ filename, status: 'added', additions: patch.split('\n').length, deletions: 0, patch });
+for (const [group, patch, pattern] of [
+  ['skip', "+test('wallet age', { skip: 'flaky' }, () => {});\n+test.skip('other', () => {});\n+it.skip('x');\n+describe.skip('y');\n+xit('z');\n+xdescribe('w');\n+suite.skip('v', () => {});", /tests\/wallet-age\.test\.mjs adds (?:\.skip\(|\{ skip: \}|test\.skip|it\.skip|describe\.skip|xit\(|xdescribe\()/],
+  ['only', "+test.only('wallet age', () => {});\n+test('b', { only: true }, () => {});", /tests\/wallet-age\.test\.mjs adds (?:\.only\(|\{ only: \})/],
+  ['todo', "+test.todo('wallet age checks the delegation');", /tests\/wallet-age\.test\.mjs adds \.todo\(/],
+  ['early return', "+test('wallet age', async () => {\n+  // not ready yet\n+  return;\n+  assert.equal(1, 2);\n+});", /tests\/wallet-age\.test\.mjs adds early return/]
+]) {
+  test(`auto-merge blocked: a weakened test (${group})`, () => {
+    const q = qBase();
+    q.files = [FILES[0], testFile(patch)];
+    const r = qualifyPr(q);
+    assert.equal(r.ok, false);
+    assert.ok(r.reasons.some((x) => /^weakens tests: /.test(x) && pattern.test(x)), r.reasons.join(' | '));
+  });
+}
+
+test('each weakening pattern is named, alone', async () => {
+  const { weakenedTests } = await import('../lib/operator/merge.mjs');
+  const cases = { ".skip(": "+suite.skip('a')", '{ skip: }': "+test('a', { timeout: 5, skip: true }, () => {})", 'test.skip': '+test.skip', 'it.skip': '+it.skip', 'describe.skip': '+describe.skip', 'xit(': "+xit('a')", 'xdescribe(': "+xdescribe('a')", '.only(': "+t.only('a')", '{ only: }': "+test('a', { only: true }, f)", '.todo(': "+test.todo('a')", 'early return': "+it('a', function () { return; });" };
+  for (const [name, patch] of Object.entries(cases)) assert.ok(weakenedTests([testFile(patch)]).some((w) => w.pattern === name), name);
+  // Not weakening: the usual conditional skip shorthand, removed lines, files outside tests/, a return later in the body.
+  assert.deepEqual(weakenedTests([testFile("+test('a', { skip, timeout: 180000 }, async () => {\n+  const r = await f();\n+  return r;\n+});\n-test.skip('old')"), { filename: 'lib/x.mjs', status: 'modified', patch: '+x.skip(1)' }]), []);
+});
+
+test('a normal added test still qualifies', () => {
+  const q = qBase();
+  q.files = [FILES[0], testFile("+import { test } from 'node:test';\n+test('wallet age is read from the first transfer', async () => {\n+  const out = await walletAge('0x' + '1'.repeat(40));\n+  assert.equal(out.first_seen, '2023-01-01');\n+});")];
+  assert.deepEqual(qualifyPr(q).reasons, []);
+});
+
+test('stuck required checks: pending under 24 h waits; over 24 h, or never started, goes to approval and the daily report', async () => {
+  const pending = { state: 'pending', checks: [GREEN.checks[0], { name: 'browser tests', status: 'queued', conclusion: null }] };
+  // Under 24 h since the head commit: wait.
+  const op1 = memOpStore();
+  const t1 = await prTask(op1);
+  const w1 = mergeWorld({ ci: pending, headAt: NOW - 23 * 3600000 });
+  await operatorTick({ env: ENV, supUrl: SUP, supKey: 'k', fetchImpl: w1.fetchImpl, now: NOW, deps: { opStore: op1, autoStore: null, labStore, startLab: null } });
+  assert.equal(t1.status, 'pr_open');
+  // Over 24 h: to approval with the reason.
+  const op2 = memOpStore();
+  const t2 = await prTask(op2);
+  const w2 = mergeWorld({ ci: pending, headAt: NOW - 25 * 3600000 });
+  await operatorTick({ env: ENV, supUrl: SUP, supKey: 'k', fetchImpl: w2.fetchImpl, now: NOW, deps: { opStore: op2, autoStore: null, labStore, startLab: null } });
+  assert.equal(t2.status, 'needs_approval');
+  assert.equal(t2.approval.reason, 'required check browser tests has not finished in 24 h');
+  assert.ok(!w2.calls.some((c) => c.url.endsWith('/merge')));
+  const data = await gatherDaily({ env: ENV, supUrl: SUP, supKey: 'k', fetchImpl: reportFetch(), now: NOW, getStats, opStore: op2, autoStore: null });
+  assert.match(buildDailyReport(data).markdown, /Fix wallet age errors — required check browser tests has not finished in 24 h/);
+  // A check that never started (missing) counts the same; the task's pr_open time is the clock when the commit time cannot be read.
+  const op3 = memOpStore();
+  const t3 = await op3.addTask({ finding_key: 'x3', kind: 'fix', title: 'Fix wallet age errors', status: 'pr_open', experiment_id: EXP.id, pr_number: 77, pr_url: PR.html_url, pr_opened_at: new Date(NOW - 30 * 3600000).toISOString() });
+  const w3 = mergeWorld({ ci: { state: 'none', checks: [] }, headAt: NaN });
+  await operatorTick({ env: ENV, supUrl: SUP, supKey: 'k', fetchImpl: w3.fetchImpl, now: NOW, deps: { opStore: op3, autoStore: null, labStore, startLab: null } });
+  assert.equal(t3.status, 'needs_approval');
+  assert.equal(t3.approval.reason, 'required check npm test has not finished in 24 h; required check browser tests has not finished in 24 h');
+  // A new push restarts the clock: the later of the head commit and pr_open.
+  const r = qualifyPr({ ...qBase(), ci: pending, now: NOW, checksSince: Math.max(NOW - 30 * 3600000, NOW - 2 * 3600000) });
+  assert.equal(waitOnly(r.reasons), true);
 });

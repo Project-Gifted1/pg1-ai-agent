@@ -39,6 +39,8 @@ create table if not exists public.pg1_operator_tasks (
   experiment_id uuid,
   pr_number integer,
   pr_url text check (char_length(pr_url) <= 300),
+  -- When the task's PR was found open: the clock for a stuck required check.
+  pr_opened_at timestamptz,
   merge_sha text check (char_length(merge_sha) <= 64),
   merged_at timestamptz,
   auto_merged boolean not null default false,

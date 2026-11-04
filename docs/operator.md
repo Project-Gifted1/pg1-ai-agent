@@ -40,6 +40,10 @@ in `lib/operator/merge.mjs` `qualifyPr`:
   each with its patch (a file too large or binary has none: no decision);
 - existing tests only added to: no deleted line in an existing file under
   `tests/`, no removed or renamed test file (new test files are fine);
+- no weakened tests: the added lines under `tests/` hold no `.skip(`,
+  `.only(`, `.todo(`, `{ skip: }`, `{ only: }`, `test.skip`, `it.skip`,
+  `describe.skip`, `xit(` or `xdescribe(`, and no test body starts with a
+  bare `return` (the reason names the file and the pattern);
 - no SQL or migrations; no env var read (`env.NAME`, `env['NAME']`,
   `env["NAME"]`), `vercel.json`, workflow or package change;
 - no protected code: `lib/autonomy.mjs`, all of `lib/lab/` and
@@ -54,7 +58,11 @@ in `lib/operator/merge.mjs` `qualifyPr`:
 - the REQUIRED checks only ("npm test", "browser tests") passed on the head
   SHA. Other checks (the Cloudflare Workers Builds app check, x402-validate)
   are not judged. A required check still running is a wait; a failed one
-  means not low risk. A re-run's newest result counts;
+  means not low risk. A re-run's newest result counts. A required check
+  pending or missing for more than 24 hours (from the later of the head
+  commit time and the time the task's PR was found open) stops the wait:
+  the PR goes for approval with "required check <name> has not finished in
+  24 h" and shows in the next daily report;
 - the lab's promotion gate passed; at most 3 a UTC day, one at a time;
 - auto-merge not paused (below).
 
