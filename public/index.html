@@ -1626,6 +1626,7 @@
     .usage-label.is-mono { font-family: var(--font-mono); font-size: var(--fs-xs); }
     .usage-value { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
     .usage-num { font-weight: 600; color: var(--text-strong); white-space: nowrap; }
+    .usage-link { color: var(--accent, var(--text-strong)); text-decoration: underline; text-underline-offset: 2px; }
     .report-approvals { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
     .report-approval { padding: var(--sp-2) 0; border-top: 1px solid var(--border); }
     .report-approval:first-child { border-top: 0; }
@@ -8746,6 +8747,11 @@
       const d = Math.floor(s / 86400);
       return d <= 30 ? `${d} day${d === 1 ? '' : 's'} ago` : '';
     }
+    // /usage verify: a transaction row links to its page on the Base
+    // explorer; any other href is ignored.
+    function usageTxLink(href) {
+      return typeof href === 'string' && /^https:\/\/basescan\.org\/tx\/0x[0-9a-fA-F]{64}$/.test(href);
+    }
     function usageRowHtml(r) {
       if (!r || typeof r !== 'object') return '';
       const sub = typeof r.at === 'number' && isFinite(r.at) ? usageRelative(r.at) : (r.sub || '');
@@ -8753,7 +8759,7 @@
         ? `<dd class="usage-bar${r.warn ? ' is-warn' : ''}" aria-hidden="true"><span style="width: ${Math.min(100, Math.max(0, r.bar))}%"></span></dd>`
         : '';
       return `<div class="usage-row"><dt class="usage-label${r.mono ? ' is-mono' : ''}">${escapeHTML(String(r.label == null ? '' : r.label))}${r.tag ? `<span class="usage-tag">${escapeHTML(String(r.tag))}</span>` : ''}</dt>`
-        + `<dd class="usage-value"><span class="usage-num">${escapeHTML(String(r.value == null ? '—' : r.value))}</span></dd>`
+        + `<dd class="usage-value">${usageTxLink(r.href) ? `<a class="usage-num usage-link" href="${escapeHTML(r.href)}" target="_blank" rel="noopener noreferrer">${escapeHTML(String(r.value == null ? '—' : r.value))}</a>` : `<span class="usage-num">${escapeHTML(String(r.value == null ? '—' : r.value))}</span>`}</dd>`
         + (sub ? `<dd class="usage-row-sub">${escapeHTML(String(sub))}</dd>` : '')
         + bar + '</div>';
     }
