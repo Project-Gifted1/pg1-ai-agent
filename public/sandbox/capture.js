@@ -13,7 +13,15 @@
 //   at most `fps` a second (a faster screen does not make a bigger file).
 
 export const CAPTURE_FPS = 30;
-export const CAPTURE_BITS = 16_000_000;   // 16 Mbit/s: crisp 1080p and above
+export const CAPTURE_BITS = 12_000_000;   // 12 Mbit/s: crisp 1080p, and a phone's encoder keeps up
+// The video's long edge at most (a phone's screen is 2.5 to 3 times its CSS
+// size: recorded at full size, the encoder would fall behind and drop frames).
+export const CAPTURE_MAX_EDGE = 1920;
+// The video's size for a canvas: the same shape, the long edge at most maxEdge, even numbers.
+export function captureSize(w, h, maxEdge = CAPTURE_MAX_EDGE) {
+  const k = Math.min(1, maxEdge / Math.max(1, w, h));
+  return { w: Math.max(2, Math.round((w * k) / 2) * 2), h: Math.max(2, Math.round((h * k) / 2) * 2) };
+}
 export const MIMES = Object.freeze(['video/mp4;codecs=avc1.640028', 'video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm']);
 
 export function pickMime(isSupported = (m) => typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported(m)) {
@@ -25,7 +33,7 @@ export function fileExtension(mime) {
   return /mp4/.test(String(mime)) ? 'mp4' : 'webm';
 }
 
-export function createCapture(canvas, { fps = CAPTURE_FPS, bitsPerSecond = CAPTURE_BITS, stamp = () => 'Simulation' } = {}) {
+export function createCapture(canvas, { fps = CAPTURE_FPS, bitsPerSecond = CAPTURE_BITS, maxEdge = CAPTURE_MAX_EDGE, stamp = () => 'Simulation' } = {}) {
   const mime = pickMime();
   if (!mime || !canvas || typeof canvas.captureStream !== 'function') return null;
   // The recording's own canvas: the view, and the stamp in its corner.
@@ -37,7 +45,7 @@ export function createCapture(canvas, { fps = CAPTURE_FPS, bitsPerSecond = CAPTU
     get recording() { return !!rec; },
     mime,
     start() {
-      out.width = canvas.width; out.height = canvas.height;
+      ({ w: out.width, h: out.height } = captureSize(canvas.width, canvas.height, maxEdge));
       stream = out.captureStream(0);
       chunks = []; frames = 0; started = performance.now(); lastAt = 0;
       rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: bitsPerSecond });
@@ -50,8 +58,9 @@ export function createCapture(canvas, { fps = CAPTURE_FPS, bitsPerSecond = CAPTU
       const now = performance.now();
       if (now - lastAt < minGap) return;
       lastAt = now;
-      if (out.width !== canvas.width || out.height !== canvas.height) { out.width = canvas.width; out.height = canvas.height; }
-      g.drawImage(canvas, 0, 0);
+      const sz = captureSize(canvas.width, canvas.height, maxEdge);
+      if (out.width !== sz.w || out.height !== sz.h) { out.width = sz.w; out.height = sz.h; }
+      g.drawImage(canvas, 0, 0, out.width, out.height);
       const text = stamp();
       const fs = Math.max(14, Math.round(out.height / 40));
       g.font = `600 ${fs}px system-ui, sans-serif`;

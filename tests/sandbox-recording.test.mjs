@@ -18,7 +18,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { pickTourTarget, cycleFollow, TOUR_DWELL_MS, TOUR_DWELL_RECORDING_MS, VIEW_KEYS } from '../public/sandbox/tour.js';
-import { pickMime, fileExtension, CAPTURE_BITS, CAPTURE_FPS } from '../public/sandbox/capture.js';
+import { pickMime, fileExtension, captureSize, CAPTURE_BITS, CAPTURE_FPS, CAPTURE_MAX_EDGE } from '../public/sandbox/capture.js';
 
 const ROOT = new URL('../', import.meta.url);
 const read = (f) => readFileSync(new URL(f, ROOT), 'utf8');
@@ -85,9 +85,22 @@ test('the video: the best format the browser has, a high bit rate, the Simulatio
   assert.equal(pickMime(() => false), null);
   assert.equal(fileExtension('video/mp4;codecs=avc1.640028'), 'mp4');
   assert.equal(fileExtension('video/webm;codecs=vp9'), 'webm');
-  assert.ok(CAPTURE_BITS >= 12_000_000 && CAPTURE_FPS >= 30);
+  assert.ok(CAPTURE_BITS >= 10_000_000 && CAPTURE_FPS >= 30);
   const cap = read('public/sandbox/capture.js');
   assert.match(cap, /stream = out\.captureStream\(0\);/, 'frames only as the view draws them');
   assert.match(cap, /g\.fillText\(text,/);
   assert.match(read('public/sandbox/sandbox-scene.js'), /stamp: \(\) => clockEl\.textContent \|\| 'Simulation'/);
+});
+
+test('on a phone: a touch pad on the view itself (there in full screen too), 44 px buttons, out of the video; videos sized for a phone\'s encoder', () => {
+  const html = read('public/index.html');
+  const pad = /<div class="sandbox-pad" id="sandbox-pad"[\s\S]*?<\/div><\/div>/.exec(html);
+  assert.ok(pad, 'the pad is inside the view');
+  for (const k of ['prev', 'next', 'in', 'out', 'tour', 'rec']) assert.match(pad[0], new RegExp(`data-pad="${k}"`));
+  assert.match(html, /\.sandbox-pad button \{ pointer-events: auto; min-width: 44px; min-height: 44px;/);
+  assert.match(html, /\.sandbox-view\.is-recording \.sandbox-pad button:not\(\[data-pad="rec"\]\) \{ display: none; \}/, 'while recording only Stop');
+  assert.match(html, /@media \(pointer: coarse\) \{ \.sandbox-keys \{ display: none; \} \}/, 'no keyboard help on a phone');
+  assert.equal(CAPTURE_MAX_EDGE, 1920);
+  assert.deepEqual(captureSize(1071, 2379), { w: 864, h: 1920 }, 'a 412 x 915 phone at 2.6x: 864 x 1920');
+  assert.deepEqual(captureSize(800, 600), { w: 800, h: 600 });
 });

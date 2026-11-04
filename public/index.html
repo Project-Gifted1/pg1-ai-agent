@@ -480,6 +480,16 @@
     /* Recording: the overlays step aside (the clock, which says Simulation, stays). */
     .sandbox-view.is-recording .sandbox-minimap, .sandbox-view.is-recording .sandbox-floors, .sandbox-view.is-recording .sandbox-world-badge { display: none; }
     #sandbox-rec.is-rec { color: #ff5c5c; border-color: rgba(255,92,92,0.6); }
+    /* The touch pad, on the view itself (so it is there in full screen too):
+       big enough for a thumb; never in the recorded video (it is the page's,
+       not the canvas's). While recording only Stop shows. */
+    .sandbox-pad { position: absolute; right: 8px; bottom: 8px; z-index: 3; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; max-width: calc(100% - 16px); pointer-events: none; }
+    .sandbox-pad button { pointer-events: auto; min-width: 44px; min-height: 44px; padding: 0 10px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.22); background: rgba(10,10,11,0.62); color: #f2f2f5; font: 600 0.95rem/1 var(--lx-font, system-ui); touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+    .sandbox-pad button:active { background: rgba(60,60,66,0.8); }
+    .sandbox-pad button.is-rec { color: #ff5c5c; border-color: rgba(255,92,92,0.7); }
+    .sandbox-view.is-recording .sandbox-pad button:not([data-pad="rec"]) { display: none; }
+    /* In full screen, above the Exit full screen button. */
+    .sandbox-view.is-full .sandbox-pad { bottom: calc(68px + var(--safe-bottom, 0px)); right: 12px; }
     .sandbox-keys { margin: 4px 0; color: var(--lx-faint, #8a8a93); font-size: 0.72rem; }
     @media (pointer: coarse) { .sandbox-keys { display: none; } }
     .sandbox-minimap { position: absolute; top: 8px; right: 8px; width: 104px; height: 104px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); pointer-events: auto; cursor: pointer; }
@@ -2975,7 +2985,7 @@
         </div>
         <p class="sandbox-keys" id="sandbox-keys">Keys: W A S D or arrows move · Q / E turn · R / F tilt · + / − zoom · N / B next / previous · T tour · O overview · Space play · V record</p>
         <div class="sandbox-space" id="sandbox-space" role="group" aria-label="Places in space" hidden></div>
-        <div class="sandbox-view" id="sandbox-view" aria-label="The world, drawn in 3D"></div>
+        <div class="sandbox-view" id="sandbox-view" aria-label="The world, drawn in 3D"><div class="sandbox-pad" id="sandbox-pad" role="group" aria-label="Camera"><button type="button" data-pad="prev" onclick="sandboxFollowNext(-1)" aria-label="Follow the previous moving thing">◀</button><button type="button" data-pad="next" onclick="sandboxFollowNext(1)" aria-label="Follow the next moving thing">▶</button><button type="button" data-pad="in" onclick="sandboxZoom(0.6)" aria-label="Closer">+</button><button type="button" data-pad="out" onclick="sandboxZoom(1.6)" aria-label="Further">−</button><button type="button" data-pad="tour" onclick="setSandboxView('tour')" aria-label="Tour">Tour</button><button type="button" data-pad="rec" onclick="toggleSandboxRecord()" aria-label="Record a video">● Rec</button></div></div>
         <section class="lx-card sandbox-inspect" id="sandbox-inspect" aria-labelledby="sandbox-inspect-h" hidden><h3 class="lx-section-h" id="sandbox-inspect-h">Selected</h3><ul class="lx-rows" id="sandbox-inspect-rows"></ul></section>
         <div class="sandbox-kinds" id="sandbox-kinds" aria-label="Kinds of entity"></div>
         <section class="lx-card" aria-labelledby="sandbox-rules-h"><h3 class="lx-section-h" id="sandbox-rules-h">Rules, in plain words</h3><ul class="lx-rows" id="sandbox-rules"></ul></section>
@@ -3918,6 +3928,7 @@
         const capturing = sandboxScene.startCapture ? sandboxScene.startCapture() : false;
         sandboxRecStart = Date.now();
         if (b) { b.setAttribute('aria-pressed', 'true'); b.classList.add('is-rec'); }
+        const padRec = document.querySelector('#sandbox-pad [data-pad="rec"]'); if (padRec) { padRec.textContent = '■ Stop'; padRec.classList.add('is-rec'); }
         const tick = () => { if (b) { const s = Math.floor((Date.now() - sandboxRecStart) / 1000); b.textContent = `${capturing ? '● Stop' : '● Recording mode'} ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; } };
         tick(); clearInterval(sandboxRecTimer); sandboxRecTimer = setInterval(tick, 1000);
         if (!capturing) { const line = document.getElementById('sandbox-tick'); if (line) line.textContent = 'Recording mode on: this browser cannot record video itself, so use a screen recorder; the view keeps its quality and does not freeze.'; }
@@ -3928,6 +3939,7 @@
       const out = sandboxScene.stopCapture ? await sandboxScene.stopCapture() : null;
       sandboxScene.setRecording(false);
       if (b) { b.setAttribute('aria-pressed', 'false'); b.classList.remove('is-rec'); b.textContent = 'Record'; }
+      const padRec = document.querySelector('#sandbox-pad [data-pad="rec"]'); if (padRec) { padRec.textContent = '● Rec'; padRec.classList.remove('is-rec'); }
       if (out && out.blob && out.blob.size) {
         const w = sandboxState.world || {};
         const ext = /mp4/.test(out.mime) ? 'mp4' : 'webm';
@@ -3940,6 +3952,8 @@
       sandboxPanelsAt = { id: null, at: 0 };
       if (sandboxState.world) renderSandboxWorld(sandboxState.world);
     }
+    // The touch pad's − and + (the same as a pinch).
+    function sandboxZoom(k) { if (sandboxScene && sandboxScene.zoom) sandboxScene.zoom(k); }
     // Follow the next (1) or previous (-1) moving thing.
     function sandboxFollowNext(dir) { if (sandboxScene && sandboxScene.followNext) { sandboxScene.followNext(dir); markSandboxView('follow'); } }
     // The view's keys, whenever the Sandbox is open and no text field has

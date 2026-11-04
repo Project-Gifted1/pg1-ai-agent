@@ -114,6 +114,18 @@ test('keys, Next and Previous, the tour, and a recording that saves a video with
   assert.equal(await sel(page), a, 'B: back to the one before');
   await page.click('#sandbox-next');
   assert.equal(await sel(page), b, 'the Next button');
+  // On a phone, in full screen: the touch pad on the view.
+  await page.evaluate(() => toggleSandboxFull());
+  const pad = page.locator('#sandbox-pad');
+  assert.equal(await pad.isVisible(), true, 'the pad shows in full screen');
+  const box = await pad.locator('[data-pad="next"]').boundingBox();
+  assert.ok(box.width >= 44 && box.height >= 44, 'thumb-sized');
+  await pad.locator('[data-pad="next"]').tap();
+  assert.notEqual(await sel(page), b, 'tap ▶: the next one');
+  const d0 = await page.evaluate(() => sandboxScene.inner.cameraState().dist);
+  await pad.locator('[data-pad="in"]').tap();
+  await page.waitForFunction((d) => sandboxScene.inner.cameraState().dist < d, d0, { timeout: 120000 });
+  await page.tap('.sandbox-full-exit');
   // Held keys move the camera.
   const cam0 = await page.evaluate(() => sandboxScene.inner.cameraState().theta);
   // (Held until the camera has turned: frames are slow on a software GPU.)
@@ -136,6 +148,8 @@ test('keys, Next and Previous, the tour, and a recording that saves a video with
   assert.match(await page.locator('#sandbox-rec').innerText(), /^● Stop \d+:\d\d$/, 'the browser records the video itself');
   assert.equal(await page.evaluate(() => sandboxScene.inner.governor.auto), false, 'no automatic quality change while recording');
   await page.click('#sandbox-play');
+  assert.equal(await page.locator('#sandbox-pad [data-pad="rec"]').innerText(), '■ Stop', 'Stop on the pad while recording');
+  assert.equal(await page.locator('#sandbox-pad [data-pad="next"]').isVisible(), false, 'the rest of the pad steps aside');
   const steps0 = log.steps.length;
   await page.waitForFunction(() => Number(document.getElementById('sandbox-view').dataset.frames || 0) > 0);
   await page.waitForTimeout(6000);
