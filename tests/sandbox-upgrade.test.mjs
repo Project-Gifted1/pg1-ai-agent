@@ -86,7 +86,11 @@ test('a universe from before the roads, 1,200 ticks in: upgraded in place, its p
       parked++;
     } else assert.deepEqual(a, plain(e), `${e.id} is exactly as it was`);
   }
-  assert.ok(parked > 0, 'vehicles parked on the roads');
+  // Every road vehicle is on a road now: those that were off one were parked
+  // on the nearest (vehicleSpace in lib/sandbox/watchdog.mjs keeps most of them on the
+  // road strips already, so how many moved depends on where they stood).
+  for (const e of after.state.entities.filter((x) => ROAD_VEHICLES.has(x.kind) && !(typeof x.properties.inside === 'string' && byId.has(x.properties.inside)) && (x.position.z || 0) <= 1)) assert.ok(onRoad(g, e.position.x, e.position.y, { paths: e.kind === 'bike' }), `${e.id} is on a road`);
+  assert.ok(parked >= 0);
   const people = before.state.entities.filter((e) => LIVING.has(e.kind));
   assert.ok(people.length > 100);
   assert.deepEqual(after.state.society, before.state.society, 'countries, treasuries and research levels');

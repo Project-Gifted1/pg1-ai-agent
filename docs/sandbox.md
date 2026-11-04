@@ -23,7 +23,7 @@ A deterministic engine steps the world: the same world and seed always give the 
 | `emit` | kind, every, event | every 10 steps, each grass records "seeded" |
 | `attract` / `repel` | kind, toward / from, strength, radius | foxes move up to 1 m a step toward the nearest rabbit |
 | `condition` | kind, `if {property, op, value}`, then? / remove? / emit? | when a rabbit's energy > 8, its mood becomes "happy" |
-| `travel` | kind, speed?, roam? (up to 12 kinds) | cars drive to their target at up to 90 m a step, then pick a house, shop or tower to go to next |
+| `travel` | kind, speed?, roam? (up to 12 kinds) | cars drive to their target at up to 80 m a step (140 on a main road), then pick a house, shop or tower to go to next |
 | `orbit` | kind, around? | planets circle what their `orbits` property names |
 | `cosmos` | conflict? (false), hazards? (true) | other civilisations live their own lives, and crews in space meet radiation belts, flares and meteoroids (see **The wider cosmos**) |
 
@@ -60,6 +60,12 @@ A deterministic engine steps the world: the same world and seed always give the 
   - something stuck (a trip, no progress for a day of steps), which drops its trip and chooses again.
   - Anything really wrong is one `watchdog` event that step ("The watchdog put right: 2 back on the road"). Everyday crowding is fixed without an event.
 - Universe, 1,500 steps: boats, vehicles or people overlapping went from 2,912, 4,128 and 3,510 pair-steps to 0, 0 and 0.
+- **Vehicles: the whole way clear** (`vehicleSpace` in `lib/sandbox/watchdog.mjs`, every step, for road vehicles and boats). Each vehicle's way through a step is where it was, the corners it turned on the road (its `wp` property) and where it ended (`lib/sandbox/vehicle-path.mjs`). The viewer draws it on exactly that way (`public/sandbox/vehicle-path.js`, a byte-for-byte copy). Every vehicle's way is checked against every other's at the same moments: at least 10 times a step, and more for a fast one (one check per metre of their movement together). The check is a swept test, so nothing passes through anything between two checks.
+  - **Lanes apart:** cars keep at least 1.6 m right of the middle on any road wide enough, so two buses passing each other never touch.
+  - **Following distance:** a vehicle keeps 2 m behind the one ahead in its lane (`FOLLOW`), and its body counts 0.75 m longer at each end while it moves.
+  - **Giving way:** a vehicle catching up keeps behind; otherwise a siren goes first, then whoever is already in the junction, then the earlier id. Giving way means covering less of its way this step (as far as stays clear), or none of it. A boat that has to give way steps round to its right instead.
+  - **Parking:** a parked car on a road wide enough pulls in to the kerb, out of the lane. Two vehicles standing on the same spot (a template, an agent, an old world) move apart to the nearest clear spot on their road or water. Each vehicle keeps its heading (`hdg`) for the viewer.
+  - `stepWorld` returns these corrections with the watchdog's, counted (`fixes`). Over 2,000 steps (`tests/sandbox-play.test.mjs`), no two vehicles' footprints overlap at any of the 10 points a step the viewer draws them at. Before this change, measured the same way along the old curved interpolation: universe 343,074 overlapping samples, benin-warri 155.
 - **Roads are data:** `roads: { nodes: [[x, y]], edges: [[a, b, width, name]], names }` in the world spec, inside the existing size limit. An edge under 3.5 m wide is a footpath. Road entities (straight strips, and the streets a society builds) join the network too.
   - The town and the universe have a connected network per island: a ring road, the town's street grid, and roads to the harbour, airport or airstrip, every house row, the school, hospital, factory and launch pad. Buildings face the roads, set back from them.
 - **Flight** (plane, small plane, jet):
@@ -232,7 +238,7 @@ A kind with a suffix counts as its base kind: `car_red` is a car.
   - past either, notable events are counted in the daily summary (`notable_summarised`) instead of written one by one;
   - agent and subject records are never held back.
 - **Detail:** at most 2,048 bytes (a CHECK on `octet_length(detail::text)`; longer details are cut, with `truncated: true`).
-- **Bounded agent records:** every write call counts against a daily changes quota: 600 for PG1 and 300 for each invited key, on top of the steps quota.
+- **Bounded agent records:** every write call counts against a daily changes quota: 600 for PG1 and 300 for each invited key, on top of the steps quota. The operator's viewer stepping one of PG1's own worlds counts steps only.
 - **Tamper-evident:**
   - each record carries the SHA-256 hash of the one before it in its chain, so a changed or missing record breaks it (`verifyChain`);
   - the table refuses updates, and deletes of records younger than their chain's retention.
@@ -361,8 +367,15 @@ Open it from the `/sandbox` or `/world <id>` reply. It is a full-screen view in 
 - **A world list that says which is which:** each world's name, "your first universe" on PG1's oldest world, what kind of world it is (universe, Benin–Warri, town, meadow, custom), whose it is, the day it began and the start of its id. **New universe** gives each new one a name no other world has (Pg1-Universe, Pg1-Universe 2, ...).
 - **On the view itself,** a badge in the bottom corner says which world you are watching (its name, "your first universe" on the first, and what kind of world it is), and the same full line as in the list is shown over the view.
 - **Labels** show a person's full name.
-- **Play** (1×, 2× or 4×), **Pause**, **Step** and **New universe:** Step calls `step_world`, on PG1's worlds only; invited agents' worlds are read only.
-- **Playing** asks for one step at a time: the next once the last is back, never two at once. When a step takes longer to come back than the speed allows (a slow connection, a busy server), each step glides over as long as steps really take, so people keep walking instead of stopping between steps.
+- **Play**, **Pause**, **Step** and **New universe:** Step calls `step_world`, on PG1's worlds only; invited agents' worlds are read only.
+- **Pace: Natural** (the default), **2×**, **5×** or **10×**, kept on the device. At Natural one step plays over 5.7 s, so a person walks about 1.4 m/s and a day (240 steps) lasts about 23 minutes. The catalogue's speeds are set so that at this pace everything moves as fast as in real life:
+  - walking 1.2–1.5 m/s, bikes about 5, cars 14 in town and about 25 on a main road (at least 14 m wide);
+  - buses and lorries about 12, canoes about 1.8, a carrack about 2.6, boats and ferries 4–10;
+  - planes taxi at 5–10 m/s; a small plane rotates at about 25 m/s and an airliner at about 53;
+  - `tests/sandbox-play.test.mjs` checks each one.
+  - Walkers' and runners' legs swing with their speed (`public/sandbox/gait.js`), so feet never slide.
+- **Playing** asks for one call at a time: the next once the last is back, never two at once. A faster pace asks for several steps a call, enough for about 2 s of play (5×: 2 steps, 10×: 4), so there is at most one request about every 2 s. The answer carries each step's positions of what moved as compact keyframes (`[id, x, y, z, corners?]`), and the view plays them in turn. When a call takes longer to come back than its steps take to play, the steps glide over as long as they really take, so people keep walking instead of stopping between steps.
+- **Quotas:** stepping one of PG1's worlds from the viewer counts against PG1's steps (5,000 a day) only, never its changes. Changes count real edits (adding or removing an entity, setting a rule) and agent calls. Invited agents' quotas are unchanged. When a quota stops Play, a banner says which quota it is and when it resets (00:00 UTC, and in your own time).
 - **The events timeline, and the rules in plain words.**
 - **The Experiments panel.**
 
