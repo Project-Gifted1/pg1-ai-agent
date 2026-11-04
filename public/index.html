@@ -4160,11 +4160,27 @@
     }
     async function stepSandboxWorld(n) {
       if (!sandboxState.worldId || (sandboxState.world && sandboxState.world.readOnly)) return;
-      try { renderSandboxWorld((await sandboxRequest({ op: 'step', id: sandboxState.worldId, steps: n || 1 })).world); } catch (e) {
+      // Only what changed comes back (the world we have is at this tick, roads included).
+      const had = sandboxState.world && sandboxState.world.id === sandboxState.worldId ? sandboxState.world : null;
+      try {
+        const out = await sandboxRequest({ op: 'step', id: sandboxState.worldId, steps: n || 1, ...(had ? { since: had.tick, have_roads: !!had.roads } : {}) });
+        renderSandboxWorld(mergeSandboxChanges(had, out.world) || (await sandboxRequest({ op: 'world', id: sandboxState.worldId })).world);
+      } catch (e) {
         stopSandboxPlay();
         const tick = document.getElementById('sandbox-tick');
         if (tick) tick.textContent = e.message || 'Could not step the world.';
       }
+    }
+    // A step's answer with only its changes (api/sandbox.mjs, lib/sandbox/stepDiff.mjs):
+    // the world we had, those entities replaced, added or removed, and the rest as sent.
+    function mergeSandboxChanges(had, w) {
+      if (!w || !w.changes) return w;
+      if (!had || had.tick !== w.changes.from) return null;   // not the world we have: ask for it whole
+      const byId = new Map((had.entities || []).map((e) => [e.id, e]));
+      for (const id of w.changes.removed || []) byId.delete(id);
+      for (const e of w.changes.upserts || []) byId.set(e.id, e);
+      const { changes, ...rest } = w;
+      return { ...rest, roads: rest.roads || had.roads || null, entities: [...byId.values()].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) };
     }
     function stopSandboxPlay() {
       clearTimeout(sandboxPlayTimer); sandboxPlayTimer = null; sandboxGlideMs = 0;

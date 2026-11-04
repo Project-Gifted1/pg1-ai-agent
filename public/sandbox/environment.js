@@ -38,6 +38,11 @@ void main() {
   gl_FragColor = vec4(col, 1.0);
 }`;
 
+// Stars and the galaxy band: at least STAR_PX (CSS) pixels across, and no
+// brighter than STAR_PEAK (below post.js STAR_BLOOM_FLOOR, so bloom never
+// smears them).
+export const STAR_PX = 2;
+export const STAR_PEAK = 0.85;
 const lerp = (a, b, t) => a + (b - a) * t;
 const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -126,11 +131,14 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     const u = r() * 2 - 1; const a = r() * Math.PI * 2; const q = Math.sqrt(1 - u * u);
     sp[i * 3] = q * Math.cos(a); sp[i * 3 + 1] = u; sp[i * 3 + 2] = q * Math.sin(a);
     const t = r(); const c = new THREE.Color().setHSL(0.55 + t * 0.15, 0.4 * t, 0.7 + r() * 0.3);
-    sc[i * 3] = c.r; sc[i * 3 + 1] = c.g; sc[i * 3 + 2] = c.b;
+    // Just under bloom's threshold (post.js STAR_BLOOM_FLOOR): crisp points, no glow smear.
+    const k = STAR_PEAK / Math.max(c.r, c.g, c.b, STAR_PEAK);
+    sc[i * 3] = c.r * k; sc[i * 3 + 1] = c.g * k; sc[i * 3 + 2] = c.b * k;
   }
   starGeo.setAttribute('position', new THREE.BufferAttribute(sp, 3));
   starGeo.setAttribute('color', new THREE.BufferAttribute(sc, 3));
-  const starMat = new THREE.PointsMaterial({ size: coarse ? 2 : 1.6, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: false });
+  // At least STAR_PX pixels across: smaller points shimmer and vanish under anti-aliasing.
+  const starMat = new THREE.PointsMaterial({ size: coarse ? STAR_PX + 0.5 : STAR_PX, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: false });
   const stars = new THREE.Points(starGeo, starMat);
   stars.frustumCulled = false;
   stars.renderOrder = -9;
@@ -152,11 +160,12 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
       v.set(Math.cos(a) * Math.cos(lat), Math.sin(lat), Math.sin(a) * Math.cos(lat)).applyMatrix4(tilt);
       gp[i * 3] = v.x; gp[i * 3 + 1] = v.y; gp[i * 3 + 2] = v.z;
       col.setHSL(0.08 + r() * 0.55, 0.25 + r() * 0.25, 0.55 + r() * 0.35);
-      gc[i * 3] = col.r; gc[i * 3 + 1] = col.g; gc[i * 3 + 2] = col.b;
+      const kk = STAR_PEAK / Math.max(col.r, col.g, col.b, STAR_PEAK);
+      gc[i * 3] = col.r * kk; gc[i * 3 + 1] = col.g * kk; gc[i * 3 + 2] = col.b * kk;
     }
     const gg = new THREE.BufferGeometry();
     gg.setAttribute('position', new THREE.BufferAttribute(gp, 3)); gg.setAttribute('color', new THREE.BufferAttribute(gc, 3));
-    const band = new THREE.Points(gg, new THREE.PointsMaterial({ size: 1.1, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: false }));
+    const band = new THREE.Points(gg, new THREE.PointsMaterial({ size: STAR_PX, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: false }));
     band.frustumCulled = false;
     galaxy.add(band);
     // Nebulae: soft sprites along the band.
@@ -597,7 +606,7 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     stars.scale.setScalar(150000);
     starMat.opacity = Math.max(sp, smooth(0.35, 0.85, env.night)) * 0.95;
     galaxy.position.copy(camera.position); galaxy.scale.setScalar(140000);
-    for (const o of galaxy.children) o.material.opacity = starMat.opacity * (o.isPoints ? 0.85 : o.userData.k);
+    for (const o of galaxy.children) o.material.opacity = starMat.opacity * (o.isPoints ? 0.6 : o.userData.k);
     galaxy.visible = starMat.opacity > 0.01;
     sun.intensity = lerp(0.0, 2.1, day) * (1 - dusk * 0.35) + sp * 1.6;
     sun.color.setRGB(1, lerp(0.6, 0.96, day), lerp(0.4, 0.88, day));
@@ -656,8 +665,11 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     updateIbl(sunDir, sp);
     // With the sky's own light in the materials, the flat fill light is halved.
     if (envRT) hemi.intensity *= 0.5;
-    return { day, night: env.night, space: sp, sunDir };
+    // One object, reused every frame (nothing allocated per frame).
+    envOut.day = day; envOut.night = env.night; envOut.space = sp; envOut.sunDir = sunDir;
+    return envOut;
   };
+  const envOut = { day: 0, night: 0, space: 0, sunDir: null };
 
   env.dispose = () => {
     detail.dispose();

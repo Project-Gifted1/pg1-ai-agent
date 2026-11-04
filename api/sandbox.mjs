@@ -9,7 +9,12 @@
 //                                  words, recent events
 //   { op: 'step', id, steps? }     runs one of PG1's worlds forward (the
 //                                  viewer's Step and Play): step_world, on
-//                                  PG1's quota; invited worlds are read only
+//                                  PG1's quota; invited worlds are read only.
+//                                  With since (the tick the viewer has) and
+//                                  have_roads, the answer carries only what
+//                                  changed: world.changes { from, upserts,
+//                                  removed } instead of every entity, and no
+//                                  roads (lib/sandbox/stepDiff.mjs)
 //   { op: 'create', template?, name? }  a new PG1 world from a template
 //                                  (universe by default), on PG1's quota
 //   { op: 'blackbox', id, actor?, limit? }  a world's black box: every action,
@@ -27,6 +32,7 @@ import { oldestPg1World } from '../lib/sandbox/delete-command.mjs';
 import { TEMPLATE_NAMES } from '../lib/sandbox/templates.mjs';
 import { experimentsView } from '../lib/sandbox/experiments.mjs';
 import { SIMULATION_LABEL, BLIND_LABEL } from '../lib/sandbox/describe.mjs';
+import { entitySnapshot, worldChanges } from '../lib/sandbox/stepDiff.mjs';
 
 export const config = { maxDuration: 15 };
 
@@ -68,8 +74,15 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, world: { ...v, readOnly: w.owner !== 'pg1', blind: !!w.blind } });
     }
     if (body.op === 'step') {
+      // The viewer already has the world at tick `since`: only what changes is sent back.
+      const had = Number.isInteger(body.since) ? await store.getWorld(String(body.id || '')) : null;
+      const snap = had && had.owner === 'pg1' && had.tick === body.since && had.state ? entitySnapshot(had.state.entities) : null;
       const out = await stepWorldFor(store, pg1, { world_id: String(body.id || ''), steps: body.steps === undefined ? 1 : body.steps });
       const v = await observeWorld(store, pg1, { world_id: out.id, events: 30 });
+      if (snap) {
+        const { entities, roads, ...rest } = v;
+        return res.status(200).json({ ok: true, world: { ...rest, ...(body.have_roads ? {} : { roads }), readOnly: false, changes: { from: body.since, ...worldChanges(snap, entities) } }, events: out.events });
+      }
       return res.status(200).json({ ok: true, world: { ...v, readOnly: false }, events: out.events });
     }
     if (body.op === 'create') {

@@ -79,3 +79,39 @@ export function createGovernor({ tier = 'high', budgetMs = 1000 / 60, window = 1
     }
   };
 }
+
+// What a tier turns on, fitted to the device: on a phone (coarse pointer)
+// the shadow map is at most PHONE_SHADOW_MAP (4096) and the foliage scales
+// with what the device has (fewer cores or less memory, fewer tufts).
+export const PHONE_SHADOW_MAP = 4096;
+export function deviceSettings(settings, { coarse = false, memory = 0, cores = 0 } = {}) {
+  const s = { ...settings };
+  if (coarse && s.shadowMapSize > PHONE_SHADOW_MAP) s.shadowMapSize = PHONE_SHADOW_MAP;
+  let k = coarse ? 0.6 : 1;
+  if (memory && memory <= 4) k *= 0.6;
+  if (cores && cores <= 4) k *= 0.75;
+  s.foliage = Math.round((s.foliage || 0) * k);
+  return Object.freeze(s);
+}
+
+// Render scale for Cinematic: when frames run over budgetMs (33 ms: under
+// 30 fps) for a while, draw fewer pixels (down to `min` of the full
+// resolution); when they run well under it again, more. Never flickers:
+// each change waits for a fresh window of frames.
+export function createRenderScale({ budgetMs = 1000 / 30, min = 0.5, window = 30, onChange = () => {} } = {}) {
+  let scale = 1; let n = 0; let sum = 0;
+  return {
+    get scale() { return scale; },
+    sample(ms) {
+      if (!(ms > 0) || ms > 1000) return scale;
+      n++; sum += ms;
+      if (n < window) return scale;
+      const avg = sum / n; n = 0; sum = 0;
+      let next = scale;
+      if (avg > budgetMs) next = Math.max(min, Math.round(scale * Math.sqrt(budgetMs / avg) * 0.95 * 100) / 100);
+      else if (avg < budgetMs * 0.6 && scale < 1) next = Math.min(1, Math.round(scale * 1.1 * 100) / 100);
+      if (next !== scale) { scale = next; onChange(scale, avg); }
+      return scale;
+    }
+  };
+}
