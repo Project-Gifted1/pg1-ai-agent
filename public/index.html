@@ -3525,7 +3525,7 @@
       const res = await fetch('/api/watches', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, user: sessionUser, pass: sessionPass }) });
       let data = {};
       try { data = await res.json(); } catch (e) {}
-      if (!res.ok) { const err = new Error(data.message || data.error || `HTTP ${res.status}`); err.status = res.status; if (data.quota) Object.assign(err, { quota: data.quota, used: data.used, max: data.max, resets_at: data.resets_at }); throw err; }
+      if (!res.ok) { const err = new Error(data.message || data.error || `HTTP ${res.status}`); err.status = res.status; throw err; }
       return data;
     }
     function appendReport(r) {
@@ -3834,7 +3834,7 @@
       const res = await fetch('/api/sandbox', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...payload, user: sessionUser, pass: sessionPass }) });
       let data = {};
       try { data = await res.json(); } catch (e) {}
-      if (!res.ok) { const err = new Error(data.message || data.error || `HTTP ${res.status}`); err.status = res.status; throw err; }
+      if (!res.ok) { const err = new Error(data.message || data.error || `HTTP ${res.status}`); err.status = res.status; if (data.quota) Object.assign(err, { quota: data.quota, used: data.used, max: data.max, resets_at: data.resets_at }); throw err; }
       return data;
     }
     function showSandboxPanel(which) {
