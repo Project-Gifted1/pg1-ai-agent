@@ -12,7 +12,7 @@ the production server, with keys that are scoped to the lab.
 | Data | none: mocks and the repository's fixtures | Supabase (service role) |
 | Payments / wallet | none | x402, CDP |
 | GitHub | `PG1_LAB_GITHUB_TOKEN` (or, when unset, the pull job's built-in token): push a `lab/<id>` branch and open a **draft** PR | `GITHUB_TOKEN` dispatches the workflow and reads its result |
-| Network | GET public https pages through `lib/netGuard.mjs` (no private addresses, no redirects); POST only to the model APIs | — |
+| Network | GET public https pages and the free search APIs through `lib/netGuard.mjs` (no private addresses, no redirects); POST only to the model APIs | — |
 | Limits | `PG1_LAB_BUDGET_USD` (default 2) per experiment, `PG1_LAB_DAILY_USD` (default 5) per UTC day, 15 minutes per experiment, 20 per job | — |
 
 The workflow has three jobs on three fresh runners:
@@ -20,6 +20,54 @@ The workflow has three jobs on three fresh runners:
 1. **experiment** has the model keys only. It writes the result, plus the proposed files for a code experiment.
 2. **test** runs for code experiments only. It applies the files and runs `npm test` with **no secrets** and the network blocked.
 3. **pull** runs for code experiments only, and only when job 2 passed. A fresh checkout commits exactly the proposed files and opens a **draft** pull request. PG1 never merges it.
+
+## The gate is the only stop
+
+The lab is free to research, test and build on its own. It does that without asking first, and nothing it does reaches the product until the gate and you let it through:
+
+- **Code** reaches GitHub only as a **draft pull request**, opened by the workflow's pull job, and only after the test job ran the whole test suite with **no secrets and the network blocked**. PG1 never merges.
+- **Promotion** needs the gate (evals or CI, safety, licence, cost) **and** your approval on the card, then `/promote` to make it public.
+- **The lab keeps no production keys**, no production database, no wallet and no payment secrets. Its network stays **GET only**, plus POSTs to the model APIs and the one draft pull request.
+
+## The living lab: a continuous research loop
+
+While Autonomous mode is ON (`/auto on`), PG1 runs lab experiments back to back from its **research agenda**, one at a time, of every kind (research, skill and code). The Autonomous tick runs every 10 minutes and starts the next experiment when:
+
+- **one at a time:** nothing is queued, and nothing running has yet to reach its gate. A code experiment that is only waiting on CI for its gate does not hold the loop.
+- **the gap** of `PG1_LAB_GAP_MINUTES` (default 10) has passed since the last one ended.
+- **the daily cap** of `PG1_LAB_MAX_PER_DAY` (default 24) experiments in a UTC day has not been reached. Every experiment counts, including your own `/lab start`.
+- **backing off:** the free engines are not cooling down (the quota cool-downs from #350). After runs that ended on an engine's quota or rate limit, the gap doubles for each one in a row, up to 4 hours.
+
+**Cost.** At the $0 default (`PG1_DAILY_SPEND_CAP_USD` unset), a lab run uses only the free engines and records $0, so its estimate is $0 and the $0 Autonomous budget (`/auto budget`) does not refuse it. Only a run that will call a paid engine carries the lab's per-experiment budget (`PG1_LAB_BUDGET_USD`) as its estimate, which the Autonomous budget must cover. The Autonomous switch, and its automatic safety OFF, are unchanged.
+
+**Free search.** At $0 the lab's web search is a free search step (`lib/lab/freeSearch.mjs`). It sends GET requests through `lib/netGuard.mjs` to public APIs whose terms allow it:
+
+- the Wikipedia (Wikimedia) API
+- the arXiv API, 3 s apart
+- the GitHub search API
+- the npm registry search
+- the PyPI JSON API, for packages the goal names
+- OSV, by id, for CVE or GHSA ids the goal names
+- Crossref
+- the Hacker News (Algolia) API
+
+It sends one request per source per experiment, with an identifying User-Agent and at least 1 s between requests to the same host. A source that answers 429 is skipped for that search. It never scrapes a search engine's result pages. Every finding cites the numbered results it rests on (`[n]`), and the report ends with the source list. The GitHub search uses `PG1_LAB_SEARCH_GITHUB_TOKEN` when you set one (a fine-grained token with **no permissions** beyond public read). Without it, the search runs unauthenticated (10 searches a minute). The experiment job never gets the lab's write token. Set `PG1_LAB_FREE_SEARCH=off` to turn the step off. When it finds nothing, the report says the search was skipped.
+
+**The agenda and memory.** The agenda is the table `pg1_lab_agenda` (migration `supabase/migrations/20261112120000_pg1_lab_agenda.sql`; **run it by hand**). Until then it is kept in memory. It has one row per goal, de-duplicated by the goal's normalised text: goal, kind, priority, status (open, running, done, dropped), `continued_from` (an experiment id), notes and attempts. On its first run after deploy, the loop builds the agenda from `pg1_lab_experiments`:
+
+- Experiments that ended `failed`, `timeout` or `over_budget`, or `done` with the search skipped, become **continue** items carrying their previous findings.
+- Finished research findings are proposed as PG1 lessons (`pg1_core_lessons`, status proposed) unless they are already there.
+- Experiments that passed the gate and are not promoted **stay as they are**, approval cards included. Their goal is marked done on the agenda.
+- Goals are de-duplicated by their normalised text.
+
+After that, every new experiment receives the most relevant earlier findings (the one it continues first, then up to three by shared words, each cut to 1,500 characters) as untrusted notes, and records `continued_from` (on the row once the migration has run, and always in its result). When an experiment ends, its item closes. If it ended unfinished, the item reopens with its findings, up to 3 runs per goal. When nothing is open, PG1 adds its own items from its active missions and its approved lessons.
+
+| Command | What it does |
+|---|---|
+| `/lab agenda` | The agenda: open and running items first, with their ids. |
+| `/lab agenda add "<goal>" [--kind research\|skill\|code]` | Adds a goal at high priority (or reopens it, keeping its findings). |
+| `/lab agenda drop <id>` | Drops an item. |
+| `/lab agenda top <id>` | Moves an item to the top. |
 
 ## Secrets and settings to create
 
@@ -39,7 +87,7 @@ In GitHub, under *Settings → Environments → New environment*, create an envi
 
 The Supabase service-role key, the wallet and the payment secrets (`SUPABASE_*`, `CDP_*`, `X402_*`) are never given to the lab, whether or not the `PG1_LAB_*` secrets are set.
 
-In Vercel, set `PG1_LAB_DISPATCH_SECRET`, and optionally `PG1_LAB_BUDGET_USD` and `PG1_LAB_DAILY_USD`. The existing `GITHUB_TOKEN` (Actions: read and write) dispatches the workflow and reads its results. To keep these lab permissions on their own token, set `PG1_LAB_DISPATCH_GITHUB_TOKEN` instead.
+In Vercel, set `PG1_LAB_DISPATCH_SECRET`, and optionally `PG1_LAB_BUDGET_USD`, `PG1_LAB_DAILY_USD`, `PG1_LAB_GAP_MINUTES` and `PG1_LAB_MAX_PER_DAY`. Optionally add `PG1_LAB_SEARCH_GITHUB_TOKEN` to the `lab` environment in GitHub: a read-only token for the free search's GitHub API calls. The existing `GITHUB_TOKEN` (Actions: read and write) dispatches the workflow and reads its results. To keep these lab permissions on their own token, set `PG1_LAB_DISPATCH_GITHUB_TOKEN` instead.
 
 ### Minimal fine-grained token for self-PRs (`PG1_LAB_GITHUB_TOKEN`)
 
