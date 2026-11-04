@@ -816,9 +816,20 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     return out;
   }
   // Next (dir 1) or previous (-1) moving thing, followed with a glide.
+  // Previous goes back through what was followed (what moves changes from
+  // step to step, so a list order alone would not lead back).
+  const followed = [];
   function followNext(dir = 1) {
-    const c = cycleFollow(moverCandidates().filter((x) => x.moving), selectedId, dir) || cycleFollow(moverCandidates(), selectedId, dir);
+    let c = null;
+    if (dir < 0) {
+      while (followed.length && !c) { const id = followed.pop(); if (id !== selectedId && movers.has(id)) c = { id }; }
+      if (c) { glideTo(c.id); if (mode !== 'follow') setMode('follow', { quiet: false }); marker.visible = true; return c.id; }
+    }
+    const all = moverCandidates();
+    const moving = all.filter((x) => x.moving || x.id === selectedId);
+    c = cycleFollow(moving, selectedId, dir) || cycleFollow(all, selectedId, dir);
     if (!c) return null;
+    if (dir > 0 && selectedId) { followed.push(selectedId); if (followed.length > 50) followed.shift(); }
     glideTo(c.id);
     if (mode !== 'follow') setMode('follow', { quiet: false });
     else { const se = world.entities.find((x) => x.id === c.id); if (se) controls.flyTo({ dist: Math.max(6, sizeOf(c.id) * 3) }); }
