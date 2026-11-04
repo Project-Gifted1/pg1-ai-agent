@@ -8,7 +8,7 @@
  *      proposal on an approval card; nothing applied
  *   3  engine and credit watchdog: one alert per account per day
  *   4  missions: /mission add|list|pause|remove; planned and run on schedule
- *   5  lab autopilot: paid lab work refused at $0; promotions are cards
+ *   5  lab loop: free lab work at $0 is not refused, paid is; promotions are cards
  *   6  integration watch: p95 near the 2.5 s budget, rising errors
  *   guardrails: free engines only at $0, a refusal stops, OFF does nothing,
  *   no secrets in prompts or PRs, the daily briefing
@@ -28,6 +28,7 @@ import { handleMissionCommand, parseMissionCommand } from '../lib/autonomous/mis
 import { STATES } from '../lib/keysStatus.mjs';
 import { __resetRouterState } from '../lib/aiRouter.mjs';
 import { createAutonomousDb } from './helpers/autonomousDb.mjs';
+import { __resetAgenda } from '../lib/lab/agenda.mjs';
 
 const SUP = 'https://auto-cap.test';
 const FREE = 'AIza-free-autonomous-0123456789';
@@ -36,7 +37,7 @@ const ANTHROPIC = 'sk-ant-autonomous-0123456789abcdef';
 const GH_TOKEN = 'ghp_autonomousTOKENabcdefghijklmnop01';
 const H = 3600000;
 
-beforeEach(() => { __resetAutonomousSnapshot(); __resetRouterState(); });
+beforeEach(() => { __resetAutonomousSnapshot(); __resetRouterState(); __resetAgenda(); });
 
 const json = (b, status = 200) => new Response(JSON.stringify(b), { status, headers: { 'Content-Type': 'application/json' } });
 const geminiReply = (text) => json({ candidates: [{ content: { parts: [{ text }] }, finishReason: 'STOP' }] });
@@ -266,24 +267,33 @@ test('4: a due mission is planned on a free engine with read-only tasks only, an
 
 // --- 5. lab autopilot ------------------------------------------------------------------------
 
-test('5: lab work spends the lab\'s paid budget, so at $0 it is refused before anything starts; a gated experiment becomes an approval card', async () => {
-  const w = world();
-  await switchOn(w.store);
+test('5: at $0 the lab loop runs on the free engines and is not refused by the $0 budget; a paid lab run is; a gated experiment becomes an approval card', async () => {
   let started = 0;
   const mission = { id: 'abcd1234-0000-4000-8000-000000000003', goal: 'find a new tool idea', interval_minutes: 1440, status: 'active', next_run_at: new Date(0).toISOString() };
-  const deps = { ...noScheduled, notify: async () => {}, startExperiment: async () => { started++; return { ok: true, id: 'e1' }; } };
+  const deps = { ...noScheduled, notify: async () => {}, lessonStore: null, labCooling: () => ({ cooling: false }), startExperiment: async () => { started++; return { ok: true, id: 'e1', free: true }; } };
   const w2 = world({ extra: async (u) => (u.includes('/rest/v1/pg1_missions') ? json([mission]) : null) });
   await switchOn(w2.store);
+  // PG1_DAILY_SPEND_CAP_USD unset ($0): the lab's engines are the free ones.
   await autonomousTick({ env: { ...w2.env, PG1_LAB_BUDGET_USD: '2' }, supUrl: SUP, supKey: 'service', fetchImpl: w2.db.fetch, deps: { ...deps, feedGuardian: async () => ({ ok: true, result: 'x' }) } });
-  // The mission itself ran first (free); the lab autopilot needs paid budget.
   const lab = w2.db.actions.find((r) => r.type === 'lab_autopilot');
-  if (lab) assert.equal(lab.status, 'refused');
-  assert.equal(started, 0, 'no lab experiment at $0');
+  assert.equal(lab.status, 'done', lab.result);
+  assert.equal(lab.cost_usd, 0);
+  assert.equal(started, 1, 'the free lab run started at $0 (PG1 put its mission on the agenda)');
+  assert.match(lab.result, /Started lab experiment e1 \(research, free engines, \$0\)/);
+  // With paid AI on, a lab run carries the lab's budget: the $0 autonomous budget refuses it.
+  const w3 = world({ extra: async (u) => (u.includes('/rest/v1/pg1_missions') ? json([{ ...mission, id: 'abcd1234-0000-4000-8000-000000000004', goal: 'another idea' }]) : null) });
+  await switchOn(w3.store);
+  let paidStarted = 0;
+  await autonomousTick({ env: { ...w3.env, PG1_DAILY_SPEND_CAP_USD: '5', PG1_LAB_BUDGET_USD: '2' }, supUrl: 'https://auto-cap-paid.test', supKey: 'service', fetchImpl: w3.db.fetch, deps: { ...deps, startExperiment: async () => { paidStarted++; return { ok: true, id: 'e2' }; } } }).catch(() => null);
+  const paid = w3.db.actions.find((r) => r.type === 'lab_autopilot');
+  if (paid) assert.equal(paid.status, 'refused');
+  assert.equal(paidStarted, 0, 'no paid lab run at a $0 autonomous budget');
   const out = await labAutopilot({ goal: null, listExperiments: async () => [{ id: 'e2e2e2e2-0000', kind: 'skill', goal: 'a skill', created_at: new Date(Date.now() - 2 * 86400000).toISOString(), gate: { pass: true }, promoted_stage: 'none' }], startExperiment: async () => ({ ok: false }) });
   assert.equal(out.needsApproval.kind, 'promote');
   assert.equal(out.needsApproval.command, '/lab report e2e2e2e2');
   assert.match(out.needsApproval.detail, /nothing is promoted until you approve/);
-  assert.ok(w.db);
+  const again = await labAutopilot({ goal: null, carded: ['/lab report e2e2e2e2'], listExperiments: async () => [{ id: 'e2e2e2e2-0000', kind: 'skill', goal: 'a skill', created_at: new Date().toISOString(), gate: { pass: true }, promoted_stage: 'none' }], startExperiment: async () => ({ ok: false }) });
+  assert.equal(again.needsApproval, undefined, 'one card per experiment');
 });
 
 // --- 6. integration watch ---------------------------------------------------------------------

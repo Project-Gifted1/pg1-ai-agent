@@ -251,7 +251,9 @@ function tickWorld({ onGemini }) {
   const env = { GEMINI_API_KEY_FREE: FREE, GEMINI_API_KEY_PAID: PAID, ANTHROPIC_API_KEY: ANTHROPIC, PG1_DAILY_SPEND_CAP_USD: '50' };
   return { db, calls, env, autoStore: createAutonomousStore({ supUrl: SUP, supKey: 'service', fetchImpl: db.fetch }) };
 }
-const noScheduled = { engineWatchdog: async () => ({ ok: true, result: 'fine' }), integrationWatch: async () => ({ ok: true, result: 'fine' }), feedGuardian: async () => ({ ok: true, result: 'fine' }), listExperiments: async () => [], startExperiment: async () => ({ ok: false }) };
+// (lessonStore: null keeps the lab loop's own reading of PG1's approved
+// lessons, lib/lab/agenda.mjs, out of this check of what the subject run touches.)
+const noScheduled = { engineWatchdog: async () => ({ ok: true, result: 'fine' }), integrationWatch: async () => ({ ok: true, result: 'fine' }), feedGuardian: async () => ({ ok: true, result: 'fine' }), listExperiments: async () => [], startExperiment: async () => ({ ok: false }), lessonStore: null };
 
 test('PG1-subject: free engines only (even with a budget), its own empty memory, no PG1 identity, nothing reaches Core State, lessons, memory, chat, notifications or payments; humans see the label', async () => {
   const sandbox = createSandboxStore();

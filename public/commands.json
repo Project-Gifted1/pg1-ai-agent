@@ -433,6 +433,21 @@
       "client": false
     },
     {
+      "command": "/lab agenda",
+      "area": "Lab",
+      "description": "PG1's research agenda (what the lab loop runs next); add \"<goal>\", drop <id> or top <id>",
+      "args": [
+        {
+          "name": "action",
+          "placeholder": "add \"<goal>\" | drop <id> | top <id>",
+          "required": false
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
       "command": "/promote",
       "area": "Lab",
       "description": "Feature flags; with a flag, make an approved one public",
