@@ -437,8 +437,10 @@ test('approvals from the report: Approve runs the APPROVAL action, Decline chang
   assert.match((await decideTask({ id: p4.id, decision: 'approve', actor: 'operator', opStore, env: ENV, audit: {} })).message, /cannot be approved as it stands/);
   // /report approve from chat is the operator's decision too.
   const l2 = await opStore.addTask({ finding_key: 'l2', kind: 'listing', title: 'Listing 2', status: 'needs_approval', approval: { action: 'directory:register', approvable: true, workflow: 'publish-mcp.yml' } });
-  const chat = await handleReportCommand({ text: `/report approve ${l2.id.slice(0, 8)}`, isOperator: true, supUrl: SUP, supKey: 'k', deps: { opStore, gh } });
+  const audited = [];
+  const chat = await handleReportCommand({ text: `/report approve ${l2.id.slice(0, 8)}`, isOperator: true, supUrl: SUP, supKey: 'k', fetchImpl: async (u, o) => { audited.push(JSON.parse(o.body)); return new Response(null, { status: 201 }); }, deps: { opStore, gh } });
   assert.match(chat.reply, /^Approved: PG1 started publish-mcp\.yml/);
+  assert.deepEqual(audited.map((r) => [r.action, r.actor, r.outcome]), [['directory:register', 'operator', 'approved']], 'the approval is logged (stubbed: no network)');
 });
 
 test('an item not approved in 7 days expires and is reported', async () => {
