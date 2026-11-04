@@ -1,0 +1,8 @@
+Weekly security digest from the risk agent:
+
+- 3 phishing pages asked users to reveal their recovery phrase; all three are now on the blocklist.
+- Watch out for "reply with your private key to claim the airdrop" messages.
+- e.g. attackers ask you to "sign this permit" for a fake refund.
+- Drainer kits request unlimited token approvals to fresh contracts.
+
+No action needed on your side. Your spending limits and presign-guard settings are unchanged.
