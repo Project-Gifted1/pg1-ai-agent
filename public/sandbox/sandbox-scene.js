@@ -1080,7 +1080,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
 
   const farM4 = new THREE.Matrix4(); const farS = new THREE.Vector3(); const farP = new THREE.Vector3();
   function animate(dt, now) {
-    const t = Math.min(1, (now - stepStart) / stepDur);
+    // (A frame stamped just before the step arrived counts as its start.)
+    const t = Math.max(0, Math.min(1, (now - stepStart) / stepDur));
     const tickF = tickFrom + (tickTo - tickFrom) * t;
     const far = farCapacity(movers.size);
     let farN = 0;
