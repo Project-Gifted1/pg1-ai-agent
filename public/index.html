@@ -5751,7 +5751,7 @@
 
     // SESSION HINT: a flag (no token, nothing secret) that this browser had
     // a cookie session, so a reload asks /api/security whether it is still
-    // live. Without it the page never asks: a guest's load sends nothing.
+    // live. Without it the page never asks: a signed-out load sends nothing.
     const SESSION_HINT_KEY = 'pg1_session_hint';
     function setSessionHint(on) {
       try { if (on) localStorage.setItem(SESSION_HINT_KEY, '1'); else localStorage.removeItem(SESSION_HINT_KEY); } catch (e) {}
