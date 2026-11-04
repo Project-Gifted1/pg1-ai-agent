@@ -202,9 +202,11 @@ test('weekly findings: listing and pricing wait for approval with the prepared s
 
 const EXP = { id: 'abcd1234-0000-4000-8000-000000000000', kind: 'code', candidate: { type: 'code', pr_number: 77, pr_url: 'https://github.com/x/y/pull/77' }, gate: { pass: true } };
 const GREEN = { state: 'success', checks: [{ name: 'npm test', status: 'completed', conclusion: 'success' }, { name: 'browser tests', status: 'completed', conclusion: 'success' }] };
-const PR = { number: 77, state: 'open', merged: false, draft: true, node_id: 'PR_n77', title: '[lab abcd1234] Fix wallet age', html_url: 'https://github.com/x/y/pull/77', head: { ref: 'lab/abcd1234', sha: 'h77' } };
-const FILES = [{ filename: 'lib/walletAge.mjs', additions: 20, deletions: 5, patch: '+const x = 1;' }, { filename: 'tests/wallet-age.test.mjs', additions: 30, deletions: 0, patch: '+test()' }];
+const PR = { number: 77, state: 'open', merged: false, draft: true, changed_files: 2, node_id: 'PR_n77', title: '[lab abcd1234] Fix wallet age', html_url: 'https://github.com/x/y/pull/77', head: { ref: 'lab/abcd1234', sha: 'h77' } };
+const FILES = [{ filename: 'lib/walletAge.mjs', status: 'modified', additions: 20, deletions: 5, patch: '+const x = 1;' }, { filename: 'tests/wallet-age.test.mjs', status: 'added', additions: 30, deletions: 0, patch: '+test()' }];
 const qBase = () => ({ task: { kind: 'fix' }, pr: PR, files: FILES, experiment: EXP, ci: GREEN, mergesToday: 0, watching: 0, decision: { allowed: true } });
+// One more changed file (counted in the PR, with its patch).
+const plus = (q, f) => { q.files = [...q.files, { status: 'modified', patch: '+x', ...f }]; q.pr = { ...q.pr, changed_files: q.files.length }; };
 
 test('a qualifying PR qualifies', () => {
   assert.deepEqual(qualifyPr(qBase()), { ok: true, reasons: [], lines: 55 });
@@ -213,25 +215,38 @@ test('a qualifying PR qualifies', () => {
 const DISQUALIFY = [
   ['not opened by the lab', (q) => { q.pr = { ...PR, head: { ref: 'feature/x', sha: 'h' } }; }, /not opened by PG1's own lab/],
   ['another experiment\'s PR', (q) => { q.experiment = { ...EXP, candidate: { ...EXP.candidate, pr_number: 78 } }; }, /not opened by PG1's own lab/],
-  ['a migration', (q) => { q.files = [...FILES, { filename: 'supabase/migrations/20261201000000_x.sql', additions: 3, deletions: 0 }]; }, /SQL or migration/],
-  ['an SQL file', (q) => { q.files = [...FILES, { filename: 'scripts/fix.sql', additions: 3, deletions: 0 }]; }, /SQL or migration/],
-  ['vercel.json', (q) => { q.files = [...FILES, { filename: 'vercel.json', additions: 1, deletions: 1 }]; }, /env, vercel\.json, workflow/],
-  ['a workflow', (q) => { q.files = [...FILES, { filename: '.github/workflows/tests.yml', additions: 1, deletions: 1 }]; }, /env, vercel\.json, workflow/],
-  ['an env file', (q) => { q.files = [...FILES, { filename: '.env.example', additions: 1, deletions: 0 }]; }, /env, vercel\.json, workflow/],
+  ['a migration', (q) => plus(q, { filename: 'supabase/migrations/20261201000000_x.sql', additions: 3, deletions: 0 }), /SQL or migration/],
+  ['an SQL file', (q) => plus(q, { filename: 'scripts/fix.sql', additions: 3, deletions: 0 }), /SQL or migration/],
+  ['vercel.json', (q) => plus(q, { filename: 'vercel.json', additions: 1, deletions: 1 }), /env, vercel\.json, workflow/],
+  ['a workflow', (q) => plus(q, { filename: '.github/workflows/tests.yml', additions: 1, deletions: 1 }), /env, vercel\.json, workflow/],
+  ['an env file', (q) => plus(q, { filename: '.env.example', additions: 1, deletions: 0 }), /env, vercel\.json, workflow/],
   ['a new env var read', (q) => { q.files = [{ ...FILES[0], patch: '+const k = process.env.NEW_SECRET_KEY;' }]; }, /reads an environment variable/],
-  ['lib/autonomy.mjs', (q) => { q.files = [...FILES, { filename: 'lib/autonomy.mjs', additions: 1, deletions: 1 }]; }, /protected code/],
-  ['lib/lab/policy.mjs', (q) => { q.files = [...FILES, { filename: 'lib/lab/policy.mjs', additions: 1, deletions: 1 }]; }, /protected code/],
-  ['pricing code', (q) => { q.files = [...FILES, { filename: 'lib/pricing.mjs', additions: 1, deletions: 1 }]; }, /protected code/],
-  ['payment code', (q) => { q.files = [...FILES, { filename: 'lib/paymentGate.mjs', additions: 1, deletions: 1 }]; }, /protected code/],
-  ['x402 code', (q) => { q.files = [...FILES, { filename: 'lib/x402Config.mjs', additions: 1, deletions: 1 }]; }, /protected code/],
-  ['licence code', (q) => { q.files = [...FILES, { filename: 'lib/licenceCheck.mjs', additions: 1, deletions: 1 }]; }, /protected code/],
-  ['signing code', (q) => { q.files = [...FILES, { filename: 'lib/signing.mjs', additions: 1, deletions: 1 }]; }, /protected code/],
-  ['secret-guard code', (q) => { q.files = [...FILES, { filename: 'lib/secretGuard.mjs', additions: 1, deletions: 1 }]; }, /protected code/],
-  ['the MCP tool contract', (q) => { q.files = [...FILES, { filename: 'api/mcp.mjs', additions: 1, deletions: 1 }]; }, /MCP contract/],
-  ['a contract test', (q) => { q.files = [...FILES, { filename: 'tests/mcp-tools.test.mjs', additions: 1, deletions: 1 }]; }, /MCP contract/],
+  ['lib/autonomy.mjs', (q) => plus(q, { filename: 'lib/autonomy.mjs', additions: 1, deletions: 1 }), /protected code/],
+  ['lib/lab/policy.mjs', (q) => plus(q, { filename: 'lib/lab/policy.mjs', additions: 1, deletions: 1 }), /protected code/],
+  ['pricing code', (q) => plus(q, { filename: 'lib/pricing.mjs', additions: 1, deletions: 1 }), /protected code/],
+  ['payment code', (q) => plus(q, { filename: 'lib/paymentGate.mjs', additions: 1, deletions: 1 }), /protected code/],
+  ['x402 code', (q) => plus(q, { filename: 'lib/x402Config.mjs', additions: 1, deletions: 1 }), /protected code/],
+  ['licence code', (q) => plus(q, { filename: 'lib/licenceCheck.mjs', additions: 1, deletions: 1 }), /protected code/],
+  ['signing code', (q) => plus(q, { filename: 'lib/signing.mjs', additions: 1, deletions: 1 }), /protected code/],
+  ['secret-guard code', (q) => plus(q, { filename: 'lib/secretGuard.mjs', additions: 1, deletions: 1 }), /protected code/],
+  ...[
+    'lib/operator/tasks.mjs', 'lib/lab/agenda.mjs', 'lib/operatorSession.mjs', 'lib/cronAuth.mjs', 'lib/netGuard.mjs', 'lib/githubWriteGuard.mjs', 'lib/retention.mjs', 'api/chat.mjs',
+    'lib/authHelpers.mjs', 'lib/sessionStore.mjs', 'lib/passkeyLogin.mjs', 'lib/webauthn.mjs', 'lib/cspHeaders.mjs', 'api/corsPolicy.mjs', 'lib/ratelimitStore.mjs', 'lib/rate-limit.mjs', 'lib/killSwitch.mjs',
+    'supabase/functions/x.ts', 'scripts/deploy.mjs', 'public/index.html'
+  ].map((f) => [`protected: ${f}`, (q) => plus(q, { filename: f, additions: 1, deletions: 1 }), /protected code/]),
+  ['the MCP tool contract', (q) => plus(q, { filename: 'api/mcp.mjs', additions: 1, deletions: 1 }), /MCP contract/],
+  ['a contract test', (q) => plus(q, { filename: 'tests/mcp-tools.test.mjs', additions: 1, deletions: 1 }), /MCP contract/],
   ['300 lines or more', (q) => { q.files = [{ filename: 'lib/big.mjs', additions: 250, deletions: 50, patch: '' }]; }, /300 changed lines \(limit 300\)/],
-  ['CI failing', (q) => { q.ci = { state: 'failure', checks: GREEN.checks }; }, /CI is not green/],
-  ['browser tests not passed', (q) => { q.ci = { state: 'success', checks: [GREEN.checks[0]] }; }, /browser tests not passed/],
+  ['npm test failed', (q) => { q.ci = { state: 'failure', checks: [{ ...GREEN.checks[0], conclusion: 'failure' }, GREEN.checks[1]] }; }, /^CI failed: npm test failure$/],
+  ['browser tests failed', (q) => { q.ci = { state: 'failure', checks: [GREEN.checks[0], { ...GREEN.checks[1], conclusion: 'failure' }] }; }, /^CI failed: browser tests failure$/],
+  ['browser tests not run yet (a wait)', (q) => { q.ci = { state: 'success', checks: [GREEN.checks[0]] }; }, /^CI is not green \(pending: browser tests\)$/],
+  ['the whole diff not listed', (q) => { q.pr = { ...PR, changed_files: 5 }; }, /could not read the whole diff \(2 of 5 files read\)/],
+  ['a file with no patch (too large or binary)', (q) => { q.files = [...FILES, { filename: 'public/docs/big.html', status: 'modified', additions: 900, deletions: 0 }]; q.pr = { ...PR, changed_files: 3 }; }, /could not read the whole diff \(no patch for public\/docs\/big\.html\)/],
+  ['an existing test edited (lines deleted)', (q) => plus(q, { filename: 'tests/health.test.mjs', additions: 2, deletions: 3 }), /changes existing tests .*tests\/health\.test\.mjs 3 lines deleted/],
+  ['a test file removed', (q) => plus(q, { filename: 'tests/health.test.mjs', status: 'removed', additions: 0, deletions: 40 }), /changes existing tests .*tests\/health\.test\.mjs removed/],
+  ['env[\'NAME\'] read', (q) => { q.files = [{ ...FILES[0], patch: "+const k = env['NEW_TOKEN'];" }, FILES[1]]; }, /reads an environment variable/],
+  ['env["NAME"] read', (q) => { q.files = [{ ...FILES[0], patch: '+const k = process.env[ "NEW_TOKEN" ];' }, FILES[1]]; }, /reads an environment variable/],
+  ['auto-merge paused after a rollback', (q) => { q.paused = 'PR #70 was rolled back'; }, /^auto-merge is paused: PR #70 was rolled back$/],
   ['the gate not passed', (q) => { q.experiment = { ...EXP, gate: { pass: false } }; }, /promotion gate/],
   ['a new-tool task', (q) => { q.task = { kind: 'new' }; }, /a new task is never merged automatically/],
   ['autonomy not on', (q) => { q.decision = { allowed: false, reason: 'needs PG1_AUTONOMY=on (it is lab)' }; }, /not allowed: needs PG1_AUTONOMY=on/],
@@ -249,7 +264,7 @@ for (const [name, change, re] of DISQUALIFY) {
 }
 
 // GitHub and Vercel for a merge.
-function mergeWorld({ deployState = 'READY', before = { total: 1000, errors: 2, p95: 600 }, after = { total: 1000, errors: 2, p95: 600 }, ci = GREEN, files = FILES } = {}) {
+function mergeWorld({ deployState = 'READY', before = { total: 1000, errors: 2, p95: 600 }, after = { total: 1000, errors: 2, p95: 600 }, ci = GREEN, files = FILES, serving = null, extraChecks = [] } = {}) {
   const calls = [];
   const notes = [];
   const fetchImpl = async (url, opts = {}) => {
@@ -267,14 +282,15 @@ function mergeWorld({ deployState = 'READY', before = { total: 1000, errors: 2, 
       return Response.json({ summary: [{ vercel_function_invocation_function_duration_ms_p95: w.p95 }] });
     }
     if (u.startsWith('https://api.vercel.com/v1/projects/prj_P1/rollback/dpl_prev')) return new Response('{}', { status: 201 });
+    if (u.startsWith('https://api.vercel.com/v4/aliases/pg1-ai-agent.vercel.app')) return Response.json({ deploymentId: serving || 'dpl_prev' });
     if (u === 'https://api.github.com/graphql') {
       const q = JSON.parse(opts.body).query;
       if (q.includes('revertPullRequest')) return Response.json({ data: { revertPullRequest: { revertPullRequest: { number: 80, url: 'https://github.com/x/y/pull/80' } } } });
       return Response.json({ data: { markPullRequestReadyForReview: { pullRequest: { isDraft: false } } } });
     }
     if (u.endsWith('/pulls/77')) return Response.json(PR);
-    if (u.includes('/pulls/77/files')) return Response.json(files);
-    if (u.includes('/commits/h77/check-runs')) return Response.json({ check_runs: ci.checks.map((c) => ({ ...c })) });
+    if (u.includes('/pulls/77/files')) return Response.json(new URL(u).searchParams.get('page') === '1' ? files : []);
+    if (u.includes('/commits/h77/check-runs')) return Response.json({ check_runs: [...ci.checks, ...extraChecks].map((c) => ({ ...c })) });
     if (u.endsWith('/pulls/77/merge')) return Response.json({ merged: true, sha: 'm77' });
     if (u.startsWith(SUP)) return new Response(null, { status: 201 });
     throw new Error(`unexpected ${u}`);
@@ -305,7 +321,7 @@ test('operatorTick: a qualifying lab PR is merged (ready, squash) and watched', 
 test('a PR that is not low risk goes to approval with the reasons; CI still running only waits', async () => {
   const opStore = memOpStore();
   const t = await prTask(opStore);
-  const w = mergeWorld({ files: [...FILES, { filename: 'lib/pricing.mjs', additions: 2, deletions: 1 }] });
+  const w = mergeWorld({ files: [FILES[0], { filename: 'lib/pricing.mjs', status: 'modified', additions: 2, deletions: 1, patch: '+x' }] });
   await operatorTick({ env: ENV, supUrl: SUP, supKey: 'k', fetchImpl: w.fetchImpl, now: NOW, deps: { opStore, autoStore: null, labStore, startLab: null } });
   assert.equal(t.status, 'needs_approval');
   assert.equal(t.approval.action, 'code:merge');
@@ -362,14 +378,14 @@ test('rollback on an error spike, and on a latency spike; a healthy hour ends th
   for (const [after, re] of [[{ total: 1000, errors: 40, p95: 600 }, /error rate 4\.00% vs 0\.20%/], [{ total: 1000, errors: 2, p95: 1200 }, /p95 latency 1200 ms vs 600 ms/]]) {
     const opStore = memOpStore();
     const t = await watchedTask(opStore);
-    const w = mergeWorld({ after });
+    const w = mergeWorld({ after, serving: 'dpl_new' });
     const r = await watchMerge({ task: t, gh: await ghFor(w.fetchImpl), opStore, env: ENV, fetchImpl: w.fetchImpl, now: NOW + 30 * 60000, notify: w.notify, audit: {} });
     assert.equal(r.status, 'rolled_back');
     assert.match(r.why, re);
   }
   const opStore = memOpStore();
   const t = await watchedTask(opStore);
-  const w = mergeWorld();
+  const w = mergeWorld({ serving: 'dpl_new' });
   assert.equal((await watchMerge({ task: t, gh: await ghFor(w.fetchImpl), opStore, env: ENV, fetchImpl: w.fetchImpl, now: NOW + 30 * 60000, audit: {} })).status, 'watching');
   assert.equal((await watchMerge({ task: t, gh: await ghFor(w.fetchImpl), opStore, env: ENV, fetchImpl: w.fetchImpl, now: NOW + 61 * 60000, audit: {} })).status, 'merged');
   assert.ok(!w.calls.some((c) => c.url.includes('/rollback/')));
@@ -478,4 +494,108 @@ test('NEVER stays never; payments, pricing, publishing, listings, contact, produ
   const bad = await opStore.addTask({ finding_key: 'bad', kind: 'pricing', title: 'Move funds', status: 'needs_approval', approval: { action: 'funds:move', approvable: true } });
   assert.equal((await decideTask({ id: bad.id, decision: 'approve', actor: 'operator', opStore, env: ENV, audit: {} })).message, 'That is never allowed.');
   for (const p of ['lib/autonomy.mjs', 'lib/lab/policy.mjs', 'lib/operator/merge.mjs']) assert.equal(checkCodePath(p).ok, false, p);
+});
+
+// --- review fixes ------------------------------------------------------------------------
+
+test('CI: only the required checks decide; an always-red app check (Cloudflare Workers Builds) does not block', async () => {
+  const cloudflare = { name: 'Workers Builds: pg1-ai-agent', status: 'completed', conclusion: 'failure' };
+  const x402 = { name: 'x402-validate', status: 'completed', conclusion: 'failure' };
+  const q = qBase();
+  q.ci = { state: 'failure', checks: [...GREEN.checks, cloudflare, x402] };
+  assert.deepEqual(qualifyPr(q), { ok: true, reasons: [], lines: 55 });
+  // End to end: the tick merges it.
+  const opStore = memOpStore();
+  const t = await prTask(opStore);
+  const w = mergeWorld({ extraChecks: [cloudflare, x402] });
+  const out = await operatorTick({ env: ENV, supUrl: SUP, supKey: 'k', fetchImpl: w.fetchImpl, now: NOW, deps: { opStore, autoStore: null, labStore, startLab: null } });
+  assert.equal(out.merged, 1);
+  assert.equal(t.status, 'watching');
+  // A required check still running waits; a newer re-run that passed wins over an older failure.
+  const running = { state: 'pending', checks: [GREEN.checks[0], { name: 'browser tests', status: 'in_progress', conclusion: null }] };
+  const r = qualifyPr({ ...qBase(), ci: running });
+  assert.equal(waitOnly(r.reasons), true);
+  const rerun = { state: 'failure', checks: [GREEN.checks[0], { name: 'browser tests', status: 'completed', conclusion: 'failure', started_at: '2026-11-04T06:00:00Z' }, { name: 'browser tests', status: 'completed', conclusion: 'success', started_at: '2026-11-04T07:00:00Z' }] };
+  assert.equal(qualifyPr({ ...qBase(), ci: rerun }).ok, true);
+});
+
+test('the diff is read page by page up to 300 files before deciding', async () => {
+  const many = Array.from({ length: 250 }, (_, i) => ({ filename: `docs/n${i}.md`, status: 'added', additions: 0, deletions: 0, patch: '' }));
+  const seen = [];
+  const fetchImpl = async (url) => {
+    const u = new URL(String(url));
+    seen.push(u.searchParams.get('page'));
+    const page = Number(u.searchParams.get('page'));
+    return Response.json(many.slice((page - 1) * 100, page * 100));
+  };
+  const gh = (await import('../lib/operator/merge.mjs')).createOperatorGithub({ env: ENV, fetchImpl });
+  const files = await gh.files(77);
+  assert.equal(files.length, 250);
+  assert.deepEqual(seen, ['1', '2', '3']);
+  const q = qBase();
+  q.files = files.slice(0, 200);
+  q.pr = { ...PR, changed_files: 250 };
+  assert.match(qualifyPr(q).reasons.join(' | '), /could not read the whole diff \(200 of 250 files read\)/);
+});
+
+test('after a rollback auto-merge pauses, the push and the daily report say production is pinned, and /report resume needs a promoted deploy', async () => {
+  const opStore = memOpStore();
+  const t = await watchedTask(opStore);
+  const w = mergeWorld({ deployState: 'ERROR' });
+  await watchMerge({ task: t, gh: await ghFor(w.fetchImpl), opStore, env: ENV, fetchImpl: w.fetchImpl, now: NOW + 600000, notify: w.notify, audit: {} });
+  assert.equal(t.approval.pinned, true);
+  assert.match(t.detail, /Production is pinned to the earlier deploy: new merges will not go live until a deploy is promoted\. Auto-merge is paused/);
+  assert.match(w.notes[0].body, /Production is pinned to the earlier deploy; new merges won't go live until a deploy is promoted\. Auto-merge paused\./);
+  // The next qualifying PR waits: no code:merge_low_risk until the operator acts.
+  const next = await prTask(opStore);
+  const w2 = mergeWorld();
+  const out = await operatorTick({ env: ENV, supUrl: SUP, supKey: 'k', fetchImpl: w2.fetchImpl, now: NOW + 3600000, deps: { opStore, autoStore: null, labStore, startLab: null } });
+  assert.equal(out.merged, 0);
+  assert.equal(next.status, 'pr_open', 'it waits; it is not sent for approval either');
+  assert.ok(!w2.calls.some((c) => c.url.endsWith('/merge')));
+  // The daily report leads with it.
+  const data = await gatherDaily({ env: ENV, supUrl: SUP, supKey: 'k', fetchImpl: reportFetch(), now: NOW, getStats, opStore, autoStore: null });
+  const b = buildDailyReport(data);
+  assert.match(b.markdown, /^# PG1 daily report · 4 Nov\n\n## Production is pinned to an earlier deploy\n\n- PR #77 \(Fix wallet age errors\): rolled back\./);
+  assert.match(b.markdown, /new merges will not go live until a deploy is promoted/);
+  assert.equal(b.card.sections[0].id, 'pinned');
+  assert.match(b.push.body, /^Production pinned to an earlier deploy; auto-merge paused/);
+  // /report resume: refused while production is still pinned, then resumed.
+  const stillPinned = await handleReportCommand({ text: '/report resume', isOperator: true, supUrl: SUP, supKey: 'k', deps: { opStore, productionPinned: async () => ({ pinned: true, serving: 'dpl_prev', latest: 'dpl_new' }) } });
+  assert.match(stillPinned.reply, /^Production is still pinned to dpl_prev/);
+  assert.equal(t.decided_at, undefined);
+  const resumed = await handleReportCommand({ text: '/report resume', isOperator: true, supUrl: SUP, supKey: 'k', fetchImpl: async () => new Response(null, { status: 201 }), deps: { opStore, productionPinned: async () => ({ pinned: false, serving: 'dpl_x', latest: 'dpl_x' }) } });
+  assert.match(resumed.reply, /Auto-merge is resumed \(1 pause cleared\)/);
+  const w3 = mergeWorld();
+  await operatorTick({ env: ENV, supUrl: SUP, supKey: 'k', fetchImpl: w3.fetchImpl, now: NOW + 7200000, deps: { opStore, autoStore: null, labStore, startLab: null } });
+  assert.equal(next.status, 'watching', 'merges again once resumed');
+});
+
+test('a merge whose deploy is not serving production (pinned) is not judged on health: recorded not live, auto-merge paused', async () => {
+  const opStore = memOpStore();
+  const t = await watchedTask(opStore);
+  const w = mergeWorld({ serving: 'dpl_prev', after: { total: 1000, errors: 400, p95: 9000 } });
+  const r = await watchMerge({ task: t, gh: await ghFor(w.fetchImpl), opStore, env: ENV, fetchImpl: w.fetchImpl, now: NOW + 30 * 60000, notify: w.notify, audit: {} });
+  assert.equal(r.status, 'not_live');
+  assert.equal(t.status, 'merged');
+  assert.match(t.detail, /^Merged but NOT live: production is pinned to dpl_prev, not this deploy dpl_new\. Health was not judged\./);
+  assert.ok(!w.calls.some((c) => c.url.includes('/v2/observability/query')), 'no health judged against a deploy that is not serving');
+  assert.ok(!w.calls.some((c) => c.url.includes('/rollback/')), 'and nothing rolled back for it');
+  assert.equal(w.notes[0].title, 'PG1: merge not live');
+  // Auto-merge is paused by it, and a live pin (production serving an
+  // older deploy than the newest Ready one) pauses it too.
+  const q = await prTask(opStore);
+  await operatorTick({ env: ENV, supUrl: SUP, supKey: 'k', fetchImpl: mergeWorld().fetchImpl, now: NOW + 3600000, deps: { opStore, autoStore: null, labStore, startLab: null } });
+  assert.equal(q.status, 'pr_open');
+  const op2 = memOpStore();
+  const q2 = await prTask(op2);
+  await operatorTick({ env: ENV, supUrl: SUP, supKey: 'k', fetchImpl: mergeWorld({ serving: 'dpl_older' }).fetchImpl, now: NOW, deps: { opStore: op2, autoStore: null, labStore, startLab: null } });
+  assert.equal(q2.status, 'pr_open');
+});
+
+test('the lab is blocked from every newly protected path', () => {
+  for (const p of ['lib/operator/tasks.mjs', 'lib/lab/agenda.mjs', 'lib/operatorSession.mjs', 'lib/cronAuth.mjs', 'lib/netGuard.mjs', 'lib/githubWriteGuard.mjs', 'lib/retention.mjs', 'api/chat.mjs', 'lib/authHelpers.mjs', 'lib/sessionStore.mjs', 'lib/passkeyLogin.mjs', 'lib/webauthn.mjs', 'lib/cspHeaders.mjs', 'api/corsPolicy.mjs', 'lib/ratelimitStore.mjs', 'lib/rate-limit.mjs', 'lib/killSwitch.mjs', 'supabase/migrations/20261201000000_x.sql', 'scripts/deploy.mjs', 'public/index.html']) {
+    assert.equal(checkCodePath(p).ok, false, p);
+  }
+  assert.equal(checkCodePath('lib/walletAge.mjs').ok, true);
 });

@@ -33,21 +33,51 @@ its evidence (the counts).
 ## Low-risk auto-merge (`code:merge_low_risk`)
 
 FREE only with `PG1_AUTONOMY=on` and the switch ON. A PR must meet every rule
-in `lib/operator/merge.mjs` `qualifyPr`: opened by PG1's own lab for a fix or
-improve task; no SQL or migrations; no env var, `vercel.json`, workflow or
-package change; no change to `lib/autonomy.mjs`, `lib/lab/policy.mjs`,
-`lib/operator/`, or pricing, payment, x402, licence, signing or secret-guard
-code; no change to the MCP contract (handlers, listings, contract tests);
-under 300 changed lines; "npm test" and "browser tests" green; the lab's
-promotion gate passed; at most 3 a UTC day, one at a time.
+in `lib/operator/merge.mjs` `qualifyPr`:
 
-After a merge PG1 watches the production deploy for 60 minutes. If the deploy
-fails, is not Ready within 60 minutes, or the error rate (5xx share, at least
-5 errors) or p95 function duration rises more than 50% against the hour
-before the merge, PG1 rolls production back to the deployment before it
+- opened by PG1's own lab for a fix or improve task;
+- the whole diff read: `pr.changed_files` files listed (paged, up to 300) and
+  each with its patch (a file too large or binary has none: no decision);
+- existing tests only added to: no deleted line in an existing file under
+  `tests/`, no removed or renamed test file (new test files are fine);
+- no SQL or migrations; no env var read (`env.NAME`, `env['NAME']`,
+  `env["NAME"]`), `vercel.json`, workflow or package change;
+- no protected code: `lib/autonomy.mjs`, all of `lib/lab/` and
+  `lib/operator/`, pricing, payment, x402, licence, signing, secret guard,
+  `lib/operatorSession.mjs`, `lib/cronAuth.mjs`, `lib/netGuard.mjs`,
+  `lib/githubWriteGuard.mjs`, `lib/retention.mjs`, `api/chat.mjs`, any path
+  matching `auth|session|passkey|webauthn|csp|cors|ratelimit|rate-limit|kill`,
+  `supabase/`, `scripts/`, and all of `public/index.html` (its sign-in code
+  is inline). The lab's `CODE_BLOCKED` has the same list;
+- no change to the MCP contract (handlers, listings, contract tests);
+- under 300 changed lines;
+- the REQUIRED checks only ("npm test", "browser tests") passed on the head
+  SHA. Other checks (the Cloudflare Workers Builds app check, x402-validate)
+  are not judged. A required check still running is a wait; a failed one
+  means not low risk. A re-run's newest result counts;
+- the lab's promotion gate passed; at most 3 a UTC day, one at a time;
+- auto-merge not paused (below).
+
+After a merge PG1 first checks that the merge's deploy is the one serving
+production (`GET /v4/aliases/{PG1_PRODUCTION_ALIAS}`, default
+`pg1-ai-agent.vercel.app`). If production is pinned to another deploy, the
+merge is recorded as not live, its health is not judged, and auto-merge
+pauses. Otherwise PG1 watches the deploy for 60 minutes. If it fails, is not
+Ready within 60 minutes, or the error rate (5xx share, at least 5 errors) or
+p95 function duration rises more than 50% against the hour before the merge,
+PG1 rolls production back to the deployment before it
 (`POST /v1/projects/{id}/rollback/{deploymentId}`), opens a revert PR and
 pushes a notification at once. Rolling back is a safety action, so it also
 runs with the switch OFF.
+
+**After a rollback production is pinned**: the platform does not promote
+later production deploys on its own. PG1 pauses auto-merge (no
+`code:merge_low_risk`), and the push and the daily report (first section)
+say that production is pinned to the earlier deploy and new merges will not
+go live until a deploy is promoted. Once you have promoted a deploy, send
+`/report resume`: PG1 checks production now serves the newest Ready deploy
+and only then resumes. Auto-merge also waits while production is found
+pinned for any other reason.
 
 ## Approvals
 
