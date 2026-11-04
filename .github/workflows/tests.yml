@@ -178,7 +178,7 @@ jobs:
           - group: look
             files: tests/browser/sandbox-look.browser.test.mjs
           - group: world
-            files: tests/browser/sandbox.browser.test.mjs tests/browser/sandbox-effects.browser.test.mjs
+            files: tests/browser/sandbox.browser.test.mjs tests/browser/sandbox-effects.browser.test.mjs tests/browser/sandbox-play.browser.test.mjs
           - group: life
             files: tests/browser/sandbox-benin-warri.browser.test.mjs tests/browser/sandbox-rescue.browser.test.mjs tests/browser/sandbox-social.browser.test.mjs tests/browser/sandbox-sound.browser.test.mjs
     steps:
