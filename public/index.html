@@ -38,6 +38,8 @@
        wake-word clean-up. The speech detector's runtime loads on demand. -->
   <script src="/voice/conversation.js"></script>
   <script src="/camera/frame-gate.js"></script>
+  <!-- Passkeys (WebAuthn): sign in and add one (lib/security, /api/security). -->
+  <script src="/security/passkey.js"></script>
   <link rel="preload" href="/fonts/inter-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
   <!-- REPLY TYPE: Source Serif 4 (SIL OFL) from Google Fonts, for PG1's
        replies only. Loaded without blocking the first paint; until it
@@ -2654,6 +2656,16 @@
     .reveal-btn[aria-pressed="true"] .icon-show { display: none; }
     .reveal-btn[aria-pressed="true"] .icon-hide { display: block; }
     .gate .matrix-submit { margin-top: var(--sp-2); }
+    /* PASSKEY SIGN-IN: the first choice on the gate (a phone signs in with
+       its fingerprint, face or screen lock); the password form below it. */
+    .gate .passkey-btn { margin-top: 0; }
+    .passkey-btn .icon { width: 20px; height: 20px; }
+    .gate-or { display: flex; align-items: center; gap: var(--sp-3); font-size: var(--fs-sm); color: var(--text-2); }
+    .gate-or::before, .gate-or::after { content: ''; flex: 1; height: 1px; background: var(--border-strong); }
+    .gate-msg { min-height: 1.25em; margin: 0; font-size: var(--fs-sm); color: var(--text-2); }
+    .gate-msg.is-error { color: var(--danger, #e5484d); }
+    .gate #auth-form button[type="submit"].matrix-submit { background: transparent; color: var(--text); border-color: var(--border-strong); }
+    .gate #auth-form button[type="submit"].matrix-submit:hover { background: var(--surface-1); }
     /* Signature pinned to the bottom of the sign-in screen, above the safe
        area, in gold text (passes AA in both themes). */
     .gate-signature {
@@ -2841,15 +2853,18 @@
         <p class="gate-tagline">Sovereign Threat Intelligence</p>
       </div>
       <h3 class="gate-form-title">Operator access</h3>
+      <button type="button" id="passkey-signin-btn" class="matrix-submit passkey-btn" onclick="signInWithPasskey()"><svg class="icon" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="15" r="4"/><path d="M10.85 12.15 19 4"/><path d="m18 5 2 2"/><path d="m15 8 2 2"/></svg>Sign in with passkey</button>
+      <p class="gate-msg" id="auth-msg" role="status" aria-live="polite"></p>
+      <p class="gate-or" id="auth-or">or with your password</p>
       <label class="field">
         <span class="field-label">Operator ID</span>
         <input type="text" id="auth-user" class="matrix-input" value="" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" enterkeyhint="next">
       </label>
       <div class="field">
-        <label class="field-label" for="auth-pass">Passkey</label>
+        <label class="field-label" for="auth-pass">Password</label>
         <div class="input-wrap">
           <input type="password" id="auth-pass" class="matrix-input" autocomplete="current-password" enterkeyhint="go">
-          <button type="button" class="icon-btn reveal-btn" aria-label="Show passkey" aria-pressed="false" aria-controls="auth-pass" onclick="togglePasskeyVisibility(this)"><svg class="icon icon-show" aria-hidden="true"><use href="#i-eye"/></svg><svg class="icon icon-hide" aria-hidden="true"><use href="#i-eye-off"/></svg></button>
+          <button type="button" class="icon-btn reveal-btn" aria-label="Show password" aria-pressed="false" aria-controls="auth-pass" onclick="togglePasskeyVisibility(this)"><svg class="icon icon-show" aria-hidden="true"><use href="#i-eye"/></svg><svg class="icon icon-hide" aria-hidden="true"><use href="#i-eye-off"/></svg></button>
         </div>
       </div>
       <button type="submit" class="matrix-submit">Sign in</button>
@@ -3465,6 +3480,7 @@
       }
 
       refreshStatusLight();
+      resumeCookieSession().catch(() => {});
     };
 
     // LIVE STATUS LIGHT: react to the browser's own connectivity events
@@ -4867,7 +4883,7 @@
       const show = input.type === 'password';
       input.type = show ? 'text' : 'password';
       btn.setAttribute('aria-pressed', String(show));
-      btn.setAttribute('aria-label', show ? 'Hide passkey' : 'Show passkey');
+      btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
       input.focus({ preventScroll: true });
     }
 
@@ -5700,6 +5716,56 @@
     let sessionUser = null;
     let sessionPass = null;
 
+    // COOKIE SESSION (lib/security/sessions.mjs): after a sign-in that set
+    // the session cookie (a passkey, or AUTH_VERIFY answering session:
+    // true), the page sends no password at all. sessionUser / sessionPass
+    // then hold placeholders, so every "signed in?" check below still
+    // works, and the fetch wrapper strips user / pass from every /api/ body.
+    // A 401 from /api/ while in a cookie session means it ended (12 h, or
+    // /security signout-all from another device): the gate opens again.
+    let cookieSession = false;
+    const SESSION_PLACEHOLDER = 'session';
+    (function wrapFetchForCookieSession() {
+      const nativeFetch = window.fetch.bind(window);
+      window.fetch = function (input, init) {
+        let url = '';
+        try { url = typeof input === 'string' ? input : (input && input.url) || ''; } catch (e) { url = ''; }
+        const isApi = /^\/api\//.test(url) || url.indexOf(location.origin + '/api/') === 0;
+        if (isApi && cookieSession && init && typeof init.body === 'string' && init.body.charAt(0) === '{') {
+          try {
+            const b = JSON.parse(init.body);
+            if (b && typeof b === 'object' && ('user' in b || 'pass' in b)) {
+              delete b.user;
+              delete b.pass;
+              init = Object.assign({}, init, { body: JSON.stringify(b) });
+            }
+          } catch (e) { /* not JSON: sent as it is */ }
+        }
+        const p = nativeFetch(input, init);
+        if (isApi && cookieSession && !/\/api\/security\b/.test(url)) {
+          p.then((r) => { if (r && r.status === 401) sessionEnded(); }).catch(() => {});
+        }
+        return p;
+      };
+    })();
+
+    function sessionEnded() {
+      if (!cookieSession) return;
+      cookieSession = false;
+      sessionUser = null;
+      sessionPass = null;
+      const modal = document.getElementById('auth-modal');
+      if (modal) modal.style.display = '';
+      setAuthMessage('Your session ended. Sign in again.', false);
+    }
+
+    function setAuthMessage(text, isError) {
+      const el = document.getElementById('auth-msg');
+      if (!el) return;
+      el.textContent = text || '';
+      el.classList.toggle('is-error', !!isError);
+    }
+
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
       const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
       recognition = new SpeechRecognition();
@@ -6118,23 +6184,109 @@
           throw new Error(`Server returned non-JSON response (${res.status}): ${responseText.substring(0, 150)}`);
         }
         if (data.authenticated || data.success) {
-          sessionUser = user;
-          sessionPass = pass;
-          document.getElementById('auth-modal').style.display = 'none';
-          // A clip still rendering from before a reload picks up again.
-          pollVideoJobsSoon(1000);
-          pollFilmCardsSoon(1000);
-          pollMusicCardsSoon(1000);
-          syncErrorLogToServer().then(updateErrorLogBadge);
-          pollReportsSoon(500);
-          showOperatorPushPanel();
-          showAutonomousSwitch();
+          // A session cookie was set: the password is not kept or sent again.
+          if (data.session === true) {
+            cookieSession = true;
+            sessionUser = SESSION_PLACEHOLDER;
+            sessionPass = SESSION_PLACEHOLDER;
+            document.getElementById('auth-pass').value = '';
+          } else {
+            sessionUser = user;
+            sessionPass = pass;
+          }
+          afterSignIn();
+        } else if (data.passkeyRequired) {
+          // Once a passkey exists the password alone is refused (unless the
+          // recovery switch is on in Vercel).
+          setAuthMessage('Password sign-in is off. Use your passkey.', true);
+          const btn = document.getElementById('passkey-signin-btn');
+          if (btn) btn.focus();
         } else {
           alert('Access Denied: Invalid Credentials.');
         }
       } catch (e) {
         alert('Access Denied: ' + e.message);
       }
+    }
+
+    // What every sign-in (password, passkey, a live session on load) does.
+    function afterSignIn() {
+      setAuthMessage('', false);
+      document.getElementById('auth-modal').style.display = 'none';
+      // A clip still rendering from before a reload picks up again.
+      pollVideoJobsSoon(1000);
+      pollFilmCardsSoon(1000);
+      pollMusicCardsSoon(1000);
+      syncErrorLogToServer().then(updateErrorLogBadge);
+      pollReportsSoon(500);
+      showOperatorPushPanel();
+      showAutonomousSwitch();
+    }
+
+    function startCookieSession() {
+      cookieSession = true;
+      sessionUser = SESSION_PLACEHOLDER;
+      sessionPass = SESSION_PLACEHOLDER;
+      afterSignIn();
+    }
+
+    // PASSKEY SIGN-IN (public/security/passkey.js): the phone's own prompt
+    // (fingerprint, face or screen lock); the server sets the session
+    // cookie.
+    async function signInWithPasskey() {
+      triggerHaptic(40);
+      if (typeof PG1Passkey === 'undefined' || !PG1Passkey.supported()) {
+        setAuthMessage('This browser has no passkeys. Use Chrome on your phone, or your password.', true);
+        return;
+      }
+      const btn = document.getElementById('passkey-signin-btn');
+      if (btn) btn.disabled = true;
+      setAuthMessage('Waiting for your passkey…', false);
+      try {
+        const r = await PG1Passkey.signIn();
+        if (r.ok) startCookieSession();
+        else setAuthMessage(r.error || 'That passkey was not accepted.', true);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    // On load: a session cookie still live (12 h) signs the page in without
+    // the gate.
+    async function resumeCookieSession() {
+      if (typeof PG1Passkey === 'undefined' || sessionUser) return;
+      const st = await PG1Passkey.status();
+      if (st && st.signedIn && !sessionUser) startCookieSession();
+      else if (st && st.passkeyRequired) setAuthMessage('Sign in with your passkey.', false);
+    }
+
+    // /security passkey add: the phone's passkey prompt, then the server
+    // stores the public key. Signed-in operator only.
+    async function handlePasskeyAdd(rawText) {
+      const input = document.getElementById('prompt-input');
+      input.value = '';
+      input.style.height = 'auto';
+      if (!sessionUser || !sessionPass) {
+        appendLocalExchange(rawText, '[AGENT] Adding a passkey is for the signed-in operator. Sign in first.');
+        return;
+      }
+      if (typeof PG1Passkey === 'undefined' || !PG1Passkey.supported()) {
+        appendLocalExchange(rawText, 'This browser cannot make passkeys. Open PG1 in Chrome on your phone and send **/security passkey add** there.');
+        return;
+      }
+      triggerHaptic(30);
+      // While signed in with the password (no cookie yet), the password
+      // goes with these two requests, as with every request so far.
+      const extra = cookieSession ? {} : { user: sessionUser, pass: sessionPass };
+      const r = await PG1Passkey.register('', extra);
+      if (!r.ok) {
+        appendLocalExchange(rawText, `No passkey was added: ${r.error || 'the prompt did not finish.'}`);
+        return;
+      }
+      const name = r.passkey && r.passkey.name ? r.passkey.name : 'this device';
+      appendLocalExchange(rawText, r.first
+        ? `Passkey added for **${name}**. From now on, sign-in needs a passkey: the password alone is refused. Add a second device with **/security passkey add** there, so losing one phone does not lock you out.`
+        : `Passkey added for **${name}**. **/security passkeys** lists them all.`);
     }
 
     function toggleVoice() {
@@ -9472,6 +9624,11 @@
       const voiceCmdMatch = text.toLowerCase().match(/^\/voice(?:[- ]([a-z0-9-]+))?$/);
       if (voiceCmdMatch) {
         handleVoiceCommand(text, voiceCmdMatch[1]);
+        return;
+      }
+
+      if (/^\/security\s+passkeys?\s+add\s*$/i.test(text.trim())) {
+        handlePasskeyAdd(text);
         return;
       }
 

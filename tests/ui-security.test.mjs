@@ -77,7 +77,7 @@ test('Security Gate submit button is type=submit inside the form', () => {
 test('the show/hide passkey toggle is a plain button, so it can never submit the form', () => {
   const toggle = openingTag('onclick="togglePasskeyVisibility(this)"');
   assert.match(toggle, /^<button type="button"/);
-  assert.match(toggle, /aria-label="Show passkey"/);
+  assert.match(toggle, /aria-label="Show password"/);
   assert.match(toggle, /aria-controls="auth-pass"/);
 });
 
@@ -85,7 +85,9 @@ test('the Security Gate fields have visible labels and no duplicate placeholders
   assert.doesNotMatch(openingTag('id="auth-user"'), /placeholder=/);
   assert.doesNotMatch(openingTag('id="auth-pass"'), /placeholder=/);
   assert.match(html, /<span class="field-label">Operator ID<\/span>/);
-  assert.match(html, /<label class="field-label" for="auth-pass">Passkey<\/label>/);
+  // "Password": the passkey is the WebAuthn button above the form
+  // (public/security/passkey.js), so the password field says what it is.
+  assert.match(html, /<label class="field-label" for="auth-pass">Password<\/label>/);
 });
 
 function runAuthSubmit({ verifyThrows = false, hapticThrows = false } = {}) {

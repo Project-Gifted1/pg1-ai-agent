@@ -17,7 +17,7 @@
 // rather than distinct REST verbs, and the same USER_API_KEY/USER_API_PASS
 // credential check, for consistency with that endpoint.
 
-import { safeCompare } from './chat.mjs';
+import { authenticateOperator } from '../lib/security/auth.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { logApiError, VALID_CLIENT_ERROR_CATEGORIES } from '../lib/errorLog.mjs';
 
@@ -59,10 +59,10 @@ function getClientIp(req) {
   return (req.socket && req.socket.remoteAddress) || 'unknown';
 }
 
-function isAuthedRequest(user, pass) {
-  var expectedUser = (process.env.USER_API_KEY || process.env.USER_API_USER || '').trim();
-  var expectedPass = (process.env.USER_API_PASS || process.env.USER_API_PASSS || '').trim();
-  return !!(expectedUser && expectedPass && safeCompare(user, expectedUser) && safeCompare(pass, expectedPass));
+// The operator: a live session cookie, or the password while no passkey
+// is registered (lib/security/auth.mjs, with the durable lockout).
+async function operatorAuth(req, body) {
+  return authenticateOperator(req, { user: body.user, pass: body.pass });
 }
 
 export default async function handler(req, res) {
@@ -88,7 +88,9 @@ export default async function handler(req, res) {
   }
 
   var op = body.op;
-  if (!isAuthedRequest(body.user, body.pass)) {
+  var who = await operatorAuth(req, body);
+  if (who.rateLimited) return res.status(429).json({ error: 'Too many failed sign-in attempts. Try again later.' });
+  if (!who.isOperator) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 

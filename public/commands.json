@@ -10,6 +10,7 @@
     "Music & voices",
     "Relay",
     "Code & approvals",
+    "Security",
     "Feed",
     "Help"
   ],
@@ -1672,6 +1673,39 @@
       "operatorOnly": true,
       "dangerous": false,
       "client": true
+    },
+    {
+      "command": "/security passkeys",
+      "area": "Security",
+      "description": "Your passkeys: name, device, when each was added and last used, with an id to remove it",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/security passkey",
+      "area": "Security",
+      "description": "add: a passkey on this device (your phone's fingerprint, face or screen lock; from then on sign-in needs a passkey). remove <id>: removes one and ends the sessions it started",
+      "args": [
+        {
+          "name": "action",
+          "placeholder": "add | remove <id>",
+          "required": true
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
+    },
+    {
+      "command": "/security signout-all",
+      "area": "Security",
+      "description": "Sign out every other session, on every device",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": true,
+      "client": false
     }
   ]
 }
