@@ -447,6 +447,64 @@
     .lab-mode[data-mode="running"] { border-color: rgba(54, 209, 196, 0.6); }
     .lab-bot-open { all: unset; cursor: pointer; display: block; border-radius: 12px; }
     .lab-bot-open:focus-visible { box-shadow: var(--focus-ring); }
+    /* PG1 KINGDOM DEFENCE (public/kingdom/): the live 3D view of PG1
+       defending its Command Centre, from real defence events only
+       (/api/defense-feed). The scene fills the top; the caption, the
+       legend and the text feed (the same events, for reading and screen
+       readers) sit beside it on a wide screen and below it on a phone. */
+    .kingdom-screen { background: var(--bg); color: var(--text); }
+    .kingdom-screen .lab-screen-head { background: var(--surface-1); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+    .kingdom-screen .lab-screen-head .icon-btn { color: var(--text); }
+    .kingdom-screen .lab-screen-head h2 { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .kingdom-screen .lab-screen-head .icon-btn { order: 2; }
+    .kd-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; order: 3; }
+    @media (max-width: 560px) { .kd-tools { width: 100%; } .kingdom-screen .kd-title-pg1 { display: none; } }
+    .kd-tools select, .kd-tools button { min-height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-full, 999px); background: var(--surface-2); color: var(--text); font: 600 0.75rem/1 var(--font-sans, inherit); cursor: pointer; }
+    .kd-tools button[aria-pressed="true"] { border-color: var(--accent, #f3c623); color: var(--accent, #f3c623); }
+    .kd-body { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; }
+    .kd-stage { position: relative; min-height: 0; }
+    .kingdom-view { position: absolute; inset: 0; background: #0b1220; }
+    .kingdom-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+    .kd-caption { position: absolute; left: 12px; right: 12px; bottom: 12px; margin: 0; padding: 8px 12px; border-radius: 10px; background: rgba(10, 10, 11, 0.72); color: #ececee; font-size: 0.82rem; line-height: 1.35; pointer-events: none; }
+    .kd-record { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 3; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-1); color: var(--text); font-size: 0.78rem; }
+    .kd-record[hidden] { display: none; }
+    .kd-record label { display: inline-flex; align-items: center; gap: 6px; }
+    .kd-record select, .kd-record button, .kd-record-file { min-height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-full, 999px); background: var(--surface-2); color: var(--text); font: 600 0.75rem/1 var(--font-sans, inherit); }
+    .kd-record-file { display: inline-flex; align-items: center; text-decoration: none; }
+    .kd-record-status { flex-basis: 100%; margin: 0; color: var(--text-2); }
+    .kd-side { min-height: 0; overflow: auto; border-left: 1px solid var(--border); background: var(--surface-1); padding: 10px 12px calc(var(--safe-bottom, 0px) + 12px); }
+    .kd-side h3 { margin: 6px 0 6px; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); }
+    .kd-legend, .kd-feed { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; }
+    .kd-legend li { display: grid; grid-template-columns: 10px 1fr auto; grid-template-areas: "dot name count" ". check check"; column-gap: 8px; align-items: center; }
+    .kd-legend li[data-reserved="true"] { opacity: 0.6; }
+    .kd-dot { grid-area: dot; width: 8px; height: 8px; border-radius: 50%; }
+    .kd-gname { grid-area: name; font-weight: 600; }
+    .kd-gcheck { grid-area: check; color: var(--text-2); font-size: 0.72rem; }
+    .kd-gcount { grid-area: count; font-variant-numeric: tabular-nums; font-weight: 600; }
+    .kd-row { display: grid; grid-template-columns: 42px 36px 1fr auto; gap: 6px; padding: 5px 0; border-bottom: 1px solid var(--border); align-items: baseline; }
+    .kd-row time, .kd-n { font-variant-numeric: tabular-nums; color: var(--text-2); }
+    .kd-row[data-sev="high"] .kd-what strong { color: #ff7a6b; }
+    .kd-row[data-role="ally"] .kd-what strong { color: #3ddc84; }
+    .kd-cc { font-weight: 600; }
+    .kd-row code { font-size: 0.72rem; color: var(--text-2); }
+    .kd-empty { color: var(--text-2); padding: 6px 0; }
+    .lab-mode[data-mode="storm"] { border-color: rgba(255, 92, 92, 0.6); }
+    .lab-mode[data-mode="watch"] { border-color: rgba(255, 179, 0, 0.6); }
+    .lab-mode[data-mode="calm"] { border-color: rgba(61, 220, 132, 0.6); }
+    @media (max-width: 820px) {
+      .kd-body { grid-template-columns: 1fr; grid-template-rows: minmax(260px, 52vh) 1fr; }
+      .kd-side { border-left: 0; border-top: 1px solid var(--border); }
+    }
+    /* The mini-view: the latest real event in one line, above the thread. */
+    .kingdom-mini { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 10px; width: calc(100% - 24px); max-width: 760px; margin: 8px auto 0; padding: 8px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-1); color: var(--text); font-size: 0.8rem; cursor: pointer; }
+    .kingdom-mini[hidden] { display: none; }
+    .kingdom-mini:focus-visible { box-shadow: var(--focus-ring); }
+    .kd-mini-icon { flex: none; width: 22px; height: 26px; color: #f3c623; animation: kd-pulse 2.4s ease-in-out infinite; }
+    .kingdom-mini[data-level="storm"] .kd-mini-icon { color: #ff5c5c; }
+    .kd-mini-line { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .kd-mini-time { color: var(--text-2); font-variant-numeric: tabular-nums; }
+    @keyframes kd-pulse { 0%, 100% { opacity: 0.65; transform: scale(0.94); } 50% { opacity: 1; transform: scale(1); } }
+    @media (prefers-reduced-motion: reduce) { .kd-mini-icon { animation: none; } }
     /* THE SANDBOX (lib/sandbox, public/sandbox/sandbox-scene.js): a world
        as a 3D scene, its controls, rules and events, and the Experiments
        panel, built from the Living lab components (public/lab/lab-ui.css).
@@ -2958,6 +3016,7 @@
     <div class="lab-screen-head">
       <h2 id="radar-screen-title"><svg aria-hidden="true" focusable="false"><use href="#pg1-shield"/></svg>PG1 Threat Radar</h2>
       <span class="lab-mode" id="radar-mode" data-mode="idle">Nothing new</span>
+      <button type="button" class="lx-btn is-sm" onclick="openKingdomScreen()">Kingdom</button>
       <button type="button" class="icon-btn" aria-label="Close the radar" data-dialog-close onclick="triggerHaptic(40); closeRadarScreen()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
     <div class="living-lab" id="radar-scene"></div>
@@ -2968,6 +3027,44 @@
       <span><span class="sw" style="background:#3ddc84"></span>no flags</span>
       <span>rings: <strong>2</strong>, <strong>5</strong>, <strong>7</strong> days old</span>
       <span id="radar-legend-counts"><strong>0</strong> findings</span>
+    </div>
+  </section>
+
+  <!-- PG1 KINGDOM DEFENCE (public/kingdom/): /kingdom, the Kingdom button
+       on the radar card, or the mini-view. Real defence events only, from
+       /api/defense-feed (signed-in operator). Loaded only when opened. -->
+  <section id="kingdom-screen" class="lab-screen kingdom-screen" role="dialog" aria-modal="true" aria-labelledby="kingdom-title" aria-describedby="kingdom-summary">
+    <div class="lab-screen-head">
+      <h2 id="kingdom-title"><svg aria-hidden="true" focusable="false"><use href="#pg1-shield"/></svg><span class="kd-title-pg1">PG1&nbsp;</span>Kingdom Defence</h2>
+      <span class="lab-mode" id="kingdom-mode" data-mode="calm">Calm</span>
+      <div class="kd-tools">
+        <button type="button" id="kingdom-director" aria-pressed="false" onclick="kingdomUi && kingdomUi.toggleDirector()">Director</button>
+        <button type="button" id="kingdom-record-btn" aria-expanded="false" aria-controls="kingdom-record" onclick="kingdomUi && kingdomUi.toggleRecordPanel()">Record</button>
+        <label class="sr-only" for="kingdom-quality">Quality</label>
+        <select id="kingdom-quality" onchange="kingdomUi && kingdomUi.setQuality(this.value)"><option value="phone">Phone</option><option value="balanced">Balanced</option><option value="cinematic">Cinematic</option><option value="still" hidden>Still</option></select>
+      </div>
+      <button type="button" class="icon-btn" aria-label="Close the Kingdom view" data-dialog-close onclick="triggerHaptic(40); closeKingdomScreen()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+    <div class="kd-body">
+      <div class="kd-stage">
+        <div class="kingdom-view" id="kingdom-view"></div>
+        <p class="kd-caption" id="kingdom-caption" hidden></p>
+        <form class="kd-record" id="kingdom-record" hidden onsubmit="event.preventDefault(); kingdomUi && kingdomUi.toggleRecording()">
+          <label>Shape <select id="kingdom-record-aspect"><option value="16:9">16:9</option><option value="9:16">9:16</option></select></label>
+          <label>Length <select id="kingdom-record-length"><option value="30">30 s</option><option value="60">60 s</option></select></label>
+          <label>Events <select id="kingdom-record-mode"><option value="live">Live</option><option value="replay">Replay last 24 h</option></select></label>
+          <button type="submit" id="kingdom-record-go">Start</button>
+          <p class="kd-record-status" id="kingdom-record-status" role="status">Real PG1 events only, with the director camera, captions and the PG1 mark.</p>
+          <a id="kingdom-record-file" class="kd-record-file" hidden>Save the clip</a>
+        </form>
+      </div>
+      <aside class="kd-side" aria-label="Defence events">
+        <p class="sr-only" id="kingdom-summary" aria-live="polite">Loading the defence feed.</p>
+        <h3 id="kingdom-feed-title">Last 24 hours · real PG1 events</h3>
+        <ol class="kd-feed" id="kingdom-feed" role="log" aria-live="polite" aria-labelledby="kingdom-feed-title"></ol>
+        <h3 id="kingdom-legend-title">Gadgets · today</h3>
+        <ul class="kd-legend" id="kingdom-legend" aria-labelledby="kingdom-legend-title"></ul>
+      </aside>
     </div>
   </section>
 
@@ -3253,6 +3350,11 @@
     </div>
   </template>
 
+  <button type="button" id="kingdom-mini" class="kingdom-mini" hidden onclick="openKingdomScreen()" aria-label="Open the Kingdom view: the latest defence event">
+    <svg class="kd-mini-icon" aria-hidden="true" focusable="false"><use href="#pg1-shield"/></svg>
+    <span class="kd-mini-line" id="kingdom-mini-line"></span>
+    <span class="kd-mini-time" id="kingdom-mini-time"></span>
+  </button>
   <main id="chat-container" role="log" aria-label="Conversation" tabindex="-1"></main>
 
   <div class="footer-panel">
@@ -4472,6 +4574,32 @@
       if (radarScene) { radarScene.destroy(); radarScene = null; }
     }
 
+    // PG1 KINGDOM DEFENCE (public/kingdom/kingdom-ui.js): the full view and
+    // the mini-view, for the signed-in operator only (the feed answers 401
+    // to anyone else and both stay hidden).
+    var kingdomUi = null;
+    async function kingdomController() {
+      if (kingdomUi) return kingdomUi;
+      const mod = await import('/kingdom/kingdom-ui.js');
+      kingdomUi = kingdomUi || mod.createKingdomUi({ creds: () => ({ user: sessionUser, pass: sessionPass }) });
+      return kingdomUi;
+    }
+    async function openKingdomScreen() {
+      if (!sessionUser || !sessionPass) return;
+      triggerHaptic(30);
+      const radar = document.getElementById('radar-screen');
+      if (radar && radar.classList.contains('is-open')) closeRadarScreen();
+      try { await (await kingdomController()).open(); } catch (e) { /* the screen stays closed */ }
+    }
+    function closeKingdomScreen() {
+      if (kingdomUi) kingdomUi.close();
+      else { const screen = document.getElementById('kingdom-screen'); if (screen) screen.classList.remove('is-open'); }
+    }
+    async function startKingdomMini() {
+      if (!sessionUser || !sessionPass) return;
+      try { (await kingdomController()).startMini(); } catch (e) { /* no mini-view */ }
+    }
+
     function closeAutoTimeline() {
       const modal = document.getElementById('auto-modal');
       if (modal) modal.style.display = 'none';
@@ -5445,7 +5573,7 @@
       // card restored from a saved chat opens too.
       const sceneData = JSON.stringify({ as_of: view.as_of, counts, findings: findings.slice(0, 60).map((f) => ({ value: f.value, status: f.status, kev: !!f.kev, ring: f.ring, angle: f.angle })) });
       return `<section class="radar-card lx-card${live ? ' is-live' : ''}${fresh ? ' is-fresh' : ''}" id="${id}" data-tone="${tone}" aria-label="Threat radar" data-fetched="${Number(view.fetched_ms) || ''}" data-scene="${escapeHTML(sceneData)}">`
-        + `<div class="radar-head"><span class="radar-title">Threat radar</span><span class="radar-actions"><button type="button" class="radar-open lx-btn is-sm" onclick="openRadarScreen(this)" aria-label="Open the radar full screen"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg>Open</button><button type="button" class="radar-refresh lx-btn is-sm" onclick="refreshThreatRadar(this)"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>Refresh</button></span></div>`
+        + `<div class="radar-head"><span class="radar-title">Threat radar</span><span class="radar-actions"><button type="button" class="radar-open lx-btn is-sm" onclick="openRadarScreen(this)" aria-label="Open the radar full screen"><svg class="icon" aria-hidden="true"><use href="#i-eye"/></svg>Open</button><button type="button" class="radar-kingdom lx-btn is-sm" onclick="openKingdomScreen()" aria-label="Open the Kingdom view: live defence events"><svg class="icon" aria-hidden="true"><use href="#pg1-shield"/></svg>Kingdom</button><button type="button" class="radar-refresh lx-btn is-sm" onclick="refreshThreatRadar(this)"><svg class="icon" aria-hidden="true"><use href="#i-sync"/></svg>Refresh</button></span></div>`
         + `<p class="radar-asof">Data as of <strong>${escapeHTML(String(view.as_of || ''))}</strong> (Ireland time)</p>`
         + (note ? `<p class="radar-note is-warn" role="status">${escapeHTML(note)}</p>` : '')
         + `<div class="radar-body">${scope}<ul class="radar-counts" aria-label="Findings by status">${countList}</ul></div>`
@@ -6560,6 +6688,7 @@
 
     function startHomeContext() {
       loadHomeContext();
+      startKingdomMini();
       if (homeContextTimer === null) {
         homeContextTimer = setInterval(() => { if (!document.hidden && welcomeShowing()) loadHomeContext(); }, HOME_CONTEXT_REFRESH_MS);
       }
@@ -9733,6 +9862,12 @@
         if (local) { text = local; input.value = local; }
       }
 
+      if (/^\/kingdom\s*$/i.test(text.trim())) {
+        const input = document.getElementById('prompt-input');
+        if (input) { input.value = ''; autoResize(input); }
+        openKingdomScreen();
+        return;
+      }
       const voiceCmdMatch = text.toLowerCase().match(/^\/voice(?:[- ]([a-z0-9-]+))?$/);
       if (voiceCmdMatch) {
         handleVoiceCommand(text, voiceCmdMatch[1]);

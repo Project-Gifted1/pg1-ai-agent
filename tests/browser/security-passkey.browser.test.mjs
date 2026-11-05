@@ -90,6 +90,8 @@ async function startServer() {
         if (url.pathname === '/api/health') return json(200, { status: 'ok' });
         // The empty state's live text (api/home-context.mjs): none here, so the defaults stay.
         if (url.pathname === '/api/home-context') return json(200, { ok: true });
+        // PG1 Kingdom Defence's feed (api/defense-feed.mjs): nothing logged here.
+        if (url.pathname === '/api/defense-feed') return json(200, { ok: true, events: [], today: {}, threat: { level: 'calm' }, gadgets: [] });
         return json(404, { error: 'not stubbed' });
       }
       const rel = url.pathname === '/' ? '/index.html' : url.pathname;

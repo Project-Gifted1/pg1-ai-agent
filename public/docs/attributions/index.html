@@ -35,6 +35,7 @@
       <li><a href="#advisory-databases">Advisory databases</a></li>
       <li><a href="#package-registries">Package registries</a></li>
       <li><a href="#what-pg1-keeps">What PG1 keeps</a></li>
+      <li><a href="#kingdom-defence-3d-assets">Kingdom Defence: 3D assets</a></li>
     </ul>
   </nav>
 
@@ -65,6 +66,8 @@
 <p>PG1 looks up one package per request, caches each answer (registry metadata for 1 hour, malicious-package status for 15 minutes), uses short timeouts, identifies itself in its User-Agent, and never crawls a registry in bulk.</p>
 <h2 id="what-pg1-keeps">What PG1 keeps</h2>
 <p>Nothing from a check is stored beyond the in-memory caches above. Usage telemetry records the tool name, how the call ended, its latency and a salted hash of the caller IP, never the package name or version.</p>
+<h2 id="kingdom-defence-3d-assets">Kingdom Defence: 3D assets</h2>
+<p>The PG1 Kingdom Defence view (the operator&#39;s live 3D view of real defence events) uses no third-party models, textures, HDR environments or sounds: the city, the figures, the drones, the water, the sky and the window lights are all generated in code in the browser. It runs on <a href="https://threejs.org">three.js</a> (MIT licence), served from this site. No third-party characters, logos or brands appear in it.</p>
   </article>
 
   <footer>

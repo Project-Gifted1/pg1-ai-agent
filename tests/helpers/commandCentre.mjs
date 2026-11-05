@@ -64,8 +64,10 @@ export function errorRows(now = Date.now()) {
 // before screenshots.
 // answers(prompt): a reply object for a prompt this helper does not know
 // (async; null for the default "Ran <prompt>.").
-export function startCommandCentreServer({ publicDir, cards = { single: [], many: [] }, errors = [], legacyHelp = false, radar = null, answers = null } = {}) {
-  const log = { prompts: [], resolved: [], paths: [] };
+// defenseFeed(url, body): the /api/defense-feed answer (PG1 Kingdom
+// Defence); by default an empty, calm feed.
+export function startCommandCentreServer({ publicDir, cards = { single: [], many: [] }, errors = [], legacyHelp = false, radar = null, answers = null, defenseFeed = null } = {}) {
+  const log = { prompts: [], resolved: [], paths: [], feeds: [] };
   const rows = errors.map((r) => ({ ...r }));
   const server = http.createServer((req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -82,6 +84,11 @@ export function startCommandCentreServer({ publicDir, cards = { single: [], many
           if (parsed && parsed.op === 'resolve') { log.resolved.push(parsed.id); const r = rows.find((x) => x.id === parsed.id); if (r) r.resolved = true; return json(200, { ok: true }); }
           if (parsed && parsed.op === 'list') return json(200, { ok: true, errors: rows });
           return json(200, { ok: true });
+        }
+        if (url.pathname === '/api/defense-feed') {
+          log.feeds.push({ since: url.searchParams.get('since'), operator: !!(parsed && parsed.user && parsed.pass), query: url.search });
+          if (!(parsed && parsed.user && parsed.pass)) return json(401, { error: 'unauthorized' });
+          return json(200, defenseFeed ? await defenseFeed(url, parsed) : { ok: true, generated_at: new Date().toISOString(), events: [], today: {}, threat: { level: 'calm' }, gadgets: [] });
         }
         if (url.pathname === '/api/handoffs') return json(200, { handoffs: [] });
         if (url.pathname === '/api/threads') return json(200, { threads: [] });
