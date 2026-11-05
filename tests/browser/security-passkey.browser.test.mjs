@@ -88,6 +88,8 @@ async function startServer() {
           return json(500, { error: String(e && e.message) });
         }
         if (url.pathname === '/api/health') return json(200, { status: 'ok' });
+        // The empty state's live text (api/home-context.mjs): none here, so the defaults stay.
+        if (url.pathname === '/api/home-context') return json(200, { ok: true });
         return json(404, { error: 'not stubbed' });
       }
       const rel = url.pathname === '/' ? '/index.html' : url.pathname;
