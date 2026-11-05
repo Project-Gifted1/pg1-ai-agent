@@ -163,7 +163,7 @@ test('renderWelcome: stores the shown line and avoids it on the next render', ()
   };
   const factory = new Function(
     'document', 'localStorage',
-    `${GREETING_SOURCE}\nfunction refreshWelcomeSubtitle() {}\n${extractFunction(html, 'renderWelcome')}\nreturn renderWelcome;`
+    `${GREETING_SOURCE}\nfunction refreshWelcomeSubtitle() {}\nfunction applyHomeCards() {}\n${extractFunction(html, 'renderWelcome')}\nreturn renderWelcome;`
   );
   const renderWelcome = factory(document, storage);
   let previous = null;
@@ -210,7 +210,7 @@ test('refreshWelcomeSubtitle: follows the status and error count, and is a no-op
   const document = { querySelector: () => (welcomeShowing ? textEl : null) };
   const factory = new Function(
     'document',
-    `let lastHealthState = 'green';\nlet lastUnresolvedErrorCount = 0;\n${SUBTITLE_SOURCE}\n${extractFunction(html, 'refreshWelcomeSubtitle')}\n` +
+    `let lastHealthState = 'green';\nlet lastUnresolvedErrorCount = 0;\nconst homeLive = null;\nconst sessionUser = null;\nfunction fadeIn() {}\n${SUBTITLE_SOURCE}\n${extractFunction(html, 'refreshWelcomeSubtitle')}\n` +
     'return { refreshWelcomeSubtitle, set: (s, n) => { lastHealthState = s; lastUnresolvedErrorCount = n; } };'
   );
   const { refreshWelcomeSubtitle, set } = factory(document);
