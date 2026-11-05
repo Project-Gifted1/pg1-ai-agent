@@ -11,23 +11,33 @@
 // visible and the full view is closed, and hides itself when there is
 // nothing to show or the caller is not the operator.
 //
-// Only real events are drawn: when the view opens, only the events of the
-// last few minutes are staged as figures (the rest of the day is in the
-// text feed and the counts); afterwards each poll stages what is new.
+// Only real events are drawn. When the view opens, the last few real events
+// of the day are replayed first, captioned "Earlier today · <time>"; after
+// that, every event a poll brings in plays as it lands, captioned
+// "LIVE · <seconds> ago", and a burst grows with its true running count.
+// Nothing is generated for quiet periods: the city stays calm and the
+// ticker says so. The badge "● LIVE · Real PG1 events — not a simulation"
+// pulses only while the feed answers; when it stops answering the badge
+// says "Feed paused — showing last real events" and nothing new plays.
 
-import { createEventStore, eventLine, enemyLine, defenceLine, dublinTime, verdictText, reasonLabel, replaySchedule, normalizeState, GADGET_META } from './kingdom-data.js';
+import { createEventStore, eventLine, enemyLine, defenceLine, dublinTime, verdictText, reasonLabel, replaySchedule, normalizeState, flagOf, originTag, plural, whenLabel, captionLine, tickerLine, countriesText, BADGE, GADGET_META } from './kingdom-data.js';
 
 export const KINGDOM_POLL_MS = 5000;
 export const MINI_POLL_MS = 30000;
 export const STAGE_RECENT_MS = 3 * 60 * 1000;
 export const FEED_ROWS = 200;
+export const REPLAY_ON_OPEN = 6;
+export const TICKER_ROWS = 5;
+export const LIVE_WINDOW_MS = 90 * 1000;
+export const PAUSED_AFTER_FAILS = 2;
+export const FLAG_PX = 24;
 const POLL_OVERLAP_MS = 70 * 1000;
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 export function feedRowHtml(e) {
   const reason = e.reasons.length ? ` · ${esc(reasonLabel(e.reasons[0]))}` : '';
-  const where = e.role === 'kingdom' ? 'PG1' : e.country || (e.check === 'operator_signin' ? '—' : 'fog');
+  const where = e.role === 'kingdom' ? 'PG1' : e.country ? originTag(e) : (e.check === 'operator_signin' ? '—' : 'fog');
   return `<li class="kd-row" data-role="${esc(e.role)}" data-sev="${esc(e.severity)}" data-id="${esc(e.id)}">`
     + `<time datetime="${new Date(e.time).toISOString()}">${esc(dublinTime(e.time))}</time>`
     + `<span class="kd-cc" aria-label="${e.country ? `country ${esc(e.country)}` : esc(where)}">${esc(where)}</span>`
@@ -43,11 +53,19 @@ export const GUARDIANS = Object.freeze([
   { id: 'rovers', name: 'Ground rovers', what: 'light the embankment in storms and floods' }
 ]);
 
-// The HUD line, all from the data.
-export function hudText(state, day) {
+// The HUD line, all from the data: "loading…" until the first answer;
+// "not read" for a source PG1 could not read.
+export function hudText(state, day, { loaded = true } = {}) {
+  if (!loaded) return 'Defences: loading…';
   const st = state || {};
-  const checks = Number.isFinite(st.checks) ? `${st.checks} checks live` : 'checks live: unknown';
-  return `Defences active: ${checks} · ${Number(day && day.turned_away) || 0} threats turned away today · ${Number(day && day.settled) || 0} payments settled`;
+  const checks = Number.isFinite(st.checks) ? plural(st.checks, 'check') + ' live' : 'checks live: not read';
+  return `Defences active: ${checks} · ${plural(Number(day && day.turned_away) || 0, 'threat')} turned away today · ${plural(Number(day && day.settled) || 0, 'payment')} settled`;
+}
+
+// The flag strip: the top origins, then "+M".
+export function flagStrip(origins, top = 5) {
+  const head = origins.slice(0, top).map(([cc]) => flagOf(cc)).join('');
+  return origins.length > top ? `${head} +${origins.length - top}` : head;
 }
 
 export function legendHtml(gadgets, today, state = null) {
@@ -60,7 +78,10 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
   const store = createEventStore();
   let scene = null; let open = false; let pollTimer = null; let miniTimer = null; let lastAt = 0; let gadgets = []; let opening = null;
   let recording = null; let replaying = false; let replayTimers = []; let clipUrl = null;
-  let pg1State = null;
+  let pg1State = null; let loaded = false; let lastRec = null;
+  let connected = false; let fails = 0; let lastOkAt = 0;
+  const liveIds = new Set(); const replayIds = new Set();
+  let ticker = []; let arcs = []; let captionEvent = null; let tickTimer = null; let pip = null; let introDone = false;
 
   async function fetchFeed(since) {
     const c = creds();
@@ -81,7 +102,8 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     const legend = $('kingdom-legend');
     if (legend && gadgets.length) legend.innerHTML = legendHtml(gadgets, store.today, pg1State);
     const hud = $('kingdom-hud');
-    if (hud) hud.textContent = hudText(pg1State, store.day);
+    if (hud) hud.textContent = hudText(pg1State, store.day, { loaded });
+    renderCountries();
     const level = store.threat.level;
     const mode = $('kingdom-mode');
     if (mode) { mode.dataset.mode = level; mode.textContent = level === 'storm' ? 'Under attack' : level === 'watch' ? 'On watch' : 'Calm'; }
@@ -90,19 +112,121 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     if (sum) sum.textContent = `${level === 'storm' ? 'Under attack' : level === 'watch' ? 'On watch' : 'Calm'}: ${list.length} defence events in the last 24 hours, ${attackers} turned away or flagged.`;
   }
 
-  // The caption: the other side's line paired with PG1's answer.
+  // The caption: when (LIVE or Earlier today), the other side's line, and
+  // PG1's answer with the flag and ISO code. Refreshed every second (the
+  // seconds count, and a growing burst's running total).
+  function captionText(e) {
+    if (!e) return '';
+    const cur = store.get(e.id) || e;
+    return `${whenLabel(cur, { replay: !liveIds.has(cur.id) })} · ${captionLine(cur)}`;
+  }
   function setCaption(e) {
+    captionEvent = e || null;
     const cap = $('kingdom-caption');
     if (!cap) return;
     if (!e) { cap.textContent = ''; cap.hidden = true; return; }
-    const enemy = enemyLine(e); const defence = defenceLine(e);
-    cap.innerHTML = `${enemy ? `<span class="kd-cap-enemy">${esc(enemy)}</span>` : ''}<span class="kd-cap-defence">${esc(defence || eventLine(e))}</span>`;
+    const cur = store.get(e.id) || e;
+    const live = liveIds.has(cur.id);
+    const enemy = enemyLine(cur);
+    cap.dataset.live = live ? 'true' : 'false';
+    cap.innerHTML = `<span class="kd-cap-when" data-live="${live}">${esc(whenLabel(cur, { replay: !live }))}</span>${enemy ? `<span class="kd-cap-enemy">${esc(originTag(cur))} · ${esc(enemy)}</span>` : ''}<span class="kd-cap-defence">${esc(captionLine(cur))}</span>`;
     cap.hidden = false;
+  }
+
+  // The badge, the country counter, the ticker, the mini-globe.
+  const paused = () => !connected && !replaying && loaded && fails >= PAUSED_AFTER_FAILS;
+  function renderBadge() {
+    const b = $('kingdom-badge');
+    if (!b) return;
+    const text = replaying ? BADGE.replay : connected ? BADGE.live : BADGE.paused;
+    if (b.textContent !== text) b.textContent = text;
+    b.dataset.state = replaying ? 'replay' : connected ? 'live' : 'paused';
+  }
+  function renderCountries() {
+    const c = $('kingdom-countries');
+    if (!c) return;
+    const o = store.origins;
+    c.dataset.n = String(o.length);
+    const strip = $('kingdom-flags'); if (strip) strip.textContent = flagStrip(o);
+    const t = $('kingdom-countries-text'); if (t) t.textContent = countriesText(o.length);
+  }
+  function popFlag(e) {
+    const pop = $('kingdom-pop');
+    if (!pop || !e.country) return;
+    pop.textContent = originTag(e);
+    pop.hidden = false;
+    pop.dataset.at = String(Date.now());
+    setTimeout(() => { if (Date.now() - Number(pop.dataset.at) >= 3900) pop.hidden = true; }, 4000);
+  }
+  function renderTicker() {
+    const el = $('kingdom-ticker');
+    if (!el) return;
+    const now = Date.now();
+    const recent = ticker.filter((e) => now - e.last <= LIVE_WINDOW_MS);
+    if (recent.length) {
+      el.dataset.state = 'live';
+      el.innerHTML = recent.slice(0, TICKER_ROWS).map((e) => `<li data-id="${esc(e.id)}">${esc(tickerLine(store.get(e.id) || e))}</li>`).join('');
+    } else {
+      const latest = store.list()[0];
+      el.dataset.state = 'quiet';
+      const ago = latest ? Math.round((now - latest.last) / 60000) : null;
+      el.innerHTML = `<li class="kd-quiet">${latest ? `Quiet · last event ${ago < 1 ? 'under a minute' : plural(ago, 'minute')} ago` : 'Quiet · no events in the last 24 hours'}</li>`;
+    }
+  }
+  function renderPip() {
+    const cv = $('kingdom-globe-pip');
+    if (!cv) return;
+    if (!pip) { const dpr = Math.min(2, globalThis.devicePixelRatio || 1); cv.width = cv.clientWidth * dpr || 240; cv.height = cv.clientHeight * dpr || 240; pip = { mod: null, globe: null }; import('./kingdom-globe.js').then((m) => { pip.globe = m.createGlobe(cv, { flagPx: 18 }); }); }
+    if (!pip.globe) return;
+    const now = Date.now();
+    arcs = arcs.filter((a) => now - a.at < 6000);
+    pip.globe.draw({ origins: store.origins, arcs: arcs.map((a) => ({ cc: a.cc, age: (now - a.at) / 6000 })), t: now / 1000 });
+    cv.dataset.arcs = String(arcs.length);
+  }
+  function tick() {
+    tickTimer = null;
+    if (!open) return;
+    connected = fails < PAUSED_AFTER_FAILS && Date.now() - lastOkAt < KINGDOM_POLL_MS * 3;
+    if (scene && scene.setPaused) scene.setPaused(!connected && !replaying);
+    renderBadge();
+    renderTicker();
+    renderPip();
+    if (captionEvent) setCaption(captionEvent);
+    tickTimer = setTimeout(tick, 250);
+  }
+
+  // The opening shot: the globe turns to Dublin, arcs from the real origins
+  // converge on PG1, then the dive into the city.
+  async function playIntro() {
+    const cv = $('kingdom-globe-intro');
+    if (!cv || introDone) return;
+    introDone = true;
+    const reduced = !!(globalThis.matchMedia && globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches);
+    if (reduced) return;
+    const m = await import('./kingdom-globe.js');
+    const dpr = Math.min(2, globalThis.devicePixelRatio || 1);
+    cv.hidden = false; cv.classList.remove('is-done');
+    cv.width = Math.max(2, cv.clientWidth * dpr); cv.height = Math.max(2, cv.clientHeight * dpr);
+    const globe = m.createGlobe(cv, { flagPx: FLAG_PX });
+    cv.dataset.flagPx = String(FLAG_PX);
+    const t0 = performance.now(); const DUR = 3200;
+    await new Promise((resolve) => {
+      const step = () => {
+        const k = Math.min(1, (performance.now() - t0) / DUR); const e = k * k * (3 - 2 * k);
+        const r = globe.draw({ origins: store.origins, arcs: store.origins.slice(0, 8).map(([cc], i) => ({ cc, age: Math.max(0, Math.min(1, e * 1.4 - i * 0.05)) })), lon: -70 + e * 63.7, lat: 30 + e * 15, t: k * 4, dpr });
+        if (r) cv.dataset.shown = r.shown.join(',');
+        if (k < 1 && open) requestAnimationFrame(step); else resolve();
+      };
+      requestAnimationFrame(step);
+    });
+    cv.classList.add('is-done');
+    setTimeout(() => { cv.hidden = true; }, 700);
   }
 
   function apply(feed, { initial = false } = {}) {
     if (Array.isArray(feed.gadgets)) gadgets = feed.gadgets.filter((g) => g && typeof g.id === 'string' && Object.hasOwn(GADGET_META, g.id)).map((g) => ({ id: g.id, name: String(g.name || g.id).slice(0, 40), check: String(g.check || '').slice(0, 60), reserved: !!g.reserved }));
     const { fresh, level } = store.merge(feed);
+    loaded = true;
     if (feed.state) pg1State = normalizeState(feed.state);
     const gen = Date.parse(feed.generated_at);
     if (Number.isFinite(gen)) lastAt = gen;
@@ -111,15 +235,31 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
       scene.setToday(store.today);
       if (feed.state) scene.setState(feed.state);
       scene.setDay(store.day);
-      // On open: the events of the last few minutes from the store (the
-      // mini-view may have merged them already), oldest first.
-      const stage = initial ? store.list().filter((e) => gen - e.last <= STAGE_RECENT_MS).reverse().map((e) => ({ event: e, delta: e.count })) : fresh;
+      // On open: replay the last few real events of the day (from the store:
+      // the mini-view may have merged them already), oldest first. They are
+      // "Earlier today". Everything a poll brings in after that is LIVE.
+      let stage;
+      if (initial) {
+        stage = store.list().filter((e) => e.role !== 'kingdom' || e.gadget !== 'seal_forge').slice(0, REPLAY_ON_OPEN).reverse().map((e) => ({ event: e, delta: e.count }));
+        for (const f of stage) replayIds.add(f.event.id);
+      } else {
+        stage = fresh;
+        for (const f of fresh) {
+          if (!replayIds.has(f.event.id)) liveIds.add(f.event.id);
+          ticker = [f.event, ...ticker.filter((x) => x.id !== f.event.id)].slice(0, 20);
+          if (f.event.role === 'attacker' && f.event.country) { arcs.push({ cc: f.event.country, at: Date.now() }); popFlag(f.event); }
+        }
+      }
       // A replay being recorded plays the day's events alone; new ones wait in the feed.
-      if (stage.length && !replaying) scene.ingest(stage);
-      if (!scene.director() && stage.length && !initial) setCaption(stage[stage.length - 1].event);
+      if (stage.length && !replaying) scene.ingest(stage, { live: !initial });
+      if (stage.length && initial) setCaption(stage[stage.length - 1].event);
+      // A live arrival takes the caption, and the director cuts to it.
+      const liveNow = !initial && fresh.filter((f) => liveIds.has(f.event.id));
+      if (liveNow && liveNow.length && !paused()) { const e = liveNow[liveNow.length - 1].event; setCaption(e); if (scene.cutTo) scene.cutTo(e.id); }
     }
     renderSide();
     renderMini();
+    if (open) { renderTicker(); renderBadge(); }
   }
 
   async function poll() {
@@ -127,7 +267,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     if (!open) return;
     if (!doc.hidden) {
       const feed = await fetchFeed(lastAt ? lastAt - POLL_OVERLAP_MS : 0);
-      if (feed && open) apply(feed);
+      if (feed && open) { fails = 0; lastOkAt = Date.now(); apply(feed); } else if (!feed) fails++;
     }
     if (open) pollTimer = setTimeout(poll, KINGDOM_POLL_MS);
   }
@@ -139,6 +279,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
       if (!screen || !holder) return;
       open = true;
       screen.classList.add('is-open');
+      renderSide(); renderBadge();
       stopMini();
       const reduced = !!(globalThis.matchMedia && globalThis.matchMedia('(prefers-reduced-motion: reduce)').matches);
       const coarse = !!((globalThis.matchMedia && globalThis.matchMedia('(pointer: coarse)').matches) || globalThis.innerWidth < 768);
@@ -152,8 +293,10 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
       }
       const feed = await feedP;
       if (!open) return;
-      if (feed) apply(feed, { initial: true });
-      else { renderSide(); const sum = $('kingdom-summary'); if (sum) sum.textContent = 'The defence feed could not be read.'; }
+      if (feed) { fails = 0; lastOkAt = Date.now(); apply(feed, { initial: true }); }
+      else { fails = PAUSED_AFTER_FAILS; loaded = true; renderSide(); const sum = $('kingdom-summary'); if (sum) sum.textContent = 'The defence feed could not be read.'; }
+      if (!tickTimer) tick();
+      if (scene && scene.renderer === 'webgl') playIntro();
       const dir = $('kingdom-director');
       if (dir && scene) { dir.setAttribute('aria-pressed', scene.director() ? 'true' : 'false'); }
       if (!pollTimer) pollTimer = setTimeout(poll, KINGDOM_POLL_MS);
@@ -188,7 +331,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     const mode = ($('kingdom-record-mode') || {}).value === 'replay' ? 'replay' : 'live';
     const mod = await import('./kingdom-record.js');
     const coarse = !!(globalThis.matchMedia && globalThis.matchMedia('(pointer: coarse)').matches);
-    const rec = mod.createRecording(scene, { aspect, seconds, mode, coarse, caption: () => scene.caption(), day: () => store.day, onTick: (t) => recStatus(`Recording ${Math.floor(t)} / ${seconds} s`), onDone: finishRecording });
+    const rec = mod.createRecording(scene, { aspect, seconds, mode, coarse, caption: () => scene.caption(), captionText: () => captionText(scene.caption()), countries: () => ({ n: store.origins.length, strip: flagStrip(store.origins) }), day: () => store.day, onTick: (t) => recStatus(`Recording ${Math.floor(t)} / ${seconds} s`), onDone: finishRecording });
     if (!rec) { recStatus('This browser cannot record video.'); return; }
     scene.setDirector(true);
     const dir = $('kingdom-director'); if (dir) dir.setAttribute('aria-pressed', 'true');
@@ -199,9 +342,10 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
       // The day's real events, in their real order, compressed into the clip.
       const plan = replaySchedule(store.list(), seconds * 1000, { now: lastAt || Date.now() });
       replaying = true;
+      for (const { event } of plan) { replayIds.add(event.id); liveIds.delete(event.id); }
       replayTimers = plan.map(({ at, event }) => setTimeout(() => { if (scene) scene.ingest([{ event, delta: event.count }]); }, at));
     }
-    recording = rec;
+    recording = rec; lastRec = rec;
     rec.start();
     const btn = $('kingdom-record-go'); if (btn) btn.textContent = 'Stop';
     const link = $('kingdom-record-file'); if (link) link.hidden = true;
@@ -211,6 +355,8 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     if (recording) { const r = recording; r.stop().then(finishRecording); }
     endReplay();
     open = false;
+    if (tickTimer) { clearTimeout(tickTimer); tickTimer = null; }
+    pip = null; introDone = false;
     const screen = $('kingdom-screen');
     if (screen) screen.classList.remove('is-open');
     if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; }
@@ -260,6 +406,8 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     toggleRecording,
     toggleRecordPanel() { const p = $('kingdom-record'); if (p) { p.hidden = !p.hidden; const b = $('kingdom-record-btn'); if (b) b.setAttribute('aria-expanded', p.hidden ? 'false' : 'true'); } },
     isRecording: () => !!recording,
+    // For the tests: the claim and the live state as shown.
+    status: () => ({ connected, fails, live: [...liveIds], replay: [...replayIds], ticker: ticker.map((e) => e.id), recTexts: lastRec ? lastRec.texts : [] }),
     scene: () => scene,
     store
   };

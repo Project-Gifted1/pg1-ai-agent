@@ -18,7 +18,7 @@
 // MP4 (H.264) where the browser records it, else WebM.
 
 import { pickMime, fileExtension } from '../sandbox/capture.js';
-import { eventLine, dublinTime } from './kingdom-data.js';
+import { eventLine, dublinTime, BADGE, countriesText } from './kingdom-data.js';
 
 export const RECORD_ASPECTS = Object.freeze({ '16:9': [16, 9], '9:16': [9, 16] });
 export const RECORD_SECONDS = Object.freeze([30, 60]);
@@ -41,8 +41,9 @@ export function coverCrop(sw, sh, w, h) {
 }
 
 // The words on a clip. Exported for tests.
+// The badge, in frame for the whole clip.
 export function clipLabel(mode) {
-  return mode === 'replay' ? 'Real PG1 events · last 24 h, time-lapse' : 'Real PG1 events · live';
+  return mode === 'replay' ? BADGE.replay : BADGE.live;
 }
 export function clipCaption(e, mode) {
   if (!e) return mode === 'replay' ? 'No defence events in the last 24 hours. The kingdom was calm.' : 'No attack right now. The kingdom is calm.';
@@ -60,20 +61,30 @@ function wrap(g, text, maxW) {
 }
 
 // The end card: the day's counts, all from the data, and the footnote.
+export const LOG_FOOTNOTE = "Visualised live from PG1's logs. Location = traffic origin (IP geolocation), not attacker identity.";
 export const GEO_FOOTNOTE = 'Countries come from IP geolocation at the network edge and are approximate. No IP addresses are stored.';
-export function endCardLines(day) {
+const DATE_FMT = typeof Intl !== 'undefined' ? new Intl.DateTimeFormat('en-IE', { timeZone: 'Europe/Dublin', day: 'numeric', month: 'long', year: 'numeric' }) : null;
+export function endCardLines(day, { n = 0, now = Date.now() } = {}) {
   const d = day || {};
-  return [`${Number(d.turned_away) || 0} threats turned away from ${Number(d.countries) || 0} ${Number(d.countries) === 1 ? 'country' : 'countries'}`, `${Number(d.settled) || 0} payments settled`];
+  const t = Number(d.turned_away) || 0; const p = Number(d.settled) || 0;
+  const date = DATE_FMT ? DATE_FMT.format(new Date(now)) : new Date(now).toISOString().slice(0, 10);
+  return [
+    `Real PG1 events, ${date} — not a simulation · Hostile traffic from ${n} ${n === 1 ? 'country' : 'countries'} in 24 h`,
+    `${t} ${t === 1 ? 'threat' : 'threats'} turned away · ${p} ${p === 1 ? 'payment' : 'payments'} settled`,
+    LOG_FOOTNOTE,
+    GEO_FOOTNOTE
+  ];
 }
 export const END_CARD_S = 3;
 
-export function createRecording(scene, { aspect = '16:9', seconds = 30, mode = 'live', coarse = false, caption = () => null, day = () => null, onTick = () => {}, onDone = () => {} } = {}) {
+export function createRecording(scene, { aspect = '16:9', seconds = 30, mode = 'live', coarse = false, caption = () => null, captionText = null, countries = () => ({ n: 0, strip: '' }), day = () => null, onTick = () => {}, onDone = () => {} } = {}) {
   const mime = pickMime();
   if (!mime || !scene || !scene.canvas || typeof scene.onFrame !== 'function') return null;
   const { w, h } = clipSize(aspect, coarse ? 1280 : 1920);
   const out = document.createElement('canvas'); out.width = w; out.height = h;
   const g = out.getContext('2d', { alpha: false });
   const shield = new Path2D(SHIELD); const one = new Path2D(ONE);
+  let lastTexts = [];
   let stream = null; let rec = null; let chunks = []; let off = null; let started = 0; let lastAt = 0; let timer = null; let stopping = null;
   const minGap = 1000 / RECORD_FPS - 2;
 
@@ -88,14 +99,22 @@ export function createRecording(scene, { aspect = '16:9', seconds = 30, mode = '
     g.save(); g.translate(u, u); g.scale(u * 1.8 / 100, u * 1.8 / 100); g.translate(-181, 0); g.globalAlpha = 0.9; g.fillStyle = '#f3c623'; g.fill(shield); g.fillStyle = '#0a0a0b'; g.fill(one); g.restore();
     g.font = `700 ${Math.round(u * 1.1)}px Inter, system-ui, sans-serif`; g.fillStyle = 'rgba(255,255,255,0.92)'; g.textBaseline = 'middle';
     g.fillText('PG1', u * 3.1, u * 1.9);
-    // The label: always on.
-    const label = clipLabel(mode);
+    const texts = [];
+    // The country counter, top centre.
+    const cc = countries() || { n: 0, strip: "" };
+    const ct = `${cc.strip ? `${cc.strip}  ` : ''}${countriesText(cc.n)}`;
+    g.font = `700 ${Math.round(u * 0.95)}px Inter, system-ui, "Noto Color Emoji", sans-serif`;
+    const cw = g.measureText(ct).width;
+    g.fillStyle = 'rgba(10,10,11,0.6)'; g.fillRect((w - cw) / 2 - u * 0.6, u * 3.2, cw + u * 1.2, u * 1.7);
+    g.fillStyle = '#ffffff'; g.fillText(ct, (w - cw) / 2, u * 4.05); texts.push(ct);
+    // The badge: always on.
+    const label = clipLabel(mode); texts.push(label);
     g.font = `600 ${Math.round(u * 0.8)}px Inter, system-ui, sans-serif`;
     const lw = g.measureText(label).width;
     g.fillStyle = 'rgba(10,10,11,0.6)'; g.fillRect(w - lw - u * 2.2, u * 0.9, lw + u * 1.4, u * 1.6);
     g.fillStyle = '#ffffff'; g.fillText(label, w - lw - u * 1.5, u * 1.7);
     // The caption: what is happening, from the event itself.
-    const text = clipCaption(caption(), mode);
+    const text = captionText && caption() ? captionText() : clipCaption(caption(), mode); texts.push(text);
     g.font = `600 ${Math.round(u * 1.05)}px Inter, system-ui, sans-serif`;
     const lines = wrap(g, text, w - u * 4);
     const bh = lines.length * u * 1.5 + u * 1.2;
@@ -106,20 +125,26 @@ export function createRecording(scene, { aspect = '16:9', seconds = 30, mode = '
     if ((now - started) / 1000 > seconds - END_CARD_S) {
       g.fillStyle = 'rgba(10,10,11,0.55)'; g.fillRect(0, h * 0.3, w, h * 0.4);
       g.fillStyle = '#f3c623'; g.font = `700 ${Math.round(u * 1.5)}px Inter, system-ui, sans-serif`;
-      const [l1, l2] = endCardLines(day());
-      g.fillText(l1, (w - g.measureText(l1).width) / 2, h * 0.42);
-      g.fillStyle = '#3ddc84'; g.fillText(l2, (w - g.measureText(l2).width) / 2, h * 0.5);
-      g.fillStyle = 'rgba(255,255,255,0.8)'; g.font = `500 ${Math.round(u * 0.65)}px Inter, system-ui, sans-serif`;
-      for (const [i, l] of wrap(g, GEO_FOOTNOTE, w - u * 6).entries()) g.fillText(l, (w - g.measureText(l).width) / 2, h * 0.58 + i * u);
+      const [l1, l2, f1, f2] = endCardLines(day(), { n: cc.n });
+      g.font = `700 ${Math.round(u * 1.05)}px Inter, system-ui, sans-serif`;
+      let y = h * 0.36;
+      for (const l of wrap(g, l1, w - u * 4)) { g.fillText(l, (w - g.measureText(l).width) / 2, y); y += u * 1.4; }
+      g.fillStyle = '#3ddc84'; g.fillText(l2, (w - g.measureText(l2).width) / 2, y + u * 0.4); y += u * 2;
+      g.fillStyle = 'rgba(255,255,255,0.85)'; g.font = `500 ${Math.round(u * 0.62)}px Inter, system-ui, sans-serif`;
+      for (const l of [...wrap(g, f1, w - u * 6), ...wrap(g, f2, w - u * 6)]) { g.fillText(l, (w - g.measureText(l).width) / 2, y); y += u * 0.95; }
+      texts.push(l1, l2, f1, f2);
     }
     const track = stream && stream.getVideoTracks()[0];
     if (track && track.requestFrame) track.requestFrame();
+    lastTexts = texts;
     onTick(Math.min(seconds, (now - started) / 1000));
   };
 
   const api = {
     mime, ext: fileExtension(mime), size: { w, h },
     get recording() { return !!rec; },
+    // For the tests: the words drawn on the last frame.
+    get texts() { return lastTexts.slice(); },
     start() {
       if (scene.setLight) scene.setLight('dusk');
       stream = out.captureStream(0);

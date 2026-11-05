@@ -85,11 +85,14 @@ export function createEventStore({ max = 800 } = {}) {
   let today = {};
   let threat = { level: 'calm' };
   let day = { turned_away: 0, countries: 0, settled: 0 };
+  const origins = new Map();
   const dayCountries = new Set();
   return {
     get size() { return byId.size; },
     get today() { return { ...today }; },
     get threat() { return threat; },
+    // Hostile traffic by country over 24 h, most first: [[cc, count]].
+    get origins() { return [...origins.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)); },
     get day() { return { ...day, countries: Math.max(day.countries, dayCountries.size) }; },
     list() { return [...byId.values()].sort((a, b) => b.time - a.time || (a.id < b.id ? 1 : -1)); },
     get(id) { return byId.get(id) || null; },
@@ -98,6 +101,7 @@ export function createEventStore({ max = 800 } = {}) {
       const events = Array.isArray(feed && feed.events) ? feed.events : [];
       if (feed && feed.today && typeof feed.today === 'object') today = Object.fromEntries(Object.entries(feed.today).filter(([k, v]) => Object.hasOwn(GADGET_META, k) && Number.isFinite(v)).map(([k, v]) => [k, Math.max(0, Math.round(v))]));
       const initial = !!(feed && feed.today);
+      if (feed && Array.isArray(feed.origins)) { origins.clear(); for (const o of feed.origins) if (o && /^[A-Z]{2}$/.test(o.country_code) && Number.isFinite(o.count)) origins.set(o.country_code, o.count); }
       if (feed && feed.day && typeof feed.day === 'object') day = { turned_away: Math.max(0, Number(feed.day.turned_away) || 0), countries: Math.max(0, Number(feed.day.countries) || 0), settled: Math.max(0, Number(feed.day.settled) || 0) };
       for (const raw of events) {
         const e = normalizeEvent(raw);
@@ -108,7 +112,7 @@ export function createEventStore({ max = 800 } = {}) {
         if (!delta) continue;
         fresh.push({ event: e, delta });
         if (!initial) {
-          if (e.role === 'attacker') { day.turned_away += delta; if (e.country) dayCountries.add(e.country); }
+          if (e.role === 'attacker') { day.turned_away += delta; if (e.country) { dayCountries.add(e.country); origins.set(e.country, (origins.get(e.country) || 0) + delta); } }
           if (e.verdict === 'SETTLED' || e.verdict === 'JOB_PAID') day.settled += delta;
           today[e.gadget] = (today[e.gadget] || 0) + delta;
           if (e.role === 'attacker' && !e.country && e.check !== 'operator_signin' && e.verdict !== 'SANCTIONS_MATCH') today.fog_wall = (today.fog_wall || 0) + delta;
@@ -151,6 +155,46 @@ export function eventLine(e) {
   const times = e.count > 1 ? ` ×${e.count}` : '';
   return `${name}: ${what}${from}, ${verdictText(e)}${reason}${times}`;
 }
+
+// --- countries, flags and the words on screen ---------------------------------------
+// A flag from an ISO code (regional indicator letters); no code is "fog".
+export function flagOf(cc) {
+  if (typeof cc !== 'string' || !/^[A-Z]{2}$/.test(cc)) return '';
+  return String.fromCodePoint(...[...cc].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+}
+export function originTag(e) { return e && e.country ? `${flagOf(e.country)} ${e.country}` : 'fog'; }
+export const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+
+// The claim on screen, and what it says when the feed is not connected.
+export const BADGE = Object.freeze({
+  live: '● LIVE · Real PG1 events — not a simulation',
+  paused: 'Feed paused — showing last real events',
+  replay: 'Real PG1 events — time-lapsed replay, not a simulation'
+});
+export const FEED_HEADING = 'Last 24 hours · Real PG1 events — not a simulation';
+
+// When an event happened, as its caption says it: a live arrival or one
+// replayed from earlier today. Never "LIVE" for a replay.
+export function whenLabel(e, { now = Date.now(), replay = false } = {}) {
+  if (!e) return '';
+  if (replay) return `Earlier today · ${dublinTime(e.last)}`;
+  const s = Math.max(0, Math.round((now - e.last) / 1000));
+  return `LIVE · ${s < 60 ? `${s} s` : `${Math.round(s / 60)} min`} ago`;
+}
+
+// "🇫🇷 FR · Phishing Net · check_hostname_reputation: flagged (LOOKALIKE)"
+export function captionLine(e) {
+  const d = defenceLine(e);
+  return `${originTag(e)} · ${d || eventLine(e)}`;
+}
+
+// The ticker: flag, ISO code, enemy, check, verdict (and the running count).
+export function tickerLine(e) {
+  return `${originTag(e)} · ${enemyLine(e).replace(/ from .*$/, '').replace(/ ×\d+$/, '') || 'PG1'} · ${e.check}: ${verdictText(e)}${e.count > 1 ? ` ×${e.count}` : ''}`;
+}
+
+// The HUD's country counter.
+export function countriesText(n) { return `Hostile traffic from ${plural(n, 'country', 'countries')} · last 24 h`; }
 
 // What PG1 does about an event: which gadget answers and how. PG1 only
 // defends: block, scan, catch, turn back, repair, stamp, light or welcome;
@@ -251,7 +295,7 @@ export function daylight(elevation) {
 // Approximate centres (lat, lon) of the countries most callers come from;
 // anything else gets a stable bearing from its code. The bearing is only
 // where on the horizon they appear: the code itself is always shown.
-const CENTRES = {
+export const CENTRES = {
   US: [39, -98], CA: [56, -106], MX: [23, -102], BR: [-10, -52], AR: [-34, -64], CL: [-33, -71], CO: [4, -73],
   GB: [54, -2], IE: [53, -8], FR: [46, 2], DE: [51, 10], NL: [52, 5], BE: [50.5, 4.5], ES: [40, -4], PT: [39.5, -8],
   IT: [42, 12], CH: [47, 8], AT: [47.5, 14], PL: [52, 19], CZ: [49.8, 15.5], SE: [62, 15], NO: [61, 9], FI: [64, 26],

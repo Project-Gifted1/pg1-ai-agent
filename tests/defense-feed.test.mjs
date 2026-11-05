@@ -374,3 +374,14 @@ test('Fix 1: a source with no caller identity has no caller hash (the view shows
   assert.equal(classifyScreeningRow({ created_at: iso(0), lists: ['ofac'] }).caller, null);
   assert.equal(classifyReportRow({ created_at: iso(0), kind: 'daily' }).caller, null);
 });
+
+test('origins: hostile traffic by country over the 24 h window, most first; no country is not counted', async () => {
+  const { originsOf } = await import('../lib/defenseFeed.mjs');
+  const e = (cc, count, role = 'attacker') => ({ role, country_code: cc, count });
+  assert.deepEqual(originsOf([e('CN', 30), e('FR', 1), e('CN', 2), e(null, 9), e('DE', 4, 'ally')]), [{ country_code: 'CN', count: 32 }, { country_code: 'FR', count: 1 }]);
+  const { fetchImpl } = fakeDb(TABLES);
+  const feed = await buildDefenseFeed({ supUrl: 'https://db.test', supKey: 'k', fetchImpl, now: NOW, env: {} });
+  assert.deepEqual(feed.origins.map((o) => o.country_code), ['RU', 'NL']);
+  const poll = await buildDefenseFeed({ supUrl: 'https://db.test', supKey: 'k', fetchImpl, now: NOW, since: NOW - 60000, env: {} });
+  assert.equal(poll.origins, null);
+});

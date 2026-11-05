@@ -47,12 +47,17 @@ export function fixtureTables(now = Date.now()) {
   };
 }
 
-// A feed handler for the Command Centre stub server, through the real lib/defenseFeed.mjs.
-export function fixtureFeed() {
-  // The rows are fixed when the feed is made (like rows in a database);
-  // each poll reads them at its own "now".
+// A feed handler for the Command Centre stub server, through the real
+// lib/defenseFeed.mjs. The rows are fixed when the feed is made (like rows in
+// a database); each poll reads them at its own "now". control (tests):
+//   addTelemetry(row)   a row lands now, as PG1 would log it
+//   down = true         the feed stops answering (503)
+export function fixtureFeed(control = {}) {
   const tables = fixtureTables(Date.now());
+  control.addTelemetry = (row) => { tables.agent_telemetry.push({ created_at: new Date().toISOString(), ...row }); };
+  control.tables = tables;
   return async (url) => {
+    if (control.down) return { __status: 503, error: 'unavailable' };
     const now = Date.now();
     const fetchImpl = async (u) => new Response(JSON.stringify(tables[new URL(String(u)).pathname.split('/').pop()] || []), { status: 200 });
     const since = Number(url.searchParams.get('since')) || null;

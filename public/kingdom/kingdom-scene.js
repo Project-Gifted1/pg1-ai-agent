@@ -40,9 +40,26 @@ import { dublinSun, daylight, pickDirectorEvent, normalizeState, GADGET_META } f
 export const DUSK_SUN = Object.freeze({ elevation: 0.035, azimuth: (262 * Math.PI) / 180 });
 export const LIGHT_MODES = Object.freeze(['dusk', 'live']);
 // The tallest building round the centre is lower than this (kingdom-world.js).
-export const ROOFLINE = 170;
+// The camera keeps at least this far from any building's box (metres).
+export const CAMERA_CLEARANCE = 12;
+
+// A camera position clear of every building: if the camera, or the line
+// from it to what it looks at, passes through a building's box, the
+// position is lifted above that building (plus the clearance). Pure, for
+// the tests: obstacles is kingdom-world.js makeObstacleIndex.
+export function clearCamera(cam, target, obstacles, clearance = CAMERA_CLEARANCE) {
+  let y = cam.y;
+  for (let k = 0; k <= 6; k++) {
+    const t = 0.35 + (k / 6) * 0.65;
+    const px = target.x + (cam.x - target.x) * t; const pz = target.z + (cam.z - target.z) * t; const py = target.y + (y - target.y) * t;
+    const b = obstacles.hit(px, py, pz, clearance);
+    if (b) { const need = target.y + ((b.top + clearance) - target.y) / t; if (need > y) y = need; }
+  }
+  return y;
+}
 // The default view: an aerial angle from the east, the river leading the eye to the tower.
-export const HOME_VIEW = Object.freeze({ target: [0, 70, 40], dist: 540, theta: 0.3, phi: 1.2 });
+// The hero shot: low along the river from the east, towards the PG1 Tower.
+export const HOME_VIEW = Object.freeze({ target: [-40, 95, 70], dist: 700, theta: 0.07, phi: 1.36 });
 
 export const KINGDOM_TIERS = Object.freeze(['phone', 'balanced', 'cinematic']);
 export const KINGDOM_TIER_LABEL = Object.freeze({ phone: 'Phone', balanced: 'Balanced', cinematic: 'Cinematic' });
@@ -62,10 +79,34 @@ export function kingdomSettings(tier, { coarse = false } = {}) {
   const v = TIER_SETTINGS[VIEWER_TIER[tier] || 'high'];
   const base = {
     phone: { shadows: 0, post: null, water: false, sky: 'gradient', crowdCap: 150, perEvent: 12, shafts: false, rain: false, targetFps: 30, pixelRatio: 1.25 },
-    balanced: { shadows: 1024, post: { aa: 'smaa', bloom: true, gtao: false, dof: false }, water: true, sky: 'physical', crowdCap: 400, perEvent: 30, shafts: false, rain: true, targetFps: 60, pixelRatio: 1.5 },
+    balanced: { shadows: 1024, post: { aa: 'smaa', bloom: true, gtao: true, dof: false }, water: true, sky: 'physical', crowdCap: 400, perEvent: 30, shafts: false, rain: true, targetFps: 60, pixelRatio: 1.5 },
     cinematic: { shadows: coarse ? 1024 : 2048, post: { aa: 'smaa', bloom: true, gtao: true, dof: false }, water: true, sky: 'physical', crowdCap: 800, perEvent: 60, shafts: true, rain: true, targetFps: 60, pixelRatio: 2 }
   }[tier] || null;
   return Object.freeze({ tier, ...base, ease: v ? v.ease : 5 });
+}
+
+// Height fog: the scene's exponential fog, thicker low down (blue hour),
+// only for materials that define PG1_HEIGHT_FOG (the city's), so other
+// three.js views on the page are untouched.
+let heightFogPatched = false;
+function patchHeightFog(THREE) {
+  if (heightFogPatched) return;
+  heightFogPatched = true;
+  const C = THREE.ShaderChunk;
+  C.fog_pars_vertex = C.fog_pars_vertex.replace('#ifdef USE_FOG', '#ifdef USE_FOG\n#ifdef PG1_HEIGHT_FOG\nvarying float vPg1FogY;\n#endif');
+  C.fog_vertex = C.fog_vertex.replace('#ifdef USE_FOG', `#ifdef USE_FOG
+    #ifdef PG1_HEIGHT_FOG
+      vec4 pg1Fw = vec4(transformed, 1.0);
+      #ifdef USE_INSTANCING
+        pg1Fw = instanceMatrix * pg1Fw;
+      #endif
+      vPg1FogY = (modelMatrix * pg1Fw).y;
+    #endif`);
+  C.fog_pars_fragment = C.fog_pars_fragment.replace('#ifdef USE_FOG', '#ifdef USE_FOG\n#ifdef PG1_HEIGHT_FOG\nvarying float vPg1FogY;\n#endif');
+  C.fog_fragment = C.fog_fragment.replace('gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );', `#ifdef PG1_HEIGHT_FOG
+      fogFactor = clamp(fogFactor * (0.55 + 0.9 * exp(-max(vPg1FogY, 0.0) / 120.0)), 0.0, 1.0);
+    #endif
+    gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );`);
 }
 
 // --- the 2D map (reduced motion, no WebGL) ---------------------------------------------------
@@ -164,22 +205,26 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   scene.fog = new THREE.FogExp2(0x8a8aa2, 0.0009);
   const camera = new THREE.PerspectiveCamera(42, 1, 1, 12000);
   const ADD = '/vendor/three/addons/';
-  const SkyMod = settings.sky === 'physical' ? await import(`${ADD}objects/Sky.js`).catch(() => null) : null;
+  const ReflectorMod = settings.tier === 'cinematic' ? await import(`${ADD}objects/Reflector.js`).catch(() => null) : null;
   const normals = settings.water ? waterNormals(THREE) : null;
   const waterMaterial = settings.water ? createWaterMaterial(THREE, normals, [], { offset: false }) : null;
-  const world = buildWorld(THREE, scene, settings, { normals, waterMaterial, Sky: SkyMod ? SkyMod.Sky : null });
+  patchHeightFog(THREE);
+  const world = buildWorld(THREE, scene, settings, { waterMaterial, Reflector: ReflectorMod ? ReflectorMod.Reflector : null });
+  // Blue-hour height fog on every material in the city (thicker low down).
+  const fogDefine = (o) => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []; for (const m of ms) if (!m.isShaderMaterial && !m.isSpriteMaterial && !m.isPointsMaterial && m.fog !== false && !(m.defines && m.defines.PG1_HEIGHT_FOG !== undefined)) { m.defines = { ...(m.defines || {}), PG1_HEIGHT_FOG: '' }; m.needsUpdate = true; } };
+  scene.traverse(fogDefine);
   const actors = createActors(THREE, scene, world, settings);
 
   // Image-based light from the sky (Balanced and up), refreshed every few minutes.
   let pmrem = null; let envRT = null; let envAt = -Infinity;
   const refreshEnv = () => {
-    if (!settings.post || !world.sky || !world.sky.material || !world.sky.material.uniforms || !world.sky.material.uniforms.sunPosition) return;
+    if (!settings.post || !world.sky) return;
     try {
       pmrem = pmrem || new THREE.PMREMGenerator(renderer);
       const envScene = new THREE.Scene(); const skyClone = world.sky.clone(); envScene.add(skyClone);
       const rt = pmrem.fromScene(envScene, 0.02, 0.1, 10000);
       if (envRT) envRT.dispose();
-      envRT = rt; scene.environment = rt.texture; scene.environmentIntensity = 0.7;
+      envRT = rt; scene.environment = rt.texture; scene.environmentIntensity = 0.9;
     } catch (e) { /* the hemisphere light is enough */ }
   };
 
@@ -273,6 +318,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   const frameFns = new Set();
   let raf = 0; let last = 0; let running = true; let t0 = performance.now(); let threat = 'calm'; let storm = 0;
   const sunDir = new THREE.Vector3();
+  let camLift = 0; let camInside = 0; let paused = false;
   const focusPoint = new THREE.Vector3();
   const frame = (now) => {
     raf = 0;
@@ -289,13 +335,13 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     const light = daylight(sun.elevation);
     const dusk = Math.max(0, 1 - Math.abs(sun.elevation - 0.06) / 0.2);
     storm += ((threat === 'storm' ? 1 : threat === 'watch' ? 0.3 : 0) - storm) * Math.min(1, dt * 0.25);
-    world.update(dt, t, { sunDir, light, storm, dusk });
+    world.update(dt, t, { sunDir, light, storm, dusk, fogColor: scene.fog.color });
     // Blue atmospheric haze, warmer at dusk, that fades the far city.
-    scene.fog.color.setRGB(0.16 + 0.3 * light * (1 - dusk) + 0.16 * dusk, 0.19 + 0.34 * light * (1 - dusk) + 0.1 * dusk, 0.3 + 0.36 * light * (1 - dusk) + 0.06 * dusk).multiplyScalar(1 - storm * 0.4);
-    scene.fog.density = 0.0006 + storm * 0.0008;
+    scene.fog.color.setRGB(0.14 + 0.32 * light * (1 - dusk) + 0.08 * dusk, 0.19 + 0.36 * light * (1 - dusk) + 0.05 * dusk, 0.36 + 0.36 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.4);
+    scene.fog.density = 0.00055 + storm * 0.0008;
     renderer.toneMappingExposure = 0.62 + 0.3 * light * (1 - dusk);
     if (rain) { rain.material.opacity += ((storm > 0.6 ? 0.55 : 0) - rain.material.opacity) * Math.min(1, dt); if (rain.material.opacity > 0.01) { const a = rain.geometry.attributes.position; for (let i = 1; i < a.array.length; i += 3) { a.array[i] -= dt * 60; if (a.array[i] < 0) a.array[i] += 120; } a.needsUpdate = true; rain.position.set(controls.target.x, 0, controls.target.z); } }
-    if (now - envAt > 180000) { envAt = now; refreshEnv(); }
+    if (now - envAt > 180000) { envAt = now; refreshEnv(); if (post && post.setNight) post.setNight(Math.max(dusk, 1 - light)); }
     actors.update(dt, t, camera, { storm });
     // Director: cut to the most important live event every few seconds.
     if (director && now - lastCut > DIRECTOR_CUT_MS) {
@@ -309,14 +355,22 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     }
     if (focusId) {
       const p = actors.whereIs(focusId);
-      if (p) { focusPoint.set(p.x, p.y + 4, p.z); controls.flyTo({ target: focusPoint, dist: coarse ? 190 : 160, phi: 0.72 }); }
+      // A close-up framed from outside: the clearance below keeps it out of buildings.
+      if (p) { focusPoint.set(p.x, p.y + 4, p.z); controls.flyTo({ target: focusPoint, dist: coarse ? 150 : 130, phi: 0.95 }); }
     } else if (controls.userActive <= 0) {
       // The slow flyover: a gentle sway across the river axis.
-      controls.goalTheta = HOME_VIEW.theta + 0.38 * Math.sin(t * 0.022);
+      controls.goalTheta = HOME_VIEW.theta + 0.16 * Math.sin(t * 0.03);
     }
     controls.update(dt);
-    // The camera never goes into a building: it stays above the roofline.
-    if (camera.position.y < ROOFLINE) { camera.position.y = ROOFLINE; camera.lookAt(controls.target); }
+    // The camera never goes into or through a building: lifted clear of
+    // every box on its line of sight, smoothly (but never left inside one).
+    const needY = clearCamera(camera.position, controls.target, world.obstacles);
+    camLift += (Math.max(0, needY - camera.position.y) - camLift) * Math.min(1, dt * 3);
+    camera.position.y += camLift;
+    const hardY = clearCamera(camera.position, controls.target, world.obstacles, 2);
+    if (hardY > camera.position.y) camera.position.y = hardY;
+    camera.lookAt(controls.target);
+    if (world.obstacles.hit(camera.position.x, camera.position.y, camera.position.z, 0)) camInside++;
     if (post) post.render(false); else renderer.render(scene, camera);
     container.dataset.attackers = String(actors.attackers);
     if ((Number(container.dataset.frames) || 0) % 5 === 0) {
@@ -326,6 +380,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       container.dataset.lanterns = String(actors.lanterns);
       container.dataset.pg1MaxR = String(Math.round(actors.pg1MaxR));
       container.dataset.commander = actors.commanderMode;
+      container.dataset.camInside = String(camInside);
     }
     container.dataset.frames = String((Number(container.dataset.frames) || 0) + 1);
     for (const fn of frameFns) { try { fn(canvas); } catch (e) { /* a listener never stops the view */ } }
@@ -338,7 +393,32 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
 
   return {
     renderer: 'webgl', canvas,
-    ingest(fresh, { perEventCap } = {}) {
+    // For the tests: hold the camera on a view, and measure how noisy the
+    // next frame is (mean absolute Laplacian of the luminance over the
+    // central region, relative to its mean): window patterns that alias
+    // into noise make it jump.
+    debugView({ target, dist, theta = HOME_VIEW.theta, phi = HOME_VIEW.phi }) { setDirector(false); focusId = null; controls.userActive = 1e9; controls.jumpTo({ target: new THREE.Vector3(...target), dist, theta, phi }); },
+    sampleNoise() {
+      return new Promise((resolve) => {
+        const off = this.onFrame((cv) => {
+          off();
+          const w = cv.width; const h = cv.height;
+          const c2 = document.createElement('canvas'); c2.width = w; c2.height = h;
+          const g = c2.getContext('2d'); g.drawImage(cv, 0, 0);
+          const x0 = Math.floor(w * 0.25); const y0 = Math.floor(h * 0.25); const rw = Math.floor(w * 0.5); const rh = Math.floor(h * 0.5);
+          const d = g.getImageData(x0, y0, rw, rh).data;
+          const L = new Float32Array(rw * rh);
+          for (let i = 0; i < rw * rh; i++) L[i] = (0.2126 * d[i * 4] + 0.7152 * d[i * 4 + 1] + 0.0722 * d[i * 4 + 2]) / 255;
+          let hf = 0; let mean = 0; let n = 0;
+          for (let y = 1; y < rh - 1; y++) for (let x = 1; x < rw - 1; x++) { const i = y * rw + x; hf += Math.abs(L[i] - (L[i - 1] + L[i + 1] + L[i - rw] + L[i + rw]) / 4); mean += L[i]; n++; }
+          resolve({ hf: hf / n, mean: mean / n, rel: hf / Math.max(1e-6, mean) });
+        });
+      });
+    },
+    // While the feed is disconnected nothing new plays.
+    setPaused(on) { paused = !!on; container.dataset.feedPaused = paused ? 'yes' : 'no'; },
+    ingest(fresh, { perEventCap, live = false } = {}) {
+      if (paused && live) return;
       for (const { event, delta } of fresh) {
         events.set(event.id, event);
         actors.stage(event, delta, { perEventCap: perEventCap || settings.perEvent });
@@ -363,6 +443,8 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       return { names: [...names].sort(), unnamed, meshes, buildings: world.buildingCount };
     },
     focus: (id) => focus(id, { user: true }),
+    // The director cuts straight to a live arrival (it stays on).
+    cutTo(id) { if (!director) return; lastCut = performance.now(); lastLive = lastCut; focus(id); },
     setDirector, director: () => director,
     tier: () => tier,
     setTier: (t) => applyTier(t, { manual: true }),

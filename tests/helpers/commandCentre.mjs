@@ -88,7 +88,9 @@ export function startCommandCentreServer({ publicDir, cards = { single: [], many
         if (url.pathname === '/api/defense-feed') {
           log.feeds.push({ since: url.searchParams.get('since'), operator: !!(parsed && parsed.user && parsed.pass), query: url.search });
           if (!(parsed && parsed.user && parsed.pass)) return json(401, { error: 'unauthorized' });
-          return json(200, defenseFeed ? await defenseFeed(url, parsed) : { ok: true, generated_at: new Date().toISOString(), events: [], today: {}, threat: { level: 'calm' }, gadgets: [] });
+          const answer = defenseFeed ? await defenseFeed(url, parsed) : { ok: true, generated_at: new Date().toISOString(), events: [], today: {}, threat: { level: 'calm' }, gadgets: [], origins: [] };
+          if (answer && answer.__status) return json(answer.__status, { error: answer.error || 'unavailable' });
+          return json(200, answer);
         }
         if (url.pathname === '/api/handoffs') return json(200, { handoffs: [] });
         if (url.pathname === '/api/threads') return json(200, { threads: [] });

@@ -132,8 +132,6 @@ test('Record mode: the clip\'s size, crop and words', async () => {
   assert.deepEqual(clipSize('9:16', 1280), { w: 720, h: 1280 });
   const c = coverCrop(1000, 1000, 1080, 1920);
   assert.ok(Math.abs(c.sw / c.sh - 1080 / 1920) < 1e-9 && c.sy === 0);
-  assert.equal(clipLabel('replay'), 'Real PG1 events · last 24 h, time-lapse');
-  assert.equal(clipLabel('live'), 'Real PG1 events · live');
   assert.match(clipCaption(null, 'live'), /calm/, 'a quiet clip says so; nothing is staged for it');
   const lens = normalizeEvent(ev('abcdef0123456789', { gadget: 'truth_lens', check: 'check_agent_message', verdict_code: 'malicious', subject: 'skill_md', country_code: 'NL', reasons: ['AGENT_MESSAGE_PAYMENT_REDIRECT'] }));
   assert.match(clipCaption(lens, 'replay'), /^\d\d:\d\d · Truth Lens: skill\.md from NL, malicious, PAYMENT_REDIRECT$/);
@@ -155,4 +153,71 @@ test('Fix 1: the app carries no fixture events; placeholder caller hashes never 
   assert.match(feedRowHtml(normalizeEvent(ev('abcdef0123456789', { caller_hash: '6ee6f69f' }))), />6ee6f69f</);
   const ui = readFileSync(join(ROOT, 'public/kingdom/kingdom-ui.js'), 'utf8');
   assert.match(ui, /No defence events in the last 24 hours/);
+});
+
+test('HUD: loading, "not read", and plurals', async () => {
+  const { hudText, flagStrip } = await import('../public/kingdom/kingdom-ui.js');
+  assert.equal(hudText(null, null, { loaded: false }), 'Defences: loading…');
+  assert.equal(hudText({ checks: null }, { turned_away: 0, settled: 0 }), 'Defences active: checks live: not read · 0 threats turned away today · 0 payments settled');
+  assert.equal(hudText({ checks: 1 }, { turned_away: 1, settled: 1 }), 'Defences active: 1 check live · 1 threat turned away today · 1 payment settled');
+  assert.equal(hudText({ checks: 21 }, { turned_away: 67, settled: 2 }), 'Defences active: 21 checks live · 67 threats turned away today · 2 payments settled');
+  assert.equal(flagStrip([['CN', 3], ['FR', 1]]), '🇨🇳🇫🇷');
+  assert.match(flagStrip(['CN', 'FR', 'DE', 'US', 'BR', 'IN', 'JP'].map((c) => [c, 1])), / \+2$/);
+});
+
+test('captions, ticker and the claim: flags and ISO codes, LIVE only for live arrivals', async () => {
+  const { flagOf, originTag, whenLabel, captionLine, tickerLine, countriesText, BADGE, FEED_HEADING } = await import('../public/kingdom/kingdom-data.js');
+  const lens = normalizeEvent(ev('abcdef0123456789', { gadget: 'phishing_net', kind: 'check_verdict', check: 'check_hostname_reputation', verdict_code: 'flagged', country_code: 'FR', reasons: ['HOSTNAME_LOOKALIKE'] }));
+  assert.equal(flagOf('FR'), '🇫🇷');
+  assert.equal(captionLine(lens), '🇫🇷 FR · Phishing Net · check_hostname_reputation: flagged (LOOKALIKE)');
+  assert.equal(originTag(normalizeEvent(ev('abcdef0123456781', { country_code: null }))), 'fog');
+  assert.equal(whenLabel(lens, { now: lens.last + 12000 }), 'LIVE · 12 s ago');
+  assert.match(whenLabel(lens, { replay: true }), /^Earlier today · \d\d:\d\d$/);
+  assert.ok(!/LIVE/.test(whenLabel(lens, { replay: true })), 'a replay is never LIVE');
+  assert.equal(tickerLine(lens), '🇫🇷 FR · Mimic boat · check_hostname_reputation: flagged');
+  assert.equal(countriesText(1), 'Hostile traffic from 1 country · last 24 h');
+  assert.equal(countriesText(5), 'Hostile traffic from 5 countries · last 24 h');
+  assert.equal(BADGE.live, '● LIVE · Real PG1 events — not a simulation');
+  assert.equal(BADGE.paused, 'Feed paused — showing last real events');
+  assert.equal(BADGE.replay, 'Real PG1 events — time-lapsed replay, not a simulation');
+  assert.equal(FEED_HEADING, 'Last 24 hours · Real PG1 events — not a simulation');
+  const html = readFileSync(join(ROOT, 'public/index.html'), 'utf8');
+  assert.ok(html.includes(FEED_HEADING));
+});
+
+test('Record mode: the badge and the end card (date, N, both footnotes); replays say time-lapsed', async () => {
+  const { clipLabel, endCardLines, LOG_FOOTNOTE } = await import('../public/kingdom/kingdom-record.js');
+  assert.equal(clipLabel('live'), '● LIVE · Real PG1 events — not a simulation');
+  assert.equal(clipLabel('replay'), 'Real PG1 events — time-lapsed replay, not a simulation');
+  const lines = endCardLines({ turned_away: 1, settled: 1 }, { n: 5, now: Date.parse('2026-11-05T20:00:00Z') });
+  assert.equal(lines[0], 'Real PG1 events, 5 November 2026 — not a simulation · Hostile traffic from 5 countries in 24 h');
+  assert.equal(lines[1], '1 threat turned away · 1 payment settled');
+  assert.equal(lines[2], "Visualised live from PG1's logs. Location = traffic origin (IP geolocation), not attacker identity.");
+  assert.equal(lines[2], LOG_FOOTNOTE);
+  assert.match(lines[3], /IP geolocation/);
+});
+
+test('the camera never ends up inside a building', async () => {
+  const { makeObstacleIndex } = await import('../public/kingdom/kingdom-world.js');
+  const { clearCamera } = await import('../public/kingdom/kingdom-scene.js');
+  const idx = makeObstacleIndex([{ x: 100, z: 0, hw: 15, hd: 15, top: 120 }, { x: 0, z: 0, hw: 30, hd: 30, top: 230 }]);
+  assert.ok(idx.hit(100, 50, 5));
+  assert.equal(idx.hit(100, 140, 5), null);
+  assert.equal(idx.hit(300, 10, 300), null);
+  // A camera inside a tower is lifted above it; one whose view line crosses a tower too.
+  const y1 = clearCamera({ x: 100, y: 60, z: 0 }, { x: 60, y: 40, z: 0 }, idx);
+  assert.ok(y1 > 120 && !idx.hit(100, y1, 0, 0), String(y1));
+  const y2 = clearCamera({ x: 200, y: 60, z: 0 }, { x: 40, y: 40, z: 0 }, idx);
+  assert.ok(y2 > 60);
+  assert.equal(clearCamera({ x: 600, y: 300, z: 600 }, { x: 500, y: 60, z: 500 }, idx), 300, 'a clear view is left alone');
+});
+
+test('the globe: projection and arcs', async () => {
+  const { project, greatCircle } = await import('../public/kingdom/kingdom-globe.js');
+  const [x, y, v] = project(53.35, -6.26, 53.35, -6.26);
+  assert.ok(Math.abs(x) < 1e-9 && Math.abs(y) < 1e-9 && v, 'the centre projects to the middle');
+  assert.equal(project(-53, 174, 53, -6)[2], false, 'the far side is hidden');
+  const arc = greatCircle([35, 103], [53.35, -6.26], 10);
+  assert.equal(arc.length, 11);
+  assert.ok(Math.abs(arc[10][0] - 53.35) < 1e-6 && Math.abs(arc[10][1] + 6.26) < 1e-6, 'arcs end at PG1 in Dublin');
 });

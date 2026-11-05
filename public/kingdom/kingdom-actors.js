@@ -91,6 +91,9 @@ class Crowd {
 
 // A quadcopter: body, four arms, four spinning rotors, a camera pod and a
 // light (red on an attacker's siege drone, cyan on PG1's patrols).
+let glowGeo = null; let trailGeoQ = null;
+const GLOW_GEO = (THREE) => glowGeo || (glowGeo = new THREE.IcosahedronGeometry(1.15, 1));
+const TRAIL_GEO = (THREE) => { if (!trailGeoQ) { trailGeoQ = new THREE.CylinderGeometry(0.06, 0.45, 9, 6, 1, true); trailGeoQ.rotateX(Math.PI / 2); trailGeoQ.translate(0, 0, -5); } return trailGeoQ; };
 function quadParts(THREE, M, light, body = 0x2a2e34) {
   const parts = [
     { geo: new THREE.BoxGeometry(0.9, 0.28, 0.9), mat: M(body, { metalness: 0.7, roughness: 0.35 }), offset: [0, 0, 0], swing: null },
@@ -103,6 +106,9 @@ function quadParts(THREE, M, light, body = 0x2a2e34) {
   const rotor = new THREE.CylinderGeometry(0.5, 0.5, 0.03, 14);
   const rm = new THREE.MeshBasicMaterial({ color: 0xb8c2cc, transparent: true, opacity: 0.3, depthWrite: false });
   for (const [x, z] of [[0.78, 0.78], [-0.78, 0.78], [0.78, -0.78], [-0.78, -0.78]]) parts.push({ geo: rotor, mat: rm, offset: [x, 0.16, z], swing: 'spin', flat: true });
+  // A soft glow and a light trail, so a drone reads as a moving light from afar.
+  parts.push({ geo: GLOW_GEO(THREE), mat: new THREE.MeshBasicMaterial({ color: light, transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending, depthWrite: false }), offset: [0, 0, 0], swing: null, flat: true });
+  parts.push({ geo: TRAIL_GEO(THREE), mat: new THREE.MeshBasicMaterial({ color: light, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }), offset: [0, 0, 0], swing: null, flat: true });
   return parts;
 }
 
@@ -133,8 +139,12 @@ export function createActors(THREE, scene, world, settings) {
   // The other side.
   const scanners = new Crowd(THREE, root, quadParts(THREE, M, 0xff3d3d, 0x1a1c20), Math.round(settings.crowdCap / 2), { fly: 1 });
   const swarm = new Crowd(THREE, root, quadParts(THREE, M, 0xff3d3d, 0x101114), Math.round(settings.crowdCap / 2), { fly: 1 });
+  const wakeGeo = new THREE.PlaneGeometry(9, 30); wakeGeo.rotateX(-Math.PI / 2); wakeGeo.translate(0, 0, -21);
+  const wakeTex = (() => { const cv = document.createElement('canvas'); cv.width = 64; cv.height = 128; const g = cv.getContext('2d'); for (let y = 0; y < 128; y++) { const k = 1 - y / 128; const half = 4 + (y / 128) * 26; g.fillStyle = `rgba(255,255,255,${0.5 * k})`; g.fillRect(32 - half, y, 3, 1); g.fillRect(32 + half - 3, y, 3, 1); g.fillStyle = `rgba(255,255,255,${0.12 * k})`; g.fillRect(32 - half, y, half * 2, 1); } const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+  const wakeMat = new THREE.MeshBasicMaterial({ map: wakeTex, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false });
   const boatParts = (hull, cabin, light, lightName) => [
     { geo: new THREE.BoxGeometry(4.2, 1.8, 15), mat: M(hull, { metalness: 0.4, roughness: 0.4 }), offset: [0, 0.6, 0], swing: null },
+    { geo: wakeGeo, mat: wakeMat, offset: [0, 0.15, 0], swing: null, flat: true },
     { geo: new THREE.BoxGeometry(3.2, 1.8, 5), mat: M(cabin, { metalness: 0.7, roughness: 0.2, emissive: light, emissiveIntensity: 0.35 }), offset: [0, 2.3, -2], swing: null },
     { geo: new THREE.SphereGeometry(0.45, 8, 6), mat: new THREE.MeshBasicMaterial({ color: light }), offset: [0, 3.6, -2], swing: null, flat: true, name: lightName }
   ];
@@ -165,7 +175,7 @@ export function createActors(THREE, scene, world, settings) {
   const crowds = [scanners, swarm, darkBoats, signals, sentinels, commander, repair, pilots, rovers, allyBoats, cargoShips, partners];
   const PG1_UNITS = [sentinels, commander, repair, pilots, rovers];
   const ENEMIES = [scanners, swarm, darkBoats, signals];
-  const S = phone ? 4.2 : 3.4; // drone scale: readable at 412 px
+  const S = phone ? 6.5 : 5.2; // drone scale: readable at 412 px in the default view
 
   const props = [];
   const labels = [];
