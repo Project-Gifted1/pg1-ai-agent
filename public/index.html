@@ -3065,7 +3065,8 @@
       <div class="kd-tools">
         <button type="button" id="kingdom-director" aria-pressed="true" onclick="kingdomUi && kingdomUi.toggleDirector()">Director</button>
         <label class="sr-only" for="kingdom-light">Light</label>
-        <select id="kingdom-light" onchange="kingdomUi && kingdomUi.setLight(this.value)"><option value="dusk">Dusk</option><option value="live">Live Dublin sun</option></select>
+        <select id="kingdom-light" onchange="kingdomUi && kingdomUi.setLight(this.value)"><option value="live">Dublin time</option><option value="dusk">Dusk</option></select>
+        <button type="button" id="kingdom-sound" aria-pressed="false" onclick="kingdomUi && kingdomUi.toggleSound()">Sound</button>
         <button type="button" id="kingdom-record-btn" aria-expanded="false" aria-controls="kingdom-record" onclick="kingdomUi && kingdomUi.toggleRecordPanel()">Record</button>
         <label class="sr-only" for="kingdom-quality">Quality</label>
         <select id="kingdom-quality" onchange="kingdomUi && kingdomUi.setQuality(this.value)"><option value="phone">Phone</option><option value="balanced">Balanced</option><option value="cinematic">Cinematic</option><option value="still" hidden>Still</option></select>

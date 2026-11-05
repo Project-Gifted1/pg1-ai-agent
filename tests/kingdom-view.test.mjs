@@ -112,7 +112,8 @@ test('ground rules in the code: defend only, real events only, one 3D stack', ()
   const src = files(join(ROOT, 'public/kingdom')).filter((f) => f.endsWith('.js')).map((f) => [f, readFileSync(f, 'utf8')]);
   for (const [f, s] of src) {
     const fetches = [...s.matchAll(/fetch(?:Impl)?\(\s*([^,)]+)/g)].map((m) => m[1].trim());
-    for (const target of fetches) assert.ok(/defense-feed|^url$|^\.\.\.a$/.test(target), `${f} fetches ${target}`);
+    // The defence feed, and PG1's own brand asset (same origin): nothing else.
+    for (const target of fetches) assert.ok(/defense-feed|^url$|^\.\.\.a$|^BRAND_SVG_URL$/.test(target), `${f} fetches ${target}`);
     assert.ok(!/https?:\/\/(?!threejs\.org)/.test(s.replace(/\/\/.*$/gm, '')), `${f} names no outside URL`);
     assert.ok(!/from ['"]three['"]|unpkg|jsdelivr|cdnjs/.test(s), `${f} uses the app's own three.js`);
     assert.ok(!/demo|simulat(?:e|ed|ion)\s+attack|fake\s+event/i.test(s.replace(/\/\/.*$/gm, '')), `${f} has no demo or simulated attacks`);
@@ -158,9 +159,10 @@ test('Fix 1: the app carries no fixture events; placeholder caller hashes never 
 test('HUD: loading, "not read", and plurals', async () => {
   const { hudText, flagStrip } = await import('../public/kingdom/kingdom-ui.js');
   assert.equal(hudText(null, null, { loaded: false }), 'Defences: loading…');
-  assert.equal(hudText({ checks: null }, { turned_away: 0, settled: 0 }), 'Defences active: checks live: not read · 0 threats turned away today · 0 payments settled');
-  assert.equal(hudText({ checks: 1 }, { turned_away: 1, settled: 1 }), 'Defences active: 1 check live · 1 threat turned away today · 1 payment settled');
-  assert.equal(hudText({ checks: 21 }, { turned_away: 67, settled: 2 }), 'Defences active: 21 checks live · 67 threats turned away today · 2 payments settled');
+  assert.equal(hudText({ checks: null }, { turned_away: 0, settled: 0 }), 'Defences active: checks live: not read · 0 threats turned away today');
+  assert.equal(hudText({ checks: 1 }, { turned_away: 1, settled: 1 }), 'Defences active: 1 check live · 1 threat turned away today');
+  assert.equal(hudText({ checks: 21 }, { turned_away: 67, settled: 2 }), 'Defences active: 21 checks live · 67 threats turned away today');
+  assert.ok(!/payment/.test(hudText({ checks: 2 }, { turned_away: 2, settled: 5 })), 'threats only');
   assert.equal(flagStrip([['CN', 3], ['FR', 1]]), '🇨🇳🇫🇷');
   assert.match(flagStrip(['CN', 'FR', 'DE', 'US', 'BR', 'IN', 'JP'].map((c) => [c, 1])), / \+2$/);
 });
@@ -191,7 +193,8 @@ test('Record mode: the badge and the end card (date, N, both footnotes); replays
   assert.equal(clipLabel('replay'), 'Real PG1 events — time-lapsed replay, not a simulation');
   const lines = endCardLines({ turned_away: 1, settled: 1 }, { n: 5, now: Date.parse('2026-11-05T20:00:00Z') });
   assert.equal(lines[0], 'Real PG1 events, 5 November 2026 — not a simulation · Hostile traffic from 5 countries in 24 h');
-  assert.equal(lines[1], '1 threat turned away · 1 payment settled');
+  assert.equal(lines[1], '1 threat turned away today');
+  assert.ok(!lines.some((l) => /payment/.test(l)), 'threats only');
   assert.equal(lines[2], "Visualised live from PG1's logs. Location = traffic origin (IP geolocation), not attacker identity.");
   assert.equal(lines[2], LOG_FOOTNOTE);
   assert.match(lines[3], /IP geolocation/);
@@ -220,4 +223,33 @@ test('the globe: projection and arcs', async () => {
   const arc = greatCircle([35, 103], [53.35, -6.26], 10);
   assert.equal(arc.length, 11);
   assert.ok(Math.abs(arc[10][0] - 53.35) < 1e-6 && Math.abs(arc[10][1] + 6.26) < 1e-6, 'arcs end at PG1 in Dublin');
+});
+
+test('the emblem is the brand asset: same paths and colours, never redrawn', async () => {
+  const { parseBrandSvg, BRAND_SVG_URL, pathCommands } = await import('../public/kingdom/kingdom-emblem.js');
+  assert.equal(BRAND_SVG_URL, '/brand/pg1-shield.svg');
+  const svg = readFileSync(join(ROOT, 'public/brand/pg1-shield.svg'), 'utf8');
+  const b = parseBrandSvg(svg);
+  assert.deepEqual(b.paths.map((p) => p.fill), ['#f3c623', '#0a0a0b'], 'gold shield, black "1"');
+  assert.equal(pathCommands(b.paths[0].d).filter((c) => c[0] === 'C').length, 2);
+  const mark = readFileSync(join(ROOT, 'public/brand/pg1-mark.svg'), 'utf8');
+  for (const p of b.paths) assert.ok(mark.includes(p.d), 'the same shield as the PG1 wordmark');
+  const src = ['kingdom-world.js', 'kingdom-actors.js', 'kingdom-scene.js'].map((f) => readFileSync(join(ROOT, 'public/kingdom', f), 'utf8')).join('\n');
+  assert.ok(!/M221\.76 0L262\.5/.test(src) && !/shieldShape\(/.test(src.replace(/export function shieldShape[\s\S]*?\n}\n/, '')), 'the 3D scene builds the emblem from the brand file, not a copy');
+});
+
+test('the city\'s own life: windows follow Dublin time, weather by day, billboards only from the feed, no enemy red', async () => {
+  const { windowRatios, dublinHour, dayWeather, billboardLines, isEnemyColour, ENEMY_COLORS, PG1_COLORS } = await import('../public/kingdom/kingdom-data.js');
+  assert.ok(windowRatios(19).office > windowRatios(2).office, 'offices lit in the evening, dim late');
+  assert.ok(windowRatios(22).home > windowRatios(22).office, 'homes later than offices');
+  assert.ok(windowRatios(3).home < windowRatios(21).home);
+  const h = dublinHour(Date.parse('2026-07-01T12:00:00Z'));
+  assert.equal(Math.floor(h), 13, 'Dublin summer time');
+  assert.equal(Math.floor(dublinHour(Date.parse('2026-12-01T12:00:00Z'))), 12);
+  assert.equal(dayWeather(Date.parse('2026-11-05T08:00:00Z')), dayWeather(Date.parse('2026-11-05T22:00:00Z')), 'one weather per Dublin day');
+  assert.deepEqual(billboardLines({ countries: 5, threats: 31, checks: 21 }), ['5 countries · hostile traffic, last 24 h', '31 threats turned away today', '21 checks live']);
+  assert.deepEqual(billboardLines({}), ['not read countries · hostile traffic, last 24 h', 'not read threats turned away today', 'not read checks live']);
+  assert.ok(!billboardLines({ countries: 1, threats: 1, checks: 1 }).some((l) => /payment/.test(l)));
+  for (const c of Object.values(ENEMY_COLORS)) if (c !== ENEMY_COLORS.shadow) assert.ok(isEnemyColour(c), c.toString(16));
+  for (const c of Object.values(PG1_COLORS)) assert.ok(!isEnemyColour(c), c.toString(16));
 });

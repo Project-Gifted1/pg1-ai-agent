@@ -34,7 +34,9 @@ import { fileURLToPath } from 'node:url';
 import { routeReplyFont } from '../helpers/replyFont.mjs';
 import { startCommandCentreServer, openPhonePage } from '../helpers/commandCentre.mjs';
 import { fixtureFeed, fixtureCallerHashes, FIXTURE_APPROVALS } from '../helpers/kingdomFixtures.mjs';
-import { PLACEHOLDER_CALLER_HASHES, BADGE } from '../../public/kingdom/kingdom-data.js';
+import { PLACEHOLDER_CALLER_HASHES, BADGE, billboardLines, isEnemyColour, dublinHour } from '../../public/kingdom/kingdom-data.js';
+import { parseBrandSvg } from '../../public/kingdom/kingdom-emblem.js';
+import { readFileSync } from 'node:fs';
 import { CITY_R } from '../../public/kingdom/kingdom-world.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -108,6 +110,15 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   const inside = await page.evaluate(() => window.kingdomUi.scene().inspect());
   assert.equal(inside.unnamed, 0, 'no unnamed (placeholder) mesh');
   for (const n of inside.names) assert.ok(!/island|wall|moat|merlon|gatehouse|portcullis|container/i.test(n), n);
+  // The emblem is the brand asset (paths and colours), on the crown.
+  const brandFills = parseBrandSvg(readFileSync(join(ROOT, 'public/brand/pg1-shield.svg'), 'utf8')).paths.map((p) => p.fill);
+  assert.equal(inside.emblemSource, '/brand/pg1-shield.svg');
+  assert.deepEqual([...inside.brandFills].sort(), [...brandFills].sort());
+  for (const n of ['pg1-emblem-crown-east', 'pg1-emblem-hologram', 'pg1-emblem-plaza', 'pg1-emblem-projection', 'billboard-east']) assert.ok(inside.names.includes(n), `${n} missing`);
+  // The city's own life: there, and never in the enemy palette.
+  assert.ok(inside.lifeCounts.vehicles > 50 && inside.lifeCounts.people > 100 && inside.lifeCounts.boats > 0);
+  for (const c of inside.lifeColours) assert.ok(!isEnemyColour(c), `ambient colour ${c.toString(16)} is enemy red`);
+  for (const n of ['car-bodies', 'buses', 'tram', 'water-taxis-and-ferries', 'aircraft', 'birds', 'rooftop-steam', 'rooftop-radar', 'construction-crane', 'street-light-pools', 'zebra-crossings', 'manhole-covers', 'plaza-fountain', 'plaza-benches', 'pavements', 'kerbs']) assert.ok(inside.names.includes(n), `${n} missing`);
   for (const n of ['pg1-tower', 'tower-gold-accent', 'tower-crown-lights', 'river', 'bridge-arch', 'bridge-west', 'moored-boats', 'pier-deck', 'skyline-twist', 'skyline-crown', 'rooftop-plant', 'aircraft-lights', 'lane-markings', 'traffic-lights', 'pedestrians', 'tree-crowns', 'river-light-streaks', 'embankment-railing']) assert.ok(inside.names.includes(n), `${n} missing`);
 
   // PG1 state and the HUD (plurals).
@@ -116,7 +127,34 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   assert.equal(Number(d.sentinels), listedTools({}).length);
   assert.equal(d.beacon, 'gold'); assert.equal(d.seal, 'bronze');
   assert.equal(Number(d.beaconsLit), FIXTURE_APPROVALS);
-  assert.match(await page.locator('#kingdom-hud').textContent(), new RegExp(`^Defences active: ${listedTools({}).length} checks live · \\d+ threats turned away today · 1 payment settled$`));
+  assert.match(await page.locator('#kingdom-hud').textContent(), new RegExp(`^Defences active: ${listedTools({}).length} checks live · \\d+ threats turned away today$`));
+
+  // The billboards: real numbers from the feed only (threats, no payments).
+  await page.waitForFunction(() => /checks live/.test(document.getElementById('kingdom-view').dataset.billboard || ''), null, { timeout: 15000 });
+  const day = await page.evaluate(() => window.kingdomUi.store.day.turned_away);
+  assert.equal((await view(page)).billboard, billboardLines({ countries: N, threats: day, checks: listedTools({}).length }).join(' | '));
+  assert.ok(!/payment/.test((await view(page)).billboard));
+  // Windows follow the hour in Dublin (Dublin time by default; dusk is 19:30).
+  assert.equal((await view(page)).light, 'live');
+  assert.equal(Number((await view(page)).windowHour), Math.floor(dublinHour(Date.now())));
+  await page.selectOption('#kingdom-light', 'dusk');
+  await page.waitForFunction(() => document.getElementById('kingdom-view').dataset.windowHour === '19', null, { timeout: 15000 });
+  // The emblem in the hero shot, readable at 412 px.
+  await page.evaluate(() => { const s = window.kingdomUi.scene(); s.setDirector(false); s.focus(null); });
+  await page.waitForTimeout(6000);
+  const em = await page.evaluate(() => window.kingdomUi.scene().emblemScreen());
+  assert.ok(em && em.inView && em.height >= 24, `emblem ${JSON.stringify(em)}`);
+  await shot(page, 'kingdom-city-hero-dusk-412.png');
+  await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [6, 186, 0], dist: 70, theta: 0.15, phi: 1.45 }));
+  await page.waitForTimeout(5000);
+  await shot(page, 'kingdom-city-emblem-412.png');
+  await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [160, 4, -120], dist: 70, theta: Math.PI / 2, phi: 1.38 }));
+  await page.waitForTimeout(5000);
+  await shot(page, 'kingdom-city-street-412.png');
+  await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [260, 0, 120], dist: 160, theta: 0.5, phi: 1.2 }));
+  await page.waitForTimeout(5000);
+  await shot(page, 'kingdom-city-river-boats-412.png');
+  await page.evaluate(() => { const s = window.kingdomUi.scene(); s.debugView({ target: [-40, 95, 70], dist: 700 }); s.setDirector(true); });
 
   // A live arrival: in the scene within 10 s, captioned LIVE, at the top of the ticker.
   const before = Number((await view(page)).attackers);
@@ -219,6 +257,11 @@ test('an empty feed: the claim and the counter are there, nothing plays, the tic
     assert.equal(await page.locator('#kingdom-countries-text').textContent(), 'Hostile traffic from 0 countries · last 24 h');
     assert.match(await page.locator('#kingdom-ticker').textContent(), /^Quiet · /);
     assert.match(await page.locator('#kingdom-feed').textContent(), /No defence events in the last 24 hours/);
+    // The city's life runs, and is never captioned or counted as a defence or an attack.
+    const ins = await page.evaluate(() => window.kingdomUi.scene().inspect());
+    assert.ok(ins.lifeCounts.vehicles > 50 && ins.lifeCounts.people > 100);
+    assert.equal(await page.locator('#kingdom-caption').isHidden(), true, 'no caption without an event');
+    assert.equal((await view(page)).billboard, '0 countries · hostile traffic, last 24 h | 0 threats turned away today | not read checks live');
     await shot(page, `kingdom-city-default-${name}.png`);
     await context.close();
   }
@@ -242,9 +285,19 @@ test('desktop, Cinematic: the hero shot, a facade, the river and bridge, a live 
   await page.waitForFunction(() => document.getElementById('kingdom-view').dataset.tier === 'cinematic', null, { timeout: 120000 });
   await frames(page, 3, 300000);
   await page.waitForFunction(() => document.getElementById('kingdom-globe-intro').hidden, null, { timeout: 60000 });
+  await page.selectOption('#kingdom-light', 'dusk');
   await page.evaluate(() => { const s = window.kingdomUi.scene(); s.setDirector(false); s.focus(null); });
   await page.waitForTimeout(10000);
   await shot(page, 'kingdom-city-hero-1280-cinematic-test-fixture.png');
+  await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [6, 186, 0], dist: 70, theta: 0.15, phi: 1.45 }));
+  await page.waitForTimeout(10000);
+  await shot(page, 'kingdom-city-emblem-1280-cinematic.png');
+  await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [160, 4, -120], dist: 70, theta: Math.PI / 2, phi: 1.38 }));
+  await page.waitForTimeout(10000);
+  await shot(page, 'kingdom-city-street-1280-cinematic.png');
+  await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [260, 0, 120], dist: 160, theta: 0.5, phi: 1.2 }));
+  await page.waitForTimeout(10000);
+  await shot(page, 'kingdom-city-river-boats-1280-cinematic.png');
   await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [120, 60, -120], dist: 90, theta: 0.6, phi: 1.25 }));
   await page.waitForTimeout(10000);
   await shot(page, 'kingdom-city-facade-1280-cinematic.png');

@@ -157,10 +157,16 @@ export function createActors(THREE, scene, world, settings) {
   const SENTINEL_CAP = 64;
   const sentinelParts = quadParts(THREE, M, PG1_COLORS.cyan, 0xf5f7fa);
   sentinelParts[3].mat = sentinelParts[4].mat = M(PG1_COLORS.gold, { metalness: 0.8, roughness: 0.3 });
+  // PG1's shield on its own hulls (from the brand asset), never on an enemy.
+  const hullMat = world.brandTex ? new THREE.MeshBasicMaterial({ map: world.brandTex, transparent: true, depthWrite: false, side: THREE.DoubleSide }) : null;
+  const hullDecal = hullMat ? (() => { const g = new THREE.PlaneGeometry(0.8, 0.8); g.rotateX(-Math.PI / 2); return { geo: g, mat: hullMat, offset: [0, 0.16, 0], swing: null, flat: true }; })() : null;
+  if (hullDecal) sentinelParts.push(hullDecal);
   const sentinels = new Crowd(THREE, root, sentinelParts, SENTINEL_CAP, { fly: 1 });
-  const commander = new Crowd(THREE, root, quadParts(THREE, M, PG1_COLORS.gold, 0xf5f7fa), 1, { fly: 1 });
+  const commander = new Crowd(THREE, root, hullDecal ? [...quadParts(THREE, M, PG1_COLORS.gold, 0xf5f7fa), hullDecal] : quadParts(THREE, M, PG1_COLORS.gold, 0xf5f7fa), 1, { fly: 1 });
   const repair = new Crowd(THREE, root, quadParts(THREE, M, PG1_COLORS.amber, 0xf5f7fa), 6, { fly: 1 });
-  const pilots = new Crowd(THREE, root, boatParts(0xf5f7fa, 0x6fd8ff, PG1_COLORS.cyan).map((p, i) => (i === 0 ? { ...p, geo: new THREE.BoxGeometry(2.6, 1.2, 8) } : p)), 3);
+  const pilotParts = boatParts(0xf5f7fa, 0x6fd8ff, PG1_COLORS.cyan).map((p, i) => (i === 0 ? { ...p, geo: new THREE.BoxGeometry(2.6, 1.2, 8) } : p));
+  if (hullMat) { const g = new THREE.PlaneGeometry(1.6, 1.6); g.rotateY(Math.PI / 2); pilotParts.push({ geo: g, mat: hullMat, offset: [1.65, 2.3, -2], swing: null, flat: true }); }
+  const pilots = new Crowd(THREE, root, pilotParts, 3);
   const roverLight = new THREE.MeshBasicMaterial({ color: 0x6a6f75 });
   const rovers = new Crowd(THREE, root, [
     { geo: new THREE.BoxGeometry(3.2, 1.6, 4.8), mat: M(0xe9edf1, { metalness: 0.3, roughness: 0.4 }), offset: [0, 1.5, 0], swing: null },
@@ -180,7 +186,9 @@ export function createActors(THREE, scene, world, settings) {
   const props = [];
   const labels = [];
   const fired = {};
-  const fire = (g) => { fired[g] = (fired[g] || 0) + 1; };
+  let onFire = null;
+  // A gadget acted on a real event: counted, the emblem pulses, the sound (if on) chimes.
+  const fire = (g, e) => { fired[g] = (fired[g] || 0) + 1; if (world.pulseEmblem) world.pulseEmblem(!!(e && e.severity === 'high')); if (onFire) { try { onFire(g, e); } catch (err) { /* never stops the view */ } } };
 
   // --- ambient PG1 units ---
   const DOCK = { x: 0, y: world.deckY + 4, z: 14 };
@@ -263,7 +271,7 @@ export function createActors(THREE, scene, world, settings) {
     // Any gadget answering at the edge makes the shield ripple where the traffic hit.
     const hb = Math.atan2(group.cx, -group.cz);
     world.dome.uHit.value.set(Math.sin(hb), e.gadget === 'rate_shield' ? 0.5 : 0.25, -Math.cos(hb)); world.dome.uHitT.value = 0;
-    fire(e.gadget);
+    fire(e.gadget, e);
     defenceLabel(e, lp);
   }
 
@@ -271,10 +279,10 @@ export function createActors(THREE, scene, world, settings) {
   function stage(event, delta, { perEventCap = settings.perEvent } = {}) {
     if (event.role === 'kingdom') return stageKingdom(event, delta);
     if (event.role === 'ally') {
-      if (event.verdict === 'PARTNER_CALL') { for (let k = 0; k < Math.min(3, delta); k++) spawnPartner(event); fire('allies'); return; }
+      if (event.verdict === 'PARTNER_CALL') { for (let k = 0; k < Math.min(3, delta); k++) spawnPartner(event); fire('allies', event); return; }
       spawnAllyBoat(event, event.verdict === 'JOB_PAID' ? cargoShips : allyBoats);
       if (event.gadget === 'toll_bridge') { world.tollBarrier.material.emissive.setHex(PG1_COLORS.green); world.tollBarrier.material.emissiveIntensity = 1.8; world.tollBarrier.userData.until = performance.now() + 4000; }
-      fire(event.gadget);
+      fire(event.gadget, event);
       return;
     }
     const fog = !event.country;
@@ -352,7 +360,7 @@ export function createActors(THREE, scene, world, settings) {
       }
       default: return;
     }
-    fire(event.gadget);
+    fire(event.gadget, event);
   }
 
   const camTmp = new THREE.Vector3();
@@ -411,7 +419,8 @@ export function createActors(THREE, scene, world, settings) {
     // The Rate Shield thickens under floods.
     shieldLoad += (Math.min(1, swarm.live / 40) - shieldLoad) * Math.min(1, dt * 0.8);
     world.dome.uThick.value = shieldLoad;
-    world.lanterns.forEach((l, i) => { const goal = i < lanternsLit ? 2.4 : 0; l.material.emissiveIntensity += (goal - l.material.emissiveIntensity) * Math.min(1, dt * 1.5); });
+    // The bridge lanterns: lamps, lit from dusk (no payment count).
+    world.lanterns.forEach((l) => { const goal = world.env.night > 0.3 ? 1.6 : 0.2; l.material.emissiveIntensity += (goal - l.material.emissiveIntensity) * Math.min(1, dt * 1.5); });
     const tb = world.tollBarrier;
     if (tb.userData.until && now > tb.userData.until) { tb.userData.until = 0; tb.material.emissive.setHex(PG1_COLORS.amber); tb.material.emissiveIntensity = 0.25; }
     tb.rotation.z += ((tb.material.emissive.getHex() === PG1_COLORS.green && tb.userData.until ? -1.2 : 0) - tb.rotation.z) * Math.min(1, dt * 2);
@@ -454,6 +463,7 @@ export function createActors(THREE, scene, world, settings) {
 
   return {
     stage, update, whereIs, pick, setSentinels,
+    set onFire(fn) { onFire = typeof fn === 'function' ? fn : null; },
     setLanterns(n) { lanternsLit = Math.max(0, Math.min(world.lanterns.length, Number(n) || 0)); return lanternsLit; },
     commanderTo(p) { if (p) { cmd.mode = 'hover'; cmd.target = insideCity({ x: p.x, y: Math.max((p.y || 0) + 30, 50), z: p.z }, CITY_R - 40); cmd.until = performance.now() + 15000; } else if (cmd.mode === 'hover') { cmd.mode = 'docked'; cmd.target = { ...DOCK }; } },
     get commanderMode() { return cmd.mode; },

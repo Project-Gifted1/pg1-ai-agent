@@ -193,6 +193,56 @@ export function tickerLine(e) {
   return `${originTag(e)} · ${enemyLine(e).replace(/ from .*$/, '').replace(/ ×\d+$/, '') || 'PG1'} · ${e.check}: ${verdictText(e)}${e.count > 1 ? ` ×${e.count}` : ''}`;
 }
 
+// --- the city's own life (ambient: never an event) ------------------------------------
+
+// Lit windows by the hour in Dublin: offices (glass and metal facades) lit
+// into the evening and dimming late; homes (brick and stone) later.
+export function windowRatios(hour) {
+  const h = ((Number(hour) % 24) + 24) % 24;
+  const office = h < 6 ? 0.06 : h < 8 ? 0.25 : h < 17 ? 0.35 : h < 19 ? 0.55 : h < 21 ? 0.42 : h < 23 ? 0.22 : 0.1;
+  const home = h < 6 ? 0.04 : h < 8 ? 0.3 : h < 17 ? 0.12 : h < 20 ? 0.45 : h < 23 ? 0.55 : 0.2;
+  return { office, home };
+}
+export function dublinHour(ms = Date.now()) {
+  try {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Dublin', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(ms)).map((x) => [x.type, Number(x.value)]));
+    return p.hour + p.minute / 60;
+  } catch (e) { return new Date(ms).getUTCHours(); }
+}
+
+// Some days have light rain or mist: picked by the Dublin date, so a day
+// looks the same all day. Scenery only (it is not a weather report and has
+// nothing to do with threats).
+export function dayWeather(ms = Date.now()) {
+  let key = '';
+  try { key = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Dublin' }).format(new Date(ms)); } catch (e) { key = new Date(ms).toISOString().slice(0, 10); }
+  let h = 0; for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  const r = (h % 1000) / 1000;
+  return r < 0.18 ? 'rain' : r < 0.36 ? 'mist' : 'clear';
+}
+
+// The billboards: real PG1 numbers from the feed only; "not read" when a
+// number is not there. Threats only (no payments).
+export function billboardLines({ countries = null, threats = null, checks = null } = {}) {
+  const n = (v) => (Number.isFinite(v) ? String(v) : 'not read');
+  return [
+    `${n(countries)} ${countries === 1 ? 'country' : 'countries'} · hostile traffic, last 24 h`,
+    `${n(threats)} ${threats === 1 ? 'threat' : 'threats'} turned away today`,
+    `${n(checks)} ${checks === 1 ? 'check' : 'checks'} live`
+  ];
+}
+
+// The enemy palette (red), which nothing ambient or PG1's may use.
+export function isEnemyColour(hex) {
+  const r = ((hex >> 16) & 255) / 255; const g = ((hex >> 8) & 255) / 255; const b = (hex & 255) / 255;
+  const max = Math.max(r, g, b); const min = Math.min(r, g, b);
+  if (max - min < 0.25 || max < 0.3) return false;
+  let hue = 0;
+  if (max === r) hue = ((g - b) / (max - min)) * 60; else if (max === g) hue = (2 + (b - r) / (max - min)) * 60; else hue = (4 + (r - g) / (max - min)) * 60;
+  hue = (hue + 360) % 360;
+  return hue < 18 || hue > 340;
+}
+
 // The HUD's country counter.
 export function countriesText(n) { return `Hostile traffic from ${plural(n, 'country', 'countries')} · last 24 h`; }
 

@@ -49,21 +49,6 @@ export const inRiver = (z) => Math.abs(z - RIVER.z) < RIVER.half;
 
 const GOLD = 0xf3c623;
 
-export function shieldShape(THREE) {
-  const s = 1 / 100;
-  const P = (x, y) => [(x - 221.76) * s, (50 - y) * s];
-  const shape = new THREE.Shape();
-  shape.moveTo(...P(221.76, 0)); shape.lineTo(...P(262.5, 15.2)); shape.lineTo(...P(262.5, 47.3));
-  shape.bezierCurveTo(...P(262.5, 73.9), ...P(245.1, 91.85), ...P(221.76, 100));
-  shape.bezierCurveTo(...P(198.4, 91.85), ...P(181, 73.9), ...P(181, 47.3));
-  shape.lineTo(...P(181, 15.2)); shape.closePath();
-  const one = new THREE.Path();
-  one.moveTo(...P(220, 20)); one.lineTo(...P(233, 20)); one.lineTo(...P(233, 72)); one.lineTo(...P(220, 72));
-  one.lineTo(...P(220, 37.5)); one.lineTo(...P(208.5, 43.5)); one.lineTo(...P(208.5, 31)); one.closePath();
-  shape.holes.push(one);
-  return shape;
-}
-
 function rng(seed) { let s = seed >>> 0 || 1; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; }; }
 
 // The buildings' boxes, for the camera: hit(x, y, z, margin) -> the box or
@@ -100,7 +85,7 @@ export function makeObstacleIndex(boxes, cell = 100) {
 // pattern blends to its average, so it never turns to noise.
 function facadeMaterial(THREE, { reflective }) {
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: reflective ? 0.12 : 0.5, metalness: reflective ? 0.7 : 0.15 });
-  const uniforms = { uNight: { value: 0.6 }, uTime: { value: 0 } };
+  const uniforms = { uNight: { value: 0.6 }, uTime: { value: 0 }, uOffice: { value: 0.4 }, uHome: { value: 0.4 } };
   m.userData.windows = uniforms;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, uniforms);
@@ -114,7 +99,7 @@ function facadeMaterial(THREE, { reflective }) {
       wp4 = modelMatrix * wp4;
       vWPos = wp4.xyz; vSeed = aSeed; vStyle = aStyle;
       vWNorm = normalize(mat3(modelMatrix) * n0);`);
-    sh.fragmentShader = 'uniform float uNight;\nuniform float uTime;\nvarying float vSeed;\nvarying float vStyle;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nfloat wh(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }\nfloat box(vec2 f, vec2 lo, vec2 hi, vec2 aa){ vec2 a = smoothstep(lo - aa, lo + aa, f) * (1.0 - smoothstep(hi - aa, hi + aa, f)); return a.x * a.y; }\n'
+    sh.fragmentShader = 'uniform float uNight;\nuniform float uTime;\nuniform float uOffice;\nuniform float uHome;\nvarying float vSeed;\nvarying float vStyle;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nfloat wh(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }\nfloat box(vec2 f, vec2 lo, vec2 hi, vec2 aa){ vec2 a = smoothstep(lo - aa, lo + aa, f) * (1.0 - smoothstep(hi - aa, hi + aa, f)); return a.x * a.y; }\n'
       + sh.fragmentShader
         .replace('#include <color_fragment>', `#include <color_fragment>
       // Seeds and styles are whole numbers: rounded, so interpolation error can never reach the hash (no speckle).
@@ -144,8 +129,10 @@ function facadeMaterial(THREE, { reflective }) {
         float floorOn = step(0.15, wh(vec3(sd, id.y, 3.1)));
         float h = wh(vec3(sd, id.y, bay));
         float swap = step(0.992, wh(vec3(sd + bay, id.y, floor(uTime / 7.0 + h * 7.0))));
-        float lit = abs(step(h, 0.4) * floorOn - swap);
-        lit = mix(lit, 0.36, tiny);
+        // Offices (glass, metal) and homes (brick, stone) light up by the hour in Dublin.
+        float ratio = glass ? uOffice : uHome;
+        float lit = abs(step(h, ratio) * floorOn - swap);
+        lit = mix(lit, ratio * 0.9, tiny);
         // The interior: a back wall behind the glass that moves with the view.
         vec3 vd = normalize(cameraPosition - vWPos);
         float tv = alongZ ? vd.z * sign(vWNorm.x) : -vd.x * sign(vWNorm.z);
@@ -155,6 +142,8 @@ function facadeMaterial(THREE, { reflective }) {
         vec3 warm = vec3(1.0, 0.74, 0.44); vec3 cool = vec3(0.68, 0.84, 1.0);
         vec3 wc = mix(warm, cool, step(0.7, wh(vec3(bay, sd, 7.7))));
         totalEmissiveRadiance += wc * pane * lit * depth * uNight * (0.45 + 0.55 * wh(vec3(id.y, bay, sd)));
+        // Shop fronts at street level spill warm light.
+        if (vWPos.y > 0.4 && vWPos.y < 4.4) totalEmissiveRadiance += vec3(1.0, 0.8, 0.55) * (0.35 + 0.65 * step(0.4, wh(vec3(sd, floor(u / 6.0), 9.0)))) * uNight * 0.55 * (1.0 - tiny * 0.5);
         // Glass reflects between the lit panes; masonry is darker in its reveals.
         diffuseColor.rgb *= glass ? mix(1.0, 0.75, pane) : mix(1.0, 0.35, pane);
       }`);
@@ -199,7 +188,10 @@ function streakTexture(THREE) {
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
-export function buildWorld(THREE, scene, settings, { waterMaterial = null, Reflector = null } = {}) {
+import { buildEmblem, buildHologram, brandCanvas } from './kingdom-emblem.js';
+import { billboardLines } from './kingdom-data.js';
+
+export function buildWorld(THREE, scene, settings, { waterMaterial = null, Reflector = null, brand = null } = {}) {
   const phone = settings.tier === 'phone';
   const cinematic = settings.tier === 'cinematic';
   const reflective = !phone;
@@ -221,7 +213,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     led: new THREE.MeshBasicMaterial({ color: 0x9fe6ff }),
     white: new THREE.MeshBasicMaterial({ color: 0xf5f7fa }),
     warmLamp: new THREE.MeshBasicMaterial({ color: 0xffd9a0 }),
-    aircraft: new THREE.MeshBasicMaterial({ color: 0xff3b2f }),
+    aircraft: new THREE.MeshBasicMaterial({ color: 0xffc070 }),
     marking: new THREE.MeshBasicMaterial({ color: 0xcfcab8 }),
     barrier: new THREE.MeshBasicMaterial({ color: 0xfff1b8, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })
   };
@@ -242,6 +234,13 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   const plaza = named(new THREE.Mesh(new THREE.CircleGeometry(PLAZA_R, 64), mats.plaza), 'plaza');
   plaza.rotation.x = -Math.PI / 2; plaza.position.y = 0.05; plaza.receiveShadow = !!settings.shadows; root.add(plaza);
   const fountain = named(new THREE.Mesh(new THREE.RingGeometry(36, 38, 64), mats.led), 'plaza-light-ring'); fountain.rotation.x = -Math.PI / 2; fountain.position.y = 0.12; root.add(fountain);
+  // The shield inlaid in the plaza paving at the tower's foot, lit.
+  let inlay = null;
+  if (brand) {
+    const tex = new THREE.CanvasTexture(brandCanvas(brand, 256, { glow: true })); tex.colorSpace = THREE.SRGBColorSpace;
+    inlay = named(new THREE.Mesh(new THREE.PlaneGeometry(14, 14), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.85, depthWrite: false })), 'pg1-emblem-plaza');
+    inlay.rotation.x = -Math.PI / 2; inlay.position.set(0, 0.14, 41); root.add(inlay);
+  }
 
   // --- the river: a mirror on Cinematic, the water shader on Balanced, plain on Phone ---
   let riverMat = waterMaterial;
@@ -291,28 +290,6 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   const dashMesh = named(new THREE.InstancedMesh(new THREE.PlaneGeometry(0.25, 4), mats.marking, dashes.length), 'lane-markings');
   dashes.forEach(([x, z, ry], i) => set(dashMesh, i, x, 0.06, z, 1, 1, 1, ry, -Math.PI / 2));
   root.add(dashMesh);
-  const carCount = phone ? 260 : 900;
-  const carGeo = new THREE.BoxGeometry(0.9, 0.5, 3.4);
-  const heads = named(new THREE.InstancedMesh(carGeo, new THREE.MeshBasicMaterial({ color: 0xfff4d6 }), carCount), 'car-lights');
-  const tails = named(new THREE.InstancedMesh(carGeo, new THREE.MeshBasicMaterial({ color: 0xff4a3a }), carCount), 'car-lights');
-  const cars = [];
-  { const r = rng(42); while (cars.length < carCount) { const alongX = r() < 0.5; const lane = (Math.floor(r() * 25) - 12) * GRID + (alongX ? -40 : 0); if (alongX && inRiver(lane)) continue; cars.push({ alongX, lane, pos: (r() - 0.5) * 5000, speed: 12 + r() * 10, dir: r() < 0.5 ? 1 : -1 }); } }
-  root.add(heads); root.add(tails);
-  // Traffic lights at the central crossings (they cycle).
-  const crossings = [];
-  for (let i = -3; i <= 3; i++) for (let j = -3; j <= 3; j++) { const z = j * GRID - 40; if (!inRiver(z) && Math.hypot(i * GRID, z) > PLAZA_R + 10) crossings.push([i * GRID, z]); }
-  const tlPoles = named(new THREE.InstancedMesh(new THREE.CylinderGeometry(0.12, 0.15, 5, 6), mats.steelDark, crossings.length * 2), 'traffic-light-poles');
-  const tlLights = named(new THREE.InstancedMesh(new THREE.SphereGeometry(0.35, 8, 6), new THREE.MeshBasicMaterial({ color: 0xffffff }), crossings.length * 2), 'traffic-lights');
-  crossings.forEach(([x, z], i) => { for (let k = 0; k < 2; k++) { const ox = (k ? 1 : -1) * (ROAD_W / 2 + 1); set(tlPoles, i * 2 + k, x + ox, 2.5, z + ox); set(tlLights, i * 2 + k, x + ox, 5.2, z + ox); } });
-  root.add(tlPoles); root.add(tlLights);
-  // Pedestrians: tiny light dots on the pavements.
-  const pedN = phone ? 500 : 1800;
-  const pedPos = new Float32Array(pedN * 3); const peds = [];
-  { const r = rng(5); for (let i = 0; i < pedN; i++) { const alongX = r() < 0.5; const lane = (Math.floor(r() * 11) - 5) * GRID + (alongX ? -40 : 0) + (r() < 0.5 ? -1 : 1) * (ROAD_W / 2 + 1.5); if (alongX && inRiver(lane)) { i--; continue; } peds.push({ alongX, lane, pos: (r() - 0.5) * 1600, speed: (0.8 + r() * 0.8) * (r() < 0.5 ? 1 : -1) }); } }
-  const pedGeo = new THREE.BufferGeometry(); pedGeo.setAttribute('position', new THREE.BufferAttribute(pedPos, 3));
-  const pedPts = named(new THREE.Points(pedGeo, new THREE.PointsMaterial({ color: 0xffe2b8, size: 1.6, sizeAttenuation: true, transparent: true, opacity: 0.9, depthWrite: false })), 'pedestrians');
-  root.add(pedPts);
-
   // --- the skyline ---
   const r = rng(7);
   const lots = [];
@@ -360,7 +337,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   const roofSpots = [];
   for (const l of lots) {
     const ry = (l.seed % 1) * 0.3;
-    const add = (kind, x, y, z, w, h, d, extra = {}) => { parts[kind].push({ x, y, z, w, h, d, ry, seed: l.seed + parts[kind].length * 0.01, style: l.style, ...extra }); obstacles.push({ x, z, hw: Math.max(w, d) * 0.55, hd: Math.max(w, d) * 0.55, top: y + h }); };
+    const add = (kind, x, y, z, w, h, d, extra = {}) => { parts[kind].push({ x, y, z, w, h, d, ry, seed: l.seed + parts[kind].length * 0.01, style: l.style, ...extra }); obstacles.push({ x, z, hw: w * 0.5 + d * 0.08, hd: d * 0.5 + w * 0.08, top: y + h }); };
     // A podium at street level under the tall ones.
     let base = 0;
     if (l.ring === 'near' && l.h > 70) { add('box', l.x, 0, l.z, l.w * 1.35, 9, l.d * 1.35, { style: STYLES.stone }); base = 9; }
@@ -400,6 +377,11 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   padMesh.count = pads.length;
   pads.forEach((t, i) => set(padMesh, i, t.x - t.w * 0.15, t.y + 0.25, t.z, 1, 1, 1, 0, -Math.PI / 2));
   root.add(antennas); root.add(roofLights); root.add(padMesh);
+  if (brand && pads[0]) {
+    const tex = new THREE.CanvasTexture(brandCanvas(brand, 128)); tex.colorSpace = THREE.SRGBColorSpace;
+    const hp = named(new THREE.Mesh(new THREE.PlaneGeometry(5, 5), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false })), 'pg1-emblem-helipad');
+    hp.rotation.x = -Math.PI / 2; hp.position.set(pads[0].x - pads[0].w * 0.15, pads[0].y + 0.3, pads[0].z); root.add(hp);
+  }
 
   // --- parks and trees ---
   for (const [px, pz, pr] of parks) { const g = named(new THREE.Mesh(new THREE.CircleGeometry(pr, 32), mats.grass), 'park'); g.rotation.x = -Math.PI / 2; g.position.set(px, 0.08, pz); root.add(g); }
@@ -440,17 +422,39 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   const beaconMat = new THREE.MeshBasicMaterial({ color: GOLD });
   const tip = named(new THREE.Mesh(new THREE.SphereGeometry(2.2, 16, 12), beaconMat), 'tower-beacon'); tip.position.y = tipY; keep.add(tip);
   const tipHalo = named(new THREE.Mesh(new THREE.SphereGeometry(9, 16, 12), new THREE.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false })), 'tower-beacon-halo'); tipHalo.position.y = tipY; keep.add(tipHalo);
-  const shieldY = PODIUM_H + 172;
-  const faceR = radiusAt(shieldY) * Math.cos(Math.PI / 6) + 0.5;
-  const shieldS = named(new THREE.Mesh(new THREE.ExtrudeGeometry(shieldShape(THREE), { depth: 0.3, bevelEnabled: false }), mats.gold), 'tower-shield');
-  shieldS.scale.setScalar(4.2); shieldS.position.set(0, shieldY, faceR); keep.add(shieldS);
-  const shieldE = named(shieldS.clone(), 'tower-shield'); shieldE.rotation.y = Math.PI / 2; shieldE.position.set(faceR, shieldY, 0); keep.add(shieldE);
+  // PG1's emblem, from the brand asset (kingdom-emblem.js): a large 3D
+  // shield on the crown facing east (the hero shot) and south, a hologram
+  // above the beacon at night, and the shield projected softly on the glass.
+  const emblemY = PODIUM_H + SPIRE_H - 46;
+  const emblems3d = [];
+  let hologram = null; let projection = null;
+  const brandTex = brand ? new THREE.CanvasTexture(brandCanvas(brand, 256)) : null;
+  if (brandTex) brandTex.colorSpace = THREE.SRGBColorSpace;
+  if (brand) {
+    for (const [nm, ry, dx, dz] of [['east', Math.PI / 2, 1, 0], ['south', 0, 0, 1]]) {
+      const e = buildEmblem(THREE, brand, { height: 30, phone });
+      e.group.name = `pg1-emblem-crown-${nm}`;
+      const off = radiusAt(emblemY) * Math.cos(Math.PI / 6) + 1.2;
+      e.group.position.set(dx * off, emblemY, dz * off);
+      e.group.rotation.y = ry;
+      keep.add(e.group);
+      emblems3d.push(e);
+    }
+    hologram = buildHologram(THREE, brand, { height: 24 });
+    hologram.mesh.position.y = PODIUM_H + SPIRE_H + 40;
+    keep.add(hologram.mesh);
+    projection = named(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: brandTex, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false })), 'pg1-emblem-projection');
+    projection.scale.set(26, 26, 1);
+    const py = PODIUM_H + 70; const pr = radiusAt(py) * Math.cos(Math.PI / 6) + 0.4;
+    projection.position.set(pr, py, 0); projection.rotation.y = Math.PI / 2; projection.rotation.z = 0;
+    keep.add(projection);
+  }
   const deckR = radiusAt(DECK_Y) + 5;
   const deck = named(new THREE.Mesh(new THREE.CylinderGeometry(deckR, deckR - 1.5, 3, 6), new THREE.MeshStandardMaterial({ color: 0x2a4a68, roughness: 0.08, metalness: 0.6, emissive: 0x6fd8ff, emissiveIntensity: 0.6, transparent: true, opacity: 0.88 })), 'command-deck');
   deck.position.y = DECK_Y; deck.rotation.y = Math.PI / 6; keep.add(deck);
   const deckRing = named(new THREE.Mesh(new THREE.TorusGeometry(deckR + 0.2, 0.2, 6, 60), mats.led), 'command-deck-ring'); deckRing.rotation.x = Math.PI / 2; deckRing.position.y = DECK_Y + 1.6; keep.add(deckRing);
-  const emblemY = DECK_Y - 9; const er = radiusAt(emblemY) + 1.4;
-  const emblems = named(new THREE.Group(), 'emblem-ring'); emblems.position.y = emblemY; keep.add(emblems);
+  const ringY = DECK_Y - 9; const er = radiusAt(ringY) + 1.4;
+  const emblems = named(new THREE.Group(), 'emblem-ring'); emblems.position.y = ringY; keep.add(emblems);
   const sealColors = { bronze: 0xcd7f32, silver: 0xd8dde3, gold: GOLD, platinum: 0xe5f4ff };
   const sealMedal = named(new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.2, 0.4, 28), new THREE.MeshStandardMaterial({ color: 0xcd7f32, metalness: 0.9, roughness: 0.3, emissive: 0xcd7f32, emissiveIntensity: 0.35 })), 'emblem-seal-tier');
   sealMedal.rotation.x = Math.PI / 2; sealMedal.position.set(0, 0, er); sealMedal.visible = false; emblems.add(sealMedal);
@@ -565,10 +569,6 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   harbourGroup.add(crane);
   const xray = named(new THREE.Mesh(new THREE.PlaneGeometry(10, 18), new THREE.MeshBasicMaterial({ color: 0x9be7ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })), 'cargo-scanner-xray');
   xray.position.set(0, 10, 20); crane.add(xray);
-  // Moored boats (ambient: they belong to the harbour, not to an event).
-  const moored = named(new THREE.InstancedMesh(new THREE.BoxGeometry(3.6, 1.6, 13), std(0xe9edf1, { roughness: 0.4 }), 4), 'moored-boats');
-  for (let k = 0; k < 4; k++) set(moored, k, pierX + (k % 2 ? 11 : -11), -3.0, RIVER.z - RIVER.half + 10 + Math.floor(k / 2) * 18);
-  harbourGroup.add(moored);
   root.add(shadowed(harbourGroup));
   obstacles.push({ x: pierX + 4, z: RIVER.z - RIVER.half + 14, hw: 6, hd: 16, top: 22 });
   const harbourPoint = { x: pierX, y: -3, z: RIVER.z - RIVER.half + 48 };
@@ -592,6 +592,35 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     root.add(fire);
     beacons.push({ fire, bearing: Math.atan2(spot.x, -spot.z), lit: 0, goal: 0 });
   }
+
+  // --- two digital billboards: real PG1 numbers from the feed, and the emblem ---
+  const billboards = [];
+  for (const [nm, x, y, z, ry] of [['east', 230, 34, 40, Math.PI / 2], ['river', 120, 26, RIVER.z - RIVER.half - 26, Math.PI / 2]]) {
+    const cv = document.createElement('canvas'); cv.width = 512; cv.height = 256;
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+    const frame = named(new THREE.Group(), `billboard-${nm}`);
+    const screen = named(new THREE.Mesh(new THREE.PlaneGeometry(24, 12), new THREE.MeshBasicMaterial({ map: tex })), 'billboard-screen');
+    const back = named(new THREE.Mesh(new THREE.BoxGeometry(25, 13, 0.6), mats.steelDark), 'billboard-frame'); back.position.z = -0.4;
+    const pole = named(new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, y, 8), mats.steelDark), 'billboard-pole'); pole.position.y = -y / 2;
+    frame.add(screen); frame.add(back); frame.add(pole);
+    frame.position.set(x, y, z); frame.rotation.y = ry;
+    root.add(frame);
+    obstacles.push({ x, z, hw: 13, hd: 13, top: y + 7 });
+    billboards.push({ cv, tex, text: [] });
+  }
+  const drawBillboards = (stats) => {
+    const lines = billboardLines(stats || {});
+    for (const b of billboards) {
+      const g = b.cv.getContext('2d');
+      g.fillStyle = '#05080d'; g.fillRect(0, 0, 512, 256);
+      if (brand) g.drawImage(brandCanvas(brand, 200), 16, 28);
+      g.fillStyle = '#f3c623'; g.font = '700 30px Inter, system-ui, sans-serif'; g.fillText('PG1 · real defence events', 228, 52);
+      g.fillStyle = '#ffffff'; g.font = '600 26px Inter, system-ui, sans-serif';
+      lines.forEach((l, i) => g.fillText(l, 228, 104 + i * 48));
+      b.tex.needsUpdate = true; b.text = lines;
+    }
+  };
+  drawBillboards({});
 
   // --- the Rate Shield: invisible until a gadget fires ---
   const domeUniforms = { uThick: { value: 0 }, uTime: { value: 0 }, uColor: { value: new THREE.Color(0x9fe6ff) }, uHit: { value: new THREE.Vector3(1, 0, 0) }, uHitT: { value: 99 } };
@@ -664,14 +693,27 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
 
   const tmp = new THREE.Vector3();
   const cool = new THREE.Color(0x9fb8ff);
-  const tlColors = [new THREE.Color(0x3ddc84), new THREE.Color(0xffb300), new THREE.Color(0xff3b2f)];
-  let tlPhase = -1;
   const env = { night: 0 };
+  let emblemPulse = 0;
   return {
     root, gates, portcullis, vaultDoors, beacons, lanterns, forge: { group: forge, seal: sealMat }, harbour: { bearing: Math.atan2(harbourPoint.x, -harbourPoint.z), point: harbourPoint },
     tollBarrier: barrier, toll, dome: domeUniforms, domeMesh: dome, preflight, crane, xray, deckY: DECK_Y, tip: tip.position, roofSpots,
     fogBearing, keep, sun, hemi, sky, windows: facade.userData.windows, env, buildingCount: lots.length,
-    obstacles: makeObstacleIndex(obstacles), mirror,
+    obstacles: makeObstacleIndex(obstacles), mirror, brandTex, emblemY,
+    emblemMeshes: emblems3d.map((e) => e.group),
+    setBillboards(stats) { drawBillboards(stats); },
+    // Windows follow the hour in Dublin (kingdom-data.js windowRatios).
+    setWindowRatios({ office, home }) { facade.userData.windows.uOffice.value = office; facade.userData.windows.uHome.value = home; },
+    // Wet roads after rain: smoother, so they mirror the lights.
+    setWet(wet) { mats.asphalt.roughness = wet ? 0.28 : 0.95; mats.asphalt.metalness = wet ? 0.35 : 0; mats.asphalt.color.setHex(wet ? 0x1a1c20 : 0x24272c); },
+    get billboardText() { return billboards[0] ? billboards[0].text : []; },
+    // A gadget fired: the emblem pulses once in gold; on a high-severity
+    // event it brightens and the shield's ripple starts from it.
+    pulseEmblem(high = false) {
+      emblemPulse = high ? 1.6 : 1;
+      if (high) { const p = new THREE.Vector3(0, emblemY, radiusAt(emblemY)).normalize(); domeUniforms.uHit.value.copy(p); domeUniforms.uHitT.value = 0; }
+    },
+    get emblemPulse() { return emblemPulse; },
     state: null,
     setState(st) {
       this.state = st;
@@ -725,26 +767,8 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       // Streaks shimmer with the ripples.
       for (let i = 0; i < streakSeeds.length; i++) { const s = streakSeeds[i]; const w = 1 + 0.35 * Math.sin(t * 2.2 + s.ph); set(streaks, i, s.x + Math.sin(t * 0.8 + s.ph) * 0.6, -3.0, RIVER.z + s.side * (RIVER.half - s.len / 2 - 1), w * 1.2, s.len, 1, 0, -Math.PI / 2); }
       streaks.instanceMatrix.needsUpdate = true;
-      // Traffic lights cycle.
-      const ph = Math.floor(t / 4) % 3;
-      if (ph !== tlPhase) { tlPhase = ph; for (let i = 0; i < crossings.length * 2; i++) tlLights.setColorAt(i, tlColors[(ph + i) % 3]); tlLights.instanceColor.needsUpdate = true; }
-      // Cars.
-      for (let i = 0; i < cars.length; i++) {
-        const c = cars[i];
-        c.pos += c.speed * c.dir * dt; if (c.pos > 2500) c.pos -= 5000; if (c.pos < -2500) c.pos += 5000;
-        const off = c.dir * 2.6;
-        // On the main bridge, cars rise over the river; elsewhere they wait out of sight.
-        const y = !c.alongX && inRiver(c.pos) ? (c.lane === 0 ? 10.9 : -60) : 0.6;
-        dummy.rotation.set(0, c.alongX ? Math.PI / 2 : 0, 0); dummy.scale.set(1, 1, 1);
-        if (c.alongX) dummy.position.set(c.pos, y, c.lane + off); else dummy.position.set(c.lane + off, y, c.pos);
-        dummy.updateMatrix(); heads.setMatrixAt(i, dummy.matrix);
-        if (c.alongX) dummy.position.x -= c.dir * 4; else dummy.position.z -= c.dir * 4;
-        dummy.updateMatrix(); tails.setMatrixAt(i, dummy.matrix);
-      }
-      heads.instanceMatrix.needsUpdate = true; tails.instanceMatrix.needsUpdate = true;
-      // Pedestrians.
-      for (let i = 0; i < peds.length; i++) { const p = peds[i]; p.pos += p.speed * dt; if (p.pos > 800) p.pos -= 1600; if (p.pos < -800) p.pos += 1600; if (p.alongX) { pedPos[i * 3] = p.pos; pedPos[i * 3 + 2] = p.lane; } else { pedPos[i * 3] = p.lane; pedPos[i * 3 + 2] = inRiver(p.pos) ? RIVER.z + RIVER.half + 2 : p.pos; } pedPos[i * 3 + 1] = 1; }
-      pedGeo.attributes.position.needsUpdate = true;
+      // Rooftop lights blink, warm (red is the enemy's).
+      mats.aircraft.color.setHex((t % 1.6) < 0.2 ? 0xffd9a0 : 0x6a5434);
       domeUniforms.uTime.value = t;
       domeUniforms.uHitT.value += dt;
       dome.visible = domeUniforms.uHitT.value < 2.8 || domeUniforms.uThick.value > 0.03;
@@ -755,6 +779,13 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       for (const d of vaultDoors) { const ax = d.userData.axis || 'y'; d.position[ax] += (d.userData.goal - d.position[ax]) * Math.min(1, dt * (d.userData.goal === d.userData.down ? 8 : 1.2)); }
       for (const b of beacons) { b.lit += (b.goal - b.lit) * Math.min(1, dt * 1.5); b.fire.material.emissiveIntensity = b.lit * (2.6 + 0.25 * Math.sin(t * 5 + b.bearing * 3)); }
       sealMat.emissiveIntensity += (0.25 - sealMat.emissiveIntensity) * Math.min(1, dt * 1.2);
+      // The emblem: its gold edge glows at dusk and night; a pulse when a gadget fires.
+      emblemPulse = Math.max(0, emblemPulse - dt * 0.9);
+      const dark = Math.max(dusk, moon);
+      for (const e of emblems3d) { e.gold.emissiveIntensity = 0.12 + 0.35 * dark + 1.4 * emblemPulse; e.edge.opacity = Math.min(1, 0.35 + 0.65 * dark + emblemPulse); }
+      if (hologram) { hologram.uniforms.uTime.value = t; hologram.uniforms.uAlpha.value = Math.max(0, moon - 0.35) * 1.4 + emblemPulse * 0.3; hologram.mesh.rotation.y = t * 0.15; hologram.mesh.visible = hologram.uniforms.uAlpha.value > 0.01; }
+      if (projection) projection.material.opacity = 0.06 + 0.16 * dark;
+      if (inlay) inlay.material.opacity = 0.55 + 0.4 * dark;
     }
   };
 }

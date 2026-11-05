@@ -66,11 +66,11 @@ export const GEO_FOOTNOTE = 'Countries come from IP geolocation at the network e
 const DATE_FMT = typeof Intl !== 'undefined' ? new Intl.DateTimeFormat('en-IE', { timeZone: 'Europe/Dublin', day: 'numeric', month: 'long', year: 'numeric' }) : null;
 export function endCardLines(day, { n = 0, now = Date.now() } = {}) {
   const d = day || {};
-  const t = Number(d.turned_away) || 0; const p = Number(d.settled) || 0;
+  const t = Number(d.turned_away) || 0;
   const date = DATE_FMT ? DATE_FMT.format(new Date(now)) : new Date(now).toISOString().slice(0, 10);
   return [
     `Real PG1 events, ${date} — not a simulation · Hostile traffic from ${n} ${n === 1 ? 'country' : 'countries'} in 24 h`,
-    `${t} ${t === 1 ? 'threat' : 'threats'} turned away · ${p} ${p === 1 ? 'payment' : 'payments'} settled`,
+    `${t} ${t === 1 ? 'threat' : 'threats'} turned away today`,
     LOG_FOOTNOTE,
     GEO_FOOTNOTE
   ];

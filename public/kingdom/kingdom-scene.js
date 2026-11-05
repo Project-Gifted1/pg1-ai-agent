@@ -34,14 +34,16 @@ import { createControls } from '../sandbox/controls.js';
 import { createWaterMaterial } from '../sandbox/water.js';
 import { buildWorld, RIVER } from './kingdom-world.js';
 import { createActors } from './kingdom-actors.js';
-import { dublinSun, daylight, pickDirectorEvent, normalizeState, GADGET_META } from './kingdom-data.js';
+import { createLife } from './kingdom-life.js';
+import { loadBrand, BRAND_SVG_URL } from './kingdom-emblem.js';
+import { dublinSun, daylight, pickDirectorEvent, normalizeState, windowRatios, dublinHour, dayWeather, GADGET_META } from './kingdom-data.js';
 
 // The hero look: golden hour, the sun low in the west behind the tower.
 export const DUSK_SUN = Object.freeze({ elevation: 0.035, azimuth: (262 * Math.PI) / 180 });
 export const LIGHT_MODES = Object.freeze(['dusk', 'live']);
 // The tallest building round the centre is lower than this (kingdom-world.js).
 // The camera keeps at least this far from any building's box (metres).
-export const CAMERA_CLEARANCE = 12;
+export const CAMERA_CLEARANCE = 6;
 
 // A camera position clear of every building: if the camera, or the line
 // from it to what it looks at, passes through a building's box, the
@@ -176,7 +178,7 @@ function waterNormals(THREE) {
   return t;
 }
 
-async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, tier: forced }) {
+async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: forced }) {
   const THREE = await import(threeUrl);
   const canvas = document.createElement('canvas');
   canvas.className = 'kingdom-canvas';
@@ -209,11 +211,15 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   const normals = settings.water ? waterNormals(THREE) : null;
   const waterMaterial = settings.water ? createWaterMaterial(THREE, normals, [], { offset: false }) : null;
   patchHeightFog(THREE);
-  const world = buildWorld(THREE, scene, settings, { waterMaterial, Reflector: ReflectorMod ? ReflectorMod.Reflector : null });
+  // PG1's emblem comes from the brand asset itself; without it, no emblem (never a redraw).
+  const brand = await loadBrand().catch(() => null);
+  const world = buildWorld(THREE, scene, settings, { waterMaterial, Reflector: ReflectorMod ? ReflectorMod.Reflector : null, brand });
   // Blue-hour height fog on every material in the city (thicker low down).
   const fogDefine = (o) => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []; for (const m of ms) if (!m.isShaderMaterial && !m.isSpriteMaterial && !m.isPointsMaterial && m.fog !== false && !(m.defines && m.defines.PG1_HEIGHT_FOG !== undefined)) { m.defines = { ...(m.defines || {}), PG1_HEIGHT_FOG: '' }; m.needsUpdate = true; } };
   scene.traverse(fogDefine);
   const actors = createActors(THREE, scene, world, settings);
+  actors.onFire = (g, e) => { if (onGadget) onGadget(g, e); };
+  const life = createLife(THREE, scene, world, settings);
 
   // Image-based light from the sky (Balanced and up), refreshed every few minutes.
   let pmrem = null; let envRT = null; let envAt = -Infinity;
@@ -280,7 +286,10 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     director = !!on; lastCut = 0;
     container.dataset.director = director ? 'on' : 'off';
   }
-  let lightMode = 'dusk';
+  // Real Dublin time of day by default; dusk is the hero look (and Record mode's).
+  let lightMode = 'live';
+  container.dataset.light = lightMode;
+  let weather = dayWeather(); let ambientAt = -Infinity;
 
   // Size and quality.
   const resize = () => {
@@ -340,9 +349,21 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     scene.fog.color.setRGB(0.14 + 0.32 * light * (1 - dusk) + 0.08 * dusk, 0.19 + 0.36 * light * (1 - dusk) + 0.05 * dusk, 0.36 + 0.36 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.4);
     scene.fog.density = 0.00055 + storm * 0.0008;
     renderer.toneMappingExposure = 0.62 + 0.3 * light * (1 - dusk);
-    if (rain) { rain.material.opacity += ((storm > 0.6 ? 0.55 : 0) - rain.material.opacity) * Math.min(1, dt); if (rain.material.opacity > 0.01) { const a = rain.geometry.attributes.position; for (let i = 1; i < a.array.length; i += 3) { a.array[i] -= dt * 60; if (a.array[i] < 0) a.array[i] += 120; } a.needsUpdate = true; rain.position.set(controls.target.x, 0, controls.target.z); } }
+    if (rain) { rain.material.opacity += ((storm > 0.6 || weather === 'rain' ? 0.45 : 0) - rain.material.opacity) * Math.min(1, dt); if (rain.material.opacity > 0.01) { const a = rain.geometry.attributes.position; for (let i = 1; i < a.array.length; i += 3) { a.array[i] -= dt * 60; if (a.array[i] < 0) a.array[i] += 120; } a.needsUpdate = true; rain.position.set(controls.target.x, 0, controls.target.z); } }
     if (now - envAt > 180000) { envAt = now; refreshEnv(); if (post && post.setNight) post.setNight(Math.max(dusk, 1 - light)); }
     actors.update(dt, t, camera, { storm });
+    life.update(dt, t, { dark: Math.max(dusk, 1 - light), dusk, light });
+    // Windows by the hour in Dublin, and the day's weather (scenery), every few seconds.
+    if (now - ambientAt > 5000) {
+      ambientAt = now;
+      const hour = lightMode === 'dusk' ? 19.5 : dublinHour(Date.now());
+      world.setWindowRatios(windowRatios(hour));
+      weather = dayWeather(Date.now());
+      world.setWet(weather === 'rain');
+      container.dataset.windowHour = String(Math.floor(hour));
+      container.dataset.weather = weather;
+    }
+    if (weather === 'mist') scene.fog.density += 0.00022;
     // Director: cut to the most important live event every few seconds.
     if (director && now - lastCut > DIRECTOR_CUT_MS) {
       lastCut = now;
@@ -434,14 +455,29 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       const n = actors.setSentinels(st.checks || 0);
       Object.assign(container.dataset, { beacon: st.beacon, seal: st.seal || 'none', passkeys: String(st.passkeys), signing: String(st.signing), beaconsLit: String(lit), sentinels: String(n) });
     },
-    setDay(day) { if (day) container.dataset.lanterns = String(actors.setLanterns(day.settled)); },
+    // Threats only: no payment figure is shown, so the bridge lanterns are just lamps.
+    setDay() {},
     setLight(mode) { lightMode = LIGHT_MODES.includes(mode) ? mode : 'dusk'; container.dataset.light = lightMode; envAt = -Infinity; },
     // For the tests: what the scene holds (names only).
     inspect() {
       const names = new Set(); let unnamed = 0; let meshes = 0;
       scene.traverse((o) => { if (o.name) names.add(o.name); if (o.isMesh || o.isSprite || o.isPoints) { meshes++; if (!o.name) unnamed++; } });
-      return { names: [...names].sort(), unnamed, meshes, buildings: world.buildingCount };
+      const brandFills = world.emblemMeshes.flatMap((g) => g.children.filter((m) => m.material && m.material.userData.brandFill).map((m) => m.material.userData.brandFill));
+      return { names: [...names].sort(), unnamed, meshes, buildings: world.buildingCount, emblemSource: world.emblemMeshes.length ? BRAND_SVG_URL : null, brandFills: [...new Set(brandFills)], lifeColours: life.colours(), lifeCounts: life.counts(), billboard: world.billboardText };
     },
+    // For the tests: where the crown emblem is on screen (CSS pixels), if in view.
+    emblemScreen() {
+      const g = world.emblemMeshes[0];
+      if (!g) return null;
+      const box = new THREE.Box3().setFromObject(g);
+      const r = canvas.getBoundingClientRect();
+      const pts = [];
+      for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) { const v = new THREE.Vector3(x, y, z).project(camera); pts.push(v); }
+      const ys = pts.map((v) => (1 - v.y) / 2 * r.height); const xs = pts.map((v) => (v.x + 1) / 2 * r.width);
+      const inView = pts.every((v) => v.z < 1) && Math.max(...xs) > 0 && Math.min(...xs) < r.width && Math.max(...ys) > 0 && Math.min(...ys) < r.height;
+      return { inView, height: Math.max(...ys) - Math.min(...ys), x: (Math.max(...xs) + Math.min(...xs)) / 2, y: (Math.max(...ys) + Math.min(...ys)) / 2 };
+    },
+    setBillboards(stats) { world.setBillboards(stats); container.dataset.billboard = world.billboardText.join(' | '); },
     focus: (id) => focus(id, { user: true }),
     // The director cuts straight to a live arrival (it stays on).
     cutTo(id) { if (!director) return; lastCut = performance.now(); lastLive = lastCut; focus(id); },
@@ -455,7 +491,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       running = false; if (raf) cancelAnimationFrame(raf);
       document.removeEventListener('visibilitychange', onVis);
       if (ro) ro.disconnect();
-      controls.dispose(); actors.dispose();
+      controls.dispose(); actors.dispose(); life.dispose();
       if (post) post.dispose();
       if (envRT) envRT.dispose(); if (pmrem) pmrem.dispose();
       scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose()); });
@@ -464,10 +500,10 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   };
 }
 
-export async function createKingdomScene(container, { reducedMotion = false, coarse = false, threeUrl = '/vendor/three/three.module.min.js', onFocus = null, onTier = null, onCaption = null, tier = null } = {}) {
+export async function createKingdomScene(container, { reducedMotion = false, coarse = false, threeUrl = '/vendor/three/three.module.min.js', onFocus = null, onTier = null, onCaption = null, onGadget = null, tier = null } = {}) {
   if (!reducedMotion) {
     try {
-      const s = await create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, tier });
+      const s = await create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier });
       if (s) return s;
     } catch (e) { /* no WebGL: the 2D map */ }
   }

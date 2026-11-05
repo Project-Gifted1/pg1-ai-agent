@@ -48,8 +48,8 @@ The Sandbox viewer's engine: the same three.js (`/vendor/three/`), its quality t
 - **Guardians** (ambient, never counted or captioned): sentinel drones, one per tool in the live MCP tool list; the commander drone at the deck (lifts over a high-severity event the director focuses on, carries a landed report to a beacon); repair drones; cyan harbour pilots; embankment rovers. Every PG1 unit stays inside the city (`CITY_R`); they block, scan, catch, turn back and repair, never chase or strike back. PG1 units use gold, white and cyan; red is the other side's; allies glow green.
 - **The other side**: scanner drones probing the skyline (probes, caller faults, unpaid calls), swarms (rate-limit floods), dark boats on the river (agent-message verdicts, look-alike domains, malicious packages, sanctioned payers), red rogue-signal trails (failed sign-ins).
 - **Allies**: lit boats to the pier (settled x402), cargo ships (paid A2A jobs), partner drones (licensed integrations, never named).
-- **HUD**: "Defences active: n checks live · x threats turned away today · y payments settled", all from the data. Captions pair the other side's line with PG1's answer: "<gadget> · <check>: <verdict> (<reason code>)".
-- **Lanterns** on the bridge = payments settled today; **rooftop beacons** lit = approvals waiting. The **shield** is invisible until a gadget fires.
+- **HUD**: "Defences active: n checks live · x threats turned away today", all from the data (threats only; no payment figures are shown anywhere). Captions pair the other side's line with PG1's answer: "<gadget> · <check>: <verdict> (<reason code>)".
+- **Rooftop beacons** lit = approvals waiting. The **shield** is invisible until a gadget fires.
 - **Camera**: a slow aerial flyover from the east, the river leading to the tower; the director (on by default) moves in close when an event plays and pulls back after; the camera never goes below the roofline. **Light**: Dusk (the hero look, default and always in Record mode) or the live sun over Dublin. Clips end on the tower with the day's counts and the note that countries come from IP geolocation and are approximate.
 
 ## Test fixtures (never in the app)
@@ -73,3 +73,15 @@ The Sandbox viewer's engine: the same three.js (`/vendor/three/`), its quality t
 - **Light**: a dusk sky from a warm horizon to deep blue, clouds lit on the side towards the sun, ACES tone mapping, blue-hour height fog (thicker low down), bloom, soft shadows, ambient occlusion on Balanced and Cinematic. The tower has a brighter beacon, a lit crown and a gold accent line up the spire.
 - **Camera**: the hero shot runs low along the river towards the tower. The director cuts to live events and frames them from outside; every frame the camera is lifted clear of any building box on its line of sight (smoothly, but never left inside one). The tests count frames with the camera inside a building: zero.
 - **Units** carry a soft glow and a light trail, sized to read at 412 px in the default view; formations follow the real counts, capped per tier.
+
+## PG1's emblem
+
+Built from the brand asset itself: `public/kingdom/kingdom-emblem.js` reads `/brand/pg1-shield.svg` (the shield and the "1", with their fills `#f3c623` and `#0a0a0b`) at runtime, so the emblem is never redrawn or approximated; without the file there is no emblem. On the tower's crown: the extruded, bevelled shield in brushed gold (PBR, reflects the sky), the "1" in black enamel set into it, and a thin glowing gold rim. Above the beacon at night, a slowly turning hologram with scan lines; on the glass, a soft projection. Also, sparingly: inlaid and lit in the plaza paving, on a rooftop helipad, on PG1's drones' hulls and the pilots' boats, and on the two billboards. Never on an attacker. When a gadget fires on a real event the emblem pulses once in gold; on a high-severity event it brightens and the shield's ripple starts from it.
+
+## The city's own life (ambient)
+
+Decoration only: never captioned, counted or shown as an event, and never in the enemy red (tail and stop lights are deep amber; rooftop lights blink warm). `public/kingdom/kingdom-life.js`: cars, taxis and buses at real scale that stop at the traffic lights; an elevated tram with lit carriages over the avenue; water taxis and ferries with wakes and moored boats rocking; aircraft blinking high on approach and birds at dusk; pedestrians as small figures, busiest round the plaza; steam from rooftop vents, a turning radar, a construction crane with a blinking light; lamp posts with warm light pools, pavements, kerbs, zebra crossings, manhole covers; fountains and benches in the plaza. Windows follow the hour in Dublin (offices lit in the evening and dimming late, homes later); ground floors spill warm shop-front light. Some days have light rain (wet, reflective roads) or mist, chosen by the Dublin date: scenery, not a weather report, and never tied to threats.
+
+**Billboards** show only numbers from the feed: hostile countries in 24 h, threats turned away today, checks live ("not read" when missing). **Light**: real Dublin time by default; Dusk is the hero look and what Record mode uses. **Sound** is off by default: a soft city ambience, and a gentle chime when a real gadget fires.
+
+The Phone tier keeps the emblem at full detail and thins everything else (about a third of the cars, people and boats).

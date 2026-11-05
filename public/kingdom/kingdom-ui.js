@@ -59,7 +59,7 @@ export function hudText(state, day, { loaded = true } = {}) {
   if (!loaded) return 'Defences: loading…';
   const st = state || {};
   const checks = Number.isFinite(st.checks) ? plural(st.checks, 'check') + ' live' : 'checks live: not read';
-  return `Defences active: ${checks} · ${plural(Number(day && day.turned_away) || 0, 'threat')} turned away today · ${plural(Number(day && day.settled) || 0, 'payment')} settled`;
+  return `Defences active: ${checks} · ${plural(Number(day && day.turned_away) || 0, 'threat')} turned away today`;
 }
 
 // The flag strip: the top origins, then "+M".
@@ -78,7 +78,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
   const store = createEventStore();
   let scene = null; let open = false; let pollTimer = null; let miniTimer = null; let lastAt = 0; let gadgets = []; let opening = null;
   let recording = null; let replaying = false; let replayTimers = []; let clipUrl = null;
-  let pg1State = null; let loaded = false; let lastRec = null;
+  let pg1State = null; let loaded = false; let lastRec = null; let sound = null;
   let connected = false; let fails = 0; let lastOkAt = 0;
   const liveIds = new Set(); const replayIds = new Set();
   let ticker = []; let arcs = []; let captionEvent = null; let tickTimer = null; let pip = null; let introDone = false;
@@ -104,6 +104,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     const hud = $('kingdom-hud');
     if (hud) hud.textContent = hudText(pg1State, store.day, { loaded });
     renderCountries();
+    if (scene && scene.setBillboards) scene.setBillboards(loaded ? { countries: store.origins.length, threats: Number(store.day.turned_away) || 0, checks: pg1State && Number.isFinite(pg1State.checks) ? pg1State.checks : null } : {});
     const level = store.threat.level;
     const mode = $('kingdom-mode');
     if (mode) { mode.dataset.mode = level; mode.textContent = level === 'storm' ? 'Under attack' : level === 'watch' ? 'On watch' : 'Calm'; }
@@ -287,7 +288,8 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
       if (!scene) {
         try {
           const mod = await import('./kingdom-scene.js');
-          scene = await mod.createKingdomScene(holder, { reducedMotion: reduced, coarse, onCaption: setCaption, onTier: markTier });
+          scene = await mod.createKingdomScene(holder, { reducedMotion: reduced, coarse, onCaption: setCaption, onTier: markTier, onGadget: () => { if (sound) sound.alert(); } });
+          const ls = $('kingdom-light'); if (ls) ls.value = 'live';
           markTier(scene.tier());
         } catch (e) { scene = null; }
       }
@@ -356,6 +358,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     endReplay();
     open = false;
     if (tickTimer) { clearTimeout(tickTimer); tickTimer = null; }
+    if (sound && sound.on) { sound.toggle(); const b = $('kingdom-sound'); if (b) b.setAttribute('aria-pressed', 'false'); }
     pip = null; introDone = false;
     const screen = $('kingdom-screen');
     if (screen) screen.classList.remove('is-open');
@@ -403,6 +406,13 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     },
     setQuality(t) { if (scene) scene.setTier(t); },
     setLight(m) { if (scene && scene.setLight) scene.setLight(m); },
+    // Sound: off by default; city ambience and a chime when a real gadget fires.
+    async toggleSound() {
+      if (!sound) sound = (await import('./kingdom-sound.js')).createSound();
+      const on = sound.toggle();
+      const b = $('kingdom-sound'); if (b) b.setAttribute('aria-pressed', on ? 'true' : 'false');
+      return on;
+    },
     toggleRecording,
     toggleRecordPanel() { const p = $('kingdom-record'); if (p) { p.hidden = !p.hidden; const b = $('kingdom-record-btn'); if (b) b.setAttribute('aria-expanded', p.hidden ? 'false' : 'true'); } },
     isRecording: () => !!recording,
