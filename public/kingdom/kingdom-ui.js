@@ -15,7 +15,7 @@
 // last few minutes are staged as figures (the rest of the day is in the
 // text feed and the counts); afterwards each poll stages what is new.
 
-import { createEventStore, eventLine, dublinTime, verdictText, reasonLabel, replaySchedule, GADGET_META } from './kingdom-data.js';
+import { createEventStore, eventLine, enemyLine, defenceLine, dublinTime, verdictText, reasonLabel, replaySchedule, normalizeState, GADGET_META } from './kingdom-data.js';
 
 export const KINGDOM_POLL_MS = 5000;
 export const MINI_POLL_MS = 30000;
@@ -31,12 +31,28 @@ export function feedRowHtml(e) {
   return `<li class="kd-row" data-role="${esc(e.role)}" data-sev="${esc(e.severity)}" data-id="${esc(e.id)}">`
     + `<time datetime="${new Date(e.time).toISOString()}">${esc(dublinTime(e.time))}</time>`
     + `<span class="kd-cc" aria-label="${e.country ? `country ${esc(e.country)}` : esc(where)}">${esc(where)}</span>`
-    + `<span class="kd-what"><strong>${esc((GADGET_META[e.gadget] || {}).name || e.gadget)}</strong> · ${esc(e.check)} · ${esc(verdictText(e))}${reason}${e.caller ? ` · <code>${esc(e.caller)}</code>` : ''}</span>`
+    + `<span class="kd-what"><strong>${esc((GADGET_META[e.gadget] || {}).name || e.gadget)}</strong> · ${esc(e.check)} · ${esc(verdictText(e))}${reason} · <code aria-label="${e.caller ? `caller ${esc(e.caller)}` : 'no caller identity'}">${e.caller ? esc(e.caller) : '—'}</code></span>`
     + `<span class="kd-n">${e.count > 1 ? `×${e.count}` : ''}</span></li>`;
 }
 
-export function legendHtml(gadgets, today) {
-  return gadgets.map((g) => `<li data-gadget="${esc(g.id)}"${g.reserved ? ' data-reserved="true"' : ''}><span class="kd-dot" style="background:#${((GADGET_META[g.id] || {}).color || 0x888888).toString(16).padStart(6, '0')}"></span><span class="kd-gname">${esc(g.name)}</span><span class="kd-gcheck">${esc(g.check)}${g.reserved ? ' · idle until its data exists' : ''}</span><span class="kd-gcount">${Number(today[g.id] || 0)}</span></li>`).join('');
+// The guardians: ambient, always there, never counted as defences.
+export const GUARDIANS = Object.freeze([
+  { id: 'sentinels', name: 'Sentinel drones', what: 'one per check live in the MCP tool list' },
+  { id: 'commander', name: 'Commander drone', what: 'docked at the Command Centre deck' },
+  { id: 'pilots', name: 'Harbour pilots', what: 'guide allies to the pier' },
+  { id: 'rovers', name: 'Ground rovers', what: 'light the embankment in storms and floods' }
+]);
+
+// The HUD line, all from the data.
+export function hudText(state, day) {
+  const st = state || {};
+  const checks = Number.isFinite(st.checks) ? `${st.checks} checks live` : 'checks live: unknown';
+  return `Defences active: ${checks} · ${Number(day && day.turned_away) || 0} threats turned away today · ${Number(day && day.settled) || 0} payments settled`;
+}
+
+export function legendHtml(gadgets, today, state = null) {
+  const guard = GUARDIANS.map((g) => `<li data-guardian="${g.id}"><span class="kd-dot kd-dot-guard"></span><span class="kd-gname">${esc(g.name)}</span><span class="kd-gcheck">${esc(g.what)} · ambient</span><span class="kd-gcount">${g.id === 'sentinels' && state && Number.isFinite(state.checks) ? state.checks : ''}</span></li>`).join('');
+  return guard + gadgets.map((g) => `<li data-gadget="${esc(g.id)}"${g.reserved ? ' data-reserved="true"' : ''}><span class="kd-dot" style="background:#${((GADGET_META[g.id] || {}).color || 0x888888).toString(16).padStart(6, '0')}"></span><span class="kd-gname">${esc(g.name)}</span><span class="kd-gcheck">${esc(g.check)}${g.reserved ? ' · idle until its data exists' : ''}</span><span class="kd-gcount">${Number(today[g.id] || 0)}</span></li>`).join('');
 }
 
 export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc = document } = {}) {
@@ -44,6 +60,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
   const store = createEventStore();
   let scene = null; let open = false; let pollTimer = null; let miniTimer = null; let lastAt = 0; let gadgets = []; let opening = null;
   let recording = null; let replaying = false; let replayTimers = []; let clipUrl = null;
+  let pg1State = null;
 
   async function fetchFeed(since) {
     const c = creds();
@@ -62,7 +79,9 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     const feed = $('kingdom-feed');
     if (feed) feed.innerHTML = list.length ? list.slice(0, FEED_ROWS).map(feedRowHtml).join('') : '<li class="kd-empty">No defence events in the last 24 hours. The kingdom is calm.</li>';
     const legend = $('kingdom-legend');
-    if (legend && gadgets.length) legend.innerHTML = legendHtml(gadgets, store.today);
+    if (legend && gadgets.length) legend.innerHTML = legendHtml(gadgets, store.today, pg1State);
+    const hud = $('kingdom-hud');
+    if (hud) hud.textContent = hudText(pg1State, store.day);
     const level = store.threat.level;
     const mode = $('kingdom-mode');
     if (mode) { mode.dataset.mode = level; mode.textContent = level === 'storm' ? 'Under attack' : level === 'watch' ? 'On watch' : 'Calm'; }
@@ -71,22 +90,30 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     if (sum) sum.textContent = `${level === 'storm' ? 'Under attack' : level === 'watch' ? 'On watch' : 'Calm'}: ${list.length} defence events in the last 24 hours, ${attackers} turned away or flagged.`;
   }
 
+  // The caption: the other side's line paired with PG1's answer.
   function setCaption(e) {
     const cap = $('kingdom-caption');
     if (!cap) return;
-    cap.textContent = e ? eventLine(e) : '';
-    cap.hidden = !e;
+    if (!e) { cap.textContent = ''; cap.hidden = true; return; }
+    const enemy = enemyLine(e); const defence = defenceLine(e);
+    cap.innerHTML = `${enemy ? `<span class="kd-cap-enemy">${esc(enemy)}</span>` : ''}<span class="kd-cap-defence">${esc(defence || eventLine(e))}</span>`;
+    cap.hidden = false;
   }
 
   function apply(feed, { initial = false } = {}) {
     if (Array.isArray(feed.gadgets)) gadgets = feed.gadgets.filter((g) => g && typeof g.id === 'string' && Object.hasOwn(GADGET_META, g.id)).map((g) => ({ id: g.id, name: String(g.name || g.id).slice(0, 40), check: String(g.check || '').slice(0, 60), reserved: !!g.reserved }));
     const { fresh, level } = store.merge(feed);
+    if (feed.state) pg1State = normalizeState(feed.state);
     const gen = Date.parse(feed.generated_at);
     if (Number.isFinite(gen)) lastAt = gen;
     if (scene) {
       scene.setThreat(level);
       scene.setToday(store.today);
-      const stage = initial ? fresh.filter((f) => gen - f.event.last <= STAGE_RECENT_MS) : fresh;
+      if (feed.state) scene.setState(feed.state);
+      scene.setDay(store.day);
+      // On open: the events of the last few minutes from the store (the
+      // mini-view may have merged them already), oldest first.
+      const stage = initial ? store.list().filter((e) => gen - e.last <= STAGE_RECENT_MS).reverse().map((e) => ({ event: e, delta: e.count })) : fresh;
       // A replay being recorded plays the day's events alone; new ones wait in the feed.
       if (stage.length && !replaying) scene.ingest(stage);
       if (!scene.director() && stage.length && !initial) setCaption(stage[stage.length - 1].event);
@@ -161,10 +188,13 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     const mode = ($('kingdom-record-mode') || {}).value === 'replay' ? 'replay' : 'live';
     const mod = await import('./kingdom-record.js');
     const coarse = !!(globalThis.matchMedia && globalThis.matchMedia('(pointer: coarse)').matches);
-    const rec = mod.createRecording(scene, { aspect, seconds, mode, coarse, caption: () => scene.caption(), onTick: (t) => recStatus(`Recording ${Math.floor(t)} / ${seconds} s`), onDone: finishRecording });
+    const rec = mod.createRecording(scene, { aspect, seconds, mode, coarse, caption: () => scene.caption(), day: () => store.day, onTick: (t) => recStatus(`Recording ${Math.floor(t)} / ${seconds} s`), onDone: finishRecording });
     if (!rec) { recStatus('This browser cannot record video.'); return; }
     scene.setDirector(true);
     const dir = $('kingdom-director'); if (dir) dir.setAttribute('aria-pressed', 'true');
+    const lightSel = $('kingdom-light'); if (lightSel) lightSel.value = 'dusk';
+    // The end card: back to the tower for the day's counts.
+    setTimeout(() => { if (recording === rec && scene) { scene.setDirector(false); scene.focus(null); } }, Math.max(0, (seconds - 3.5) * 1000));
     if (mode === 'replay') {
       // The day's real events, in their real order, compressed into the clip.
       const plan = replaySchedule(store.list(), seconds * 1000, { now: lastAt || Date.now() });
@@ -226,6 +256,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
       if (dir) dir.setAttribute('aria-pressed', scene.director() ? 'true' : 'false');
     },
     setQuality(t) { if (scene) scene.setTier(t); },
+    setLight(m) { if (scene && scene.setLight) scene.setLight(m); },
     toggleRecording,
     toggleRecordPanel() { const p = $('kingdom-record'); if (p) { p.hidden = !p.hidden; const b = $('kingdom-record-btn'); if (b) b.setAttribute('aria-expanded', p.hidden ? 'false' : 'true'); } },
     isRecording: () => !!recording,

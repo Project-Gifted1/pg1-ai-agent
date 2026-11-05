@@ -1,7 +1,8 @@
 // PG1 Kingdom Defence: Record mode, a clip for posting, made in the
 // browser (nothing is uploaded: the file is saved on this device).
 //
-//   createRecording(scene, { aspect, seconds, mode, label, caption, onTick })
+//   createRecording(scene, { aspect, seconds, mode, caption, day, onTick })
+// Clips use the dusk look and end on the tower with the day's counts.
 //     -> { start(), stop() -> Promise<{ blob, mime, ext, seconds } | null> } | null
 //
 // The clip is the 3D view with the director camera, cropped to 16:9 or
@@ -58,7 +59,15 @@ function wrap(g, text, maxW) {
   return lines.slice(0, 3);
 }
 
-export function createRecording(scene, { aspect = '16:9', seconds = 30, mode = 'live', coarse = false, caption = () => null, onTick = () => {}, onDone = () => {} } = {}) {
+// The end card: the day's counts, all from the data, and the footnote.
+export const GEO_FOOTNOTE = 'Countries come from IP geolocation at the network edge and are approximate. No IP addresses are stored.';
+export function endCardLines(day) {
+  const d = day || {};
+  return [`${Number(d.turned_away) || 0} threats turned away from ${Number(d.countries) || 0} ${Number(d.countries) === 1 ? 'country' : 'countries'}`, `${Number(d.settled) || 0} payments settled`];
+}
+export const END_CARD_S = 3;
+
+export function createRecording(scene, { aspect = '16:9', seconds = 30, mode = 'live', coarse = false, caption = () => null, day = () => null, onTick = () => {}, onDone = () => {} } = {}) {
   const mime = pickMime();
   if (!mime || !scene || !scene.canvas || typeof scene.onFrame !== 'function') return null;
   const { w, h } = clipSize(aspect, coarse ? 1280 : 1920);
@@ -93,6 +102,16 @@ export function createRecording(scene, { aspect = '16:9', seconds = 30, mode = '
     g.fillStyle = 'rgba(10,10,11,0.7)'; g.fillRect(u, h - bh - u, w - u * 2, bh);
     g.fillStyle = '#ffffff';
     lines.forEach((l, i) => g.fillText(l, u * 2, h - bh - u + u * 1.35 + i * u * 1.5));
+    // The last seconds: the tower and the day's counts.
+    if ((now - started) / 1000 > seconds - END_CARD_S) {
+      g.fillStyle = 'rgba(10,10,11,0.55)'; g.fillRect(0, h * 0.3, w, h * 0.4);
+      g.fillStyle = '#f3c623'; g.font = `700 ${Math.round(u * 1.5)}px Inter, system-ui, sans-serif`;
+      const [l1, l2] = endCardLines(day());
+      g.fillText(l1, (w - g.measureText(l1).width) / 2, h * 0.42);
+      g.fillStyle = '#3ddc84'; g.fillText(l2, (w - g.measureText(l2).width) / 2, h * 0.5);
+      g.fillStyle = 'rgba(255,255,255,0.8)'; g.font = `500 ${Math.round(u * 0.65)}px Inter, system-ui, sans-serif`;
+      for (const [i, l] of wrap(g, GEO_FOOTNOTE, w - u * 6).entries()) g.fillText(l, (w - g.measureText(l).width) / 2, h * 0.58 + i * u);
+    }
     const track = stream && stream.getVideoTracks()[0];
     if (track && track.requestFrame) track.requestFrame();
     onTick(Math.min(seconds, (now - started) / 1000));
@@ -102,6 +121,7 @@ export function createRecording(scene, { aspect = '16:9', seconds = 30, mode = '
     mime, ext: fileExtension(mime), size: { w, h },
     get recording() { return !!rec; },
     start() {
+      if (scene.setLight) scene.setLight('dusk');
       stream = out.captureStream(0);
       chunks = [];
       rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: RECORD_BITS });

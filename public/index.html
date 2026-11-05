@@ -466,12 +466,17 @@
     .kingdom-view { position: absolute; inset: 0; background: #0b1220; }
     .kingdom-canvas { display: block; width: 100%; height: 100%; touch-action: none; }
     .kd-caption { position: absolute; left: 12px; right: 12px; bottom: 12px; margin: 0; padding: 8px 12px; border-radius: 10px; background: rgba(10, 10, 11, 0.72); color: #ececee; font-size: 0.82rem; line-height: 1.35; pointer-events: none; }
-    .kd-record { position: absolute; top: 10px; left: 10px; right: 10px; z-index: 3; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-1); color: var(--text); font-size: 0.78rem; }
+    .kd-record { position: absolute; top: 46px; left: 10px; right: 10px; z-index: 3; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface-1); color: var(--text); font-size: 0.78rem; }
     .kd-record[hidden] { display: none; }
     .kd-record label { display: inline-flex; align-items: center; gap: 6px; }
     .kd-record select, .kd-record button, .kd-record-file { min-height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-full, 999px); background: var(--surface-2); color: var(--text); font: 600 0.75rem/1 var(--font-sans, inherit); }
     .kd-record-file { display: inline-flex; align-items: center; text-decoration: none; }
     .kd-record-status { flex-basis: 100%; margin: 0; color: var(--text-2); }
+    .kd-hud { position: absolute; top: 10px; left: 12px; right: 12px; margin: 0; padding: 6px 10px; border-radius: 10px; background: rgba(10, 10, 11, 0.62); color: #f3c623; font-size: 0.74rem; font-weight: 600; pointer-events: none; }
+    .kd-caption { display: flex; flex-direction: column; gap: 2px; }
+    .kd-cap-enemy { color: #ff8a7a; font-size: 0.76rem; }
+    .kd-cap-defence { color: #f3c623; font-weight: 600; }
+    .kd-dot-guard { background: #f5f7fa; box-shadow: 0 0 0 2px #6fd8ff inset; }
     .kd-side { min-height: 0; overflow: auto; border-left: 1px solid var(--border); background: var(--surface-1); padding: 10px 12px calc(var(--safe-bottom, 0px) + 12px); }
     .kd-side h3 { margin: 6px 0 6px; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-2); }
     .kd-legend, .kd-feed { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.8rem; }
@@ -3035,10 +3040,12 @@
        /api/defense-feed (signed-in operator). Loaded only when opened. -->
   <section id="kingdom-screen" class="lab-screen kingdom-screen" role="dialog" aria-modal="true" aria-labelledby="kingdom-title" aria-describedby="kingdom-summary">
     <div class="lab-screen-head">
-      <h2 id="kingdom-title"><svg aria-hidden="true" focusable="false"><use href="#pg1-shield"/></svg><span class="kd-title-pg1">PG1&nbsp;</span>Kingdom Defence</h2>
+      <h2 id="kingdom-title"><svg aria-hidden="true" focusable="false"><use href="#pg1-shield"/></svg><span class="kd-title-pg1">PG1&nbsp;</span>City</h2>
       <span class="lab-mode" id="kingdom-mode" data-mode="calm">Calm</span>
       <div class="kd-tools">
-        <button type="button" id="kingdom-director" aria-pressed="false" onclick="kingdomUi && kingdomUi.toggleDirector()">Director</button>
+        <button type="button" id="kingdom-director" aria-pressed="true" onclick="kingdomUi && kingdomUi.toggleDirector()">Director</button>
+        <label class="sr-only" for="kingdom-light">Light</label>
+        <select id="kingdom-light" onchange="kingdomUi && kingdomUi.setLight(this.value)"><option value="dusk">Dusk</option><option value="live">Live Dublin sun</option></select>
         <button type="button" id="kingdom-record-btn" aria-expanded="false" aria-controls="kingdom-record" onclick="kingdomUi && kingdomUi.toggleRecordPanel()">Record</button>
         <label class="sr-only" for="kingdom-quality">Quality</label>
         <select id="kingdom-quality" onchange="kingdomUi && kingdomUi.setQuality(this.value)"><option value="phone">Phone</option><option value="balanced">Balanced</option><option value="cinematic">Cinematic</option><option value="still" hidden>Still</option></select>
@@ -3048,6 +3055,7 @@
     <div class="kd-body">
       <div class="kd-stage">
         <div class="kingdom-view" id="kingdom-view"></div>
+        <p class="kd-hud" id="kingdom-hud" aria-live="polite">Defences active: …</p>
         <p class="kd-caption" id="kingdom-caption" hidden></p>
         <form class="kd-record" id="kingdom-record" hidden onsubmit="event.preventDefault(); kingdomUi && kingdomUi.toggleRecording()">
           <label>Shape <select id="kingdom-record-aspect"><option value="16:9">16:9</option><option value="9:16">9:16</option></select></label>

@@ -53,7 +53,7 @@ test('the caption line', () => {
   const lens = normalizeEvent(ev('abcdef0123456789', { gadget: 'truth_lens', kind: 'check_verdict', check: 'check_agent_message', verdict_code: 'malicious', subject: 'skill_md', country_code: 'NL', reasons: ['AGENT_MESSAGE_PAYMENT_REDIRECT'] }));
   assert.equal(eventLine(lens), 'Truth Lens: skill.md from NL, malicious, PAYMENT_REDIRECT');
   assert.equal(eventLine(normalizeEvent(ev('abcdef0123456781', { country_code: null, count: 300 }))), 'Gate Wardens: tool_router from the fog, unknown tool probe ×300');
-  assert.equal(eventLine(normalizeEvent(ev('abcdef0123456782', { gadget: 'toll_bridge', role: 'ally', verdict_code: 'SETTLED', check: 'check_package', country_code: 'IE' }))), 'Toll Bridge: check_package from IE, paid and crossed');
+  assert.equal(eventLine(normalizeEvent(ev('abcdef0123456782', { gadget: 'toll_bridge', role: 'ally', verdict_code: 'SETTLED', check: 'get_cve_details', country_code: 'IE' }))), 'Toll Gantry: get_cve_details from IE, paid and crossed');
   assert.equal(reasonLabel('HOSTNAME_LOOKALIKE'), 'LOOKALIKE');
 });
 
@@ -137,4 +137,22 @@ test('Record mode: the clip\'s size, crop and words', async () => {
   assert.match(clipCaption(null, 'live'), /calm/, 'a quiet clip says so; nothing is staged for it');
   const lens = normalizeEvent(ev('abcdef0123456789', { gadget: 'truth_lens', check: 'check_agent_message', verdict_code: 'malicious', subject: 'skill_md', country_code: 'NL', reasons: ['AGENT_MESSAGE_PAYMENT_REDIRECT'] }));
   assert.match(clipCaption(lens, 'replay'), /^\d\d:\d\d · Truth Lens: skill\.md from NL, malicious, PAYMENT_REDIRECT$/);
+});
+
+test('Fix 1: the app carries no fixture events; placeholder caller hashes never render; no caller shows "—"', async () => {
+  const { PLACEHOLDER_CALLER_HASHES } = await import('../public/kingdom/kingdom-data.js');
+  const { feedRowHtml } = await import('../public/kingdom/kingdom-ui.js');
+  const appFiles = [...files(join(ROOT, 'public')), ...files(join(ROOT, 'api')), ...files(join(ROOT, 'lib'))].filter((f) => /\.(m?js|html|json)$/.test(f));
+  for (const f of appFiles) {
+    const s = readFileSync(f, 'utf8');
+    assert.ok(!/kingdomFixtures|tests\/helpers|seededFeed|fixtureFeed/.test(s), `${f} reaches test fixtures`);
+    assert.ok(!/caller_hash['"]?\s*:\s*['"][0-9a-f]{8,32}['"]/.test(s), `${f} carries a literal caller hash`);
+    if (!f.endsWith('kingdom-data.js')) for (const h of PLACEHOLDER_CALLER_HASHES) assert.ok(!new RegExp(`\\b${h}\\b`).test(s) || !/kingdom|defen[sc]e/i.test(f), `${f} carries ${h}`);
+  }
+  for (const h of PLACEHOLDER_CALLER_HASHES) assert.equal(normalizeEvent(ev('abcdef0123456789', { caller_hash: h })).caller, null, h);
+  const noCaller = feedRowHtml(normalizeEvent(ev('abcdef0123456789', { caller_hash: null })));
+  assert.match(noCaller, />—</);
+  assert.match(feedRowHtml(normalizeEvent(ev('abcdef0123456789', { caller_hash: '6ee6f69f' }))), />6ee6f69f</);
+  const ui = readFileSync(join(ROOT, 'public/kingdom/kingdom-ui.js'), 'utf8');
+  assert.match(ui, /No defence events in the last 24 hours/);
 });

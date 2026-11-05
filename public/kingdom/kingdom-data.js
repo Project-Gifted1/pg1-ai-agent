@@ -6,8 +6,8 @@
 //                                  or grew since the last poll (a wave that
 //                                  grows keeps its id: only the difference
 //                                  arrives as new attackers)
-//   eventLine(e)                   the one-line caption ("Truth Lens:
-//                                  skill.md from NL, malicious, PAYMENT_REDIRECT")
+//   eventLine(e)                   the one-line caption: gadget, what, from
+//                                  where, verdict, first reason code, count
 //   importance(e, now)             how much the director camera wants it
 //   dublinSun(ms)                  the real sun over Dublin (elevation and
 //                                  azimuth, radians): the kingdom's day and night
@@ -19,19 +19,25 @@
 // Nothing here makes an event up: every function only reshapes what the
 // feed returned.
 
+// PG1's colour language: brand gold, clean white and cyan light; allies
+// glow green; red belongs to enemies only (never on a PG1 unit).
+export const PG1_COLORS = Object.freeze({ gold: 0xf3c623, white: 0xf5f7fa, cyan: 0x6fd8ff, amber: 0xffb300, green: 0x3ddc84, dim: 0x5a5f66 });
+export const ENEMY_COLORS = Object.freeze({ red: 0xff3d3d, eyes: 0xff6a4a, shadow: 0xb04cff });
+
 export const GADGET_META = Object.freeze({
   truth_lens: { name: 'Truth Lens', color: 0xffd84d },
-  sanctions_gate: { name: 'Sanctions Gate', color: 0xff5c5c },
+  sanctions_gate: { name: 'Sanctions Gate', color: 0xf5f7fa },
   phishing_net: { name: 'Phishing Net', color: 0x36d1c4 },
-  supply_inspector: { name: 'Supply Inspector', color: 0xff9b7a },
-  preflight_ward: { name: 'Preflight Ward', color: 0x8f86ff },
-  toll_bridge: { name: 'Toll Bridge', color: 0xf3c623 },
+  supply_inspector: { name: 'Supply Inspector', color: 0x9be7ff },
+  preflight_ward: { name: 'Preflight Array', color: 0xf3c623 },
+  toll_bridge: { name: 'Toll Gantry', color: 0xffb300 },
   seal_forge: { name: 'Seal Forge', color: 0x7cc4ff },
-  passkey_vault: { name: 'Passkey Vault', color: 0xd98cff },
+  passkey_vault: { name: 'Passkey Vault', color: 0xd9c8ff },
   rate_shield: { name: 'Rate Shield', color: 0x5ab0ff },
   gate_wardens: { name: 'Gate Wardens', color: 0xcfd8dc },
-  keep_wall: { name: 'Keep Wall', color: 0xff7a45 },
+  repair_crews: { name: 'Repair Crews', color: 0xffd27a },
   beacons: { name: 'Watchtower Beacons', color: 0xffb300 },
+  allies: { name: 'Allies', color: 0x3ddc84 },
   fog_wall: { name: 'Fog Wall', color: 0x9aa4b2 },
   honeypot: { name: 'Honeypot Decoys', color: 0x6b6b74 },
   ramparts: { name: 'Firewall Ramparts', color: 0x6b6b74 }
@@ -40,6 +46,10 @@ export const ROLES = Object.freeze(['attacker', 'ally', 'kingdom']);
 const SEVERITIES = ['low', 'medium', 'high'];
 const SEV_WEIGHT = { low: 1, medium: 3, high: 8 };
 const SUBJECT_LABEL = { skill_md: 'skill.md', message: 'a message', other: 'a file' };
+
+// Values that only ever appear in test fixtures or examples, never as a real
+// caller's hash: shown as "—" if one ever reached the view.
+export const PLACEHOLDER_CALLER_HASHES = Object.freeze(['c0ffee00', 'aaaaaaaa', '00000000', 'ffffffff', 'deadbeef', 'abcdef12', '12345678']);
 
 const str = (v, n, re) => { const s = typeof v === 'string' ? v.slice(0, n) : ''; return re && !re.test(s) ? '' : s; };
 
@@ -58,7 +68,7 @@ export function normalizeEvent(e) {
     role: ROLES.includes(e.role) ? e.role : 'attacker',
     severity: SEVERITIES.includes(e.severity) ? e.severity : 'low',
     country: str(e.country_code, 2, /^[A-Z]{2}$/) || null,
-    caller: typeof e.caller_hash === 'string' && /^[0-9a-f]{8}$/.test(e.caller_hash) ? e.caller_hash : null,
+    caller: typeof e.caller_hash === 'string' && /^[0-9a-f]{8}$/.test(e.caller_hash) && !PLACEHOLDER_CALLER_HASHES.includes(e.caller_hash) ? e.caller_hash : null,
     check: str(e.check, 40, /^[A-Za-z0-9_ ./-]+$/) || 'check',
     verdict: str(e.verdict_code, 32, /^[A-Za-z0-9_]+$/) || 'EVENT',
     reasons: (Array.isArray(e.reasons) ? e.reasons : []).map((r) => str(r, 64, /^[A-Z0-9_]+$/)).filter(Boolean).slice(0, 8),
@@ -74,10 +84,13 @@ export function createEventStore({ max = 800 } = {}) {
   const byId = new Map();
   let today = {};
   let threat = { level: 'calm' };
+  let day = { turned_away: 0, countries: 0, settled: 0 };
+  const dayCountries = new Set();
   return {
     get size() { return byId.size; },
     get today() { return { ...today }; },
     get threat() { return threat; },
+    get day() { return { ...day, countries: Math.max(day.countries, dayCountries.size) }; },
     list() { return [...byId.values()].sort((a, b) => b.time - a.time || (a.id < b.id ? 1 : -1)); },
     get(id) { return byId.get(id) || null; },
     merge(feed) {
@@ -85,6 +98,7 @@ export function createEventStore({ max = 800 } = {}) {
       const events = Array.isArray(feed && feed.events) ? feed.events : [];
       if (feed && feed.today && typeof feed.today === 'object') today = Object.fromEntries(Object.entries(feed.today).filter(([k, v]) => Object.hasOwn(GADGET_META, k) && Number.isFinite(v)).map(([k, v]) => [k, Math.max(0, Math.round(v))]));
       const initial = !!(feed && feed.today);
+      if (feed && feed.day && typeof feed.day === 'object') day = { turned_away: Math.max(0, Number(feed.day.turned_away) || 0), countries: Math.max(0, Number(feed.day.countries) || 0), settled: Math.max(0, Number(feed.day.settled) || 0) };
       for (const raw of events) {
         const e = normalizeEvent(raw);
         if (!e) continue;
@@ -94,6 +108,8 @@ export function createEventStore({ max = 800 } = {}) {
         if (!delta) continue;
         fresh.push({ event: e, delta });
         if (!initial) {
+          if (e.role === 'attacker') { day.turned_away += delta; if (e.country) dayCountries.add(e.country); }
+          if (e.verdict === 'SETTLED' || e.verdict === 'JOB_PAID') day.settled += delta;
           today[e.gadget] = (today[e.gadget] || 0) + delta;
           if (e.role === 'attacker' && !e.country && e.check !== 'operator_signin' && e.verdict !== 'SANCTIONS_MATCH') today.fog_wall = (today.fog_wall || 0) + delta;
         }
@@ -117,7 +133,7 @@ const PLAIN_VERDICT = {
   PAYMENT_REQUIRED_402: 'stopped at the toll (402)', FREE_LIMIT_REACHED: 'free calls used up (402)', SETTLEMENT_FAILED: 'payment failed',
   SETTLED: 'paid and crossed', PAYER_REFUSED: 'payer refused', SANCTIONS_MATCH: 'sanctions match', RATE_LIMITED: 'rate limited',
   CALLER_FAULT: 'turned away (caller fault)', PG1_FAULT: 'PG1 took a hit (PG1 fault)', SOURCE_FAULT: 'a source failed (not the caller)',
-  SIGNED: 'result signed', SIGNIN_FAILED: 'failed sign-in', LOCKOUT_ALERT: 'sign-in burst: second door down', REPORT_LANDED: 'report landed', NEEDS_APPROVAL: 'waiting for Gift'
+  SIGNED: 'result signed', SEAL_VERIFIED: 'seal matched to the key', JOB_PAID: 'A2A job paid', PARTNER_CALL: 'partner call', SIGNIN_FAILED: 'failed sign-in', LOCKOUT_ALERT: 'sign-in burst: second door down', REPORT_LANDED: 'report landed', NEEDS_APPROVAL: 'waiting for Gift'
 };
 
 export function verdictText(e) {
@@ -136,11 +152,60 @@ export function eventLine(e) {
   return `${name}: ${what}${from}, ${verdictText(e)}${reason}${times}`;
 }
 
+// What PG1 does about an event: which gadget answers and how. PG1 only
+// defends: block, scan, catch, turn back, repair, stamp, light or welcome;
+// never chase or strike back. null for an event no gadget answers.
+const ACTION = {
+  truth_lens: 'scan', sanctions_gate: 'block', phishing_net: 'catch', supply_inspector: 'scan', preflight_ward: 'scan',
+  toll_bridge: 'block', seal_forge: 'stamp', passkey_vault: 'block', rate_shield: 'block', gate_wardens: 'turn_back',
+  repair_crews: 'repair', beacons: 'light', allies: 'welcome'
+};
+export const DEFENCE_ACTIONS = Object.freeze(['block', 'scan', 'catch', 'turn_back', 'repair', 'stamp', 'light', 'welcome']);
+export function defenceAction(e) {
+  if (!e || !Object.hasOwn(ACTION, e.gadget)) return null;
+  if (e.gadget === 'toll_bridge' && e.role === 'ally') return { gadget: 'toll_bridge', action: 'welcome' };
+  return { gadget: e.gadget, action: ACTION[e.gadget] };
+}
+
+// The defence's caption: "<gadget> · <check>: <verdict> (<reason code>)".
+export function defenceLine(e) {
+  const d = defenceAction(e);
+  if (!d) return '';
+  const name = GADGET_META[d.gadget].name;
+  const reason = e.reasons.length ? ` (${reasonLabel(e.reasons[0])})` : '';
+  return `${name} · ${e.check}: ${verdictText(e)}${reason}`;
+}
+
+// The other side's caption, paired with it.
+const ENEMY_NAME = { rate_shield: 'Siege drones', truth_lens: 'Shadow courier', passkey_vault: 'Shadow at the vault', supply_inspector: 'Trojan freighter', phishing_net: 'Mimic boat', sanctions_gate: 'Listed freighter' };
+export function enemyLine(e) {
+  if (!e || e.role !== 'attacker') return e && e.role === 'ally' ? `Ally${e.country ? ` from ${e.country}` : ''}${e.count > 1 ? ` ×${e.count}` : ''}` : '';
+  const who = ENEMY_NAME[e.gadget] || 'Raiders';
+  const from = e.country ? ` from ${e.country}` : e.check === 'operator_signin' ? '' : ' from the fog';
+  return `${who}${e.count > 1 ? ` ×${e.count}` : ''}${from}`;
+}
+
+// PG1's own state for the tower (the feed's \`state\`), checked.
+export function normalizeState(s) {
+  const st = s && typeof s === 'object' ? s : {};
+  const t = st.tower && typeof st.tower === 'object' ? st.tower : {};
+  const tiers = ['bronze', 'silver', 'gold', 'platinum'];
+  const n = (v) => (Number.isFinite(v) && v >= 0 ? Math.min(500, Math.round(v)) : null);
+  return {
+    beacon: ['gold', 'amber', 'dim', 'unknown'].includes(t.beacon) ? t.beacon : 'unknown',
+    checks: n(st.checks_live),
+    seal: st.seal && tiers.includes(st.seal.tier) ? st.seal.tier : null,
+    passkeys: st.passkeys === true,
+    signing: st.signing === true,
+    approvals: n(st.approvals_waiting)
+  };
+}
+
 // Director: severity, the size of the wave (log scale) and how recent.
 export function importance(e, now = Date.now()) {
   if (!e) return 0;
   const age = Math.max(0, now - e.last) / 60000;
-  const roleK = e.role === 'attacker' ? 1 : e.role === 'ally' ? 0.6 : e.gadget === 'keep_wall' ? 0.9 : 0.4;
+  const roleK = e.role === 'attacker' ? 1 : e.role === 'ally' ? 0.6 : e.gadget === 'repair_crews' ? 0.9 : 0.4;
   return (SEV_WEIGHT[e.severity] || 1) * (1 + Math.log10(e.count)) * roleK / (1 + age / 5);
 }
 

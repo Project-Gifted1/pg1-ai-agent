@@ -1,5 +1,6 @@
-// PG1 Kingdom Defence: the live 3D view of PG1 defending its Command
-// Centre, driven only by real events from /api/defense-feed.
+// PG1 City (Kingdom Defence): the live 3D view of PG1 defending its Command
+// Centre, a near-future city at dusk, driven only by real events from
+// /api/defense-feed.
 //
 //   createKingdomScene(container, { reducedMotion, coarse, threeUrl, onFocus, onTier, onCaption })
 //     -> { renderer: 'webgl' | '2d', ingest(fresh), setThreat(level),
@@ -11,8 +12,8 @@
 // (quality.js), post-processing (post.js), camera controls (controls.js)
 // and water shader (water.js). Three tiers here, each one of the viewer's:
 //   phone      the viewer's Low/Medium: no post-processing, no real-time
-//              shadows (baked: darker wall bases, blob shadows under every
-//              figure), instanced low-detail crowds, gradient sky, 30 fps
+//              shadows or reflections (baked hemisphere light), emissive
+//              windows only, fewer instanced buildings, gradient sky, 30 fps
 //   balanced   the viewer's High: soft shadows, bloom, SMAA, the water
 //              shader and the physical sky, 60 fps
 //   cinematic  the viewer's Ultra/Cinematic: bigger shadows, ambient
@@ -31,9 +32,17 @@ import { TIER_SETTINGS, pickTier, createGovernor, QUALITY_KEY } from '../sandbox
 import { createPost } from '../sandbox/post.js';
 import { createControls } from '../sandbox/controls.js';
 import { createWaterMaterial } from '../sandbox/water.js';
-import { buildWorld, ISLAND_R } from './kingdom-world.js';
+import { buildWorld, RIVER } from './kingdom-world.js';
 import { createActors } from './kingdom-actors.js';
-import { dublinSun, daylight, pickDirectorEvent, GADGET_META } from './kingdom-data.js';
+import { dublinSun, daylight, pickDirectorEvent, normalizeState, GADGET_META } from './kingdom-data.js';
+
+// The hero look: golden hour, the sun low in the west behind the tower.
+export const DUSK_SUN = Object.freeze({ elevation: 0.035, azimuth: (262 * Math.PI) / 180 });
+export const LIGHT_MODES = Object.freeze(['dusk', 'live']);
+// The tallest building round the centre is lower than this (kingdom-world.js).
+export const ROOFLINE = 170;
+// The default view: an aerial angle from the east, the river leading the eye to the tower.
+export const HOME_VIEW = Object.freeze({ target: [0, 70, 40], dist: 540, theta: 0.3, phi: 1.2 });
 
 export const KINGDOM_TIERS = Object.freeze(['phone', 'balanced', 'cinematic']);
 export const KINGDOM_TIER_LABEL = Object.freeze({ phone: 'Phone', balanced: 'Balanced', cinematic: 'Cinematic' });
@@ -75,19 +84,21 @@ function create2d(container) {
     const g = canvas.getContext('2d');
     if (!g) return;
     const w = canvas.width; const h = canvas.height; const cx = w / 2; const cy = h / 2; const R = Math.min(w, h) * 0.4;
-    g.fillStyle = level === 'storm' ? '#1a2230' : '#16324a'; g.fillRect(0, 0, w, h);
-    g.fillStyle = '#5f8a3e'; g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = '#2bb3b1'; g.lineWidth = R * 0.07; g.beginPath(); g.arc(cx, cy, R * 0.5, 0, Math.PI * 2); g.stroke();
-    g.fillStyle = '#b9b2a3'; g.beginPath();
-    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2 + Math.PI / 8; const x = cx + Math.sin(a) * R * 0.42; const y = cy - Math.cos(a) * R * 0.42; if (i) g.lineTo(x, y); else g.moveTo(x, y); }
-    g.closePath(); g.fill();
-    g.fillStyle = '#8d877b'; g.fillRect(cx - R * 0.08, cy - R * 0.08, R * 0.16, R * 0.16);
-    g.fillStyle = '#f3c623'; g.beginPath(); g.arc(cx, cy, R * 0.04, 0, Math.PI * 2); g.fill();
+    // A still drawing of PG1 City: the skyline at dusk, the river, the tower.
+    const sky = g.createLinearGradient(0, 0, 0, h);
+    sky.addColorStop(0, level === 'storm' ? '#141a26' : '#1b2a4a'); sky.addColorStop(0.62, level === 'storm' ? '#3a3f4a' : '#e08a52'); sky.addColorStop(1, '#2a2d32');
+    g.fillStyle = sky; g.fillRect(0, 0, w, h);
+    let seed = 7; const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+    const base = h * 0.66;
+    for (let i = 0; i < 70; i++) { const bw = w * (0.02 + rnd() * 0.04); const bx = rnd() * w; const bh = h * (0.05 + rnd() * 0.25) * (1 - Math.abs(bx - cx) / w); g.fillStyle = '#1d2733'; g.fillRect(bx, base - bh, bw, bh); g.fillStyle = 'rgba(255,200,130,0.55)'; for (let k = 0; k < bh / (6 * dpr); k++) if (rnd() < 0.4) g.fillRect(bx + bw * 0.3, base - bh + k * 6 * dpr, Math.max(1, bw * 0.15), 2 * dpr); }
+    g.fillStyle = '#2a4a68'; g.beginPath(); g.moveTo(cx - w * 0.03, base); g.lineTo(cx, base - h * 0.5); g.lineTo(cx + w * 0.03, base); g.closePath(); g.fill();
+    g.fillStyle = '#f3c623'; g.beginPath(); g.arc(cx, base - h * 0.5, 3 * dpr, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#16324a'; g.fillRect(0, base + h * 0.04, w, h * 0.08);
+    g.strokeStyle = '#d8dde3'; g.lineWidth = 2 * dpr; g.beginPath(); g.ellipse(cx, base + h * 0.06, w * 0.12, h * 0.05, 0, Math.PI, 0); g.stroke();
     const ids = Object.keys(GADGET_META);
     g.font = `${Math.round(11 * dpr)}px Inter, system-ui, sans-serif`; g.textAlign = 'center';
     ids.forEach((id, i) => {
-      const a = (i / ids.length) * Math.PI * 2;
-      const x = cx + Math.sin(a) * R * 1.12; const y = cy - Math.cos(a) * R * 1.12;
+      const x = (w / (ids.length + 1)) * (i + 1); const y = h - 30 * dpr; void R; void cy;
       const n = today[id] || 0;
       g.fillStyle = '#' + GADGET_META[id].color.toString(16).padStart(6, '0');
       g.globalAlpha = n ? 1 : 0.45; g.beginPath(); g.arc(x, y, 5 * dpr, 0, Math.PI * 2); g.fill();
@@ -102,7 +113,7 @@ function create2d(container) {
     ingest() { /* the text feed carries the events; the map shows the counts */ },
     setThreat(l) { level = l; container.dataset.threat = l; draw(); },
     setToday(c) { today = { ...c }; draw(); },
-    focus() {}, setDirector() {}, director: () => false, tier: () => 'still', setTier() {}, onFrame() {}, caption: () => null,
+    focus() {}, setDirector() {}, director: () => false, tier: () => 'still', setTier() {}, onFrame() {}, caption: () => null, setState() {}, setDay() {}, setLight() {}, inspect: () => null,
     destroy() { if (ro) ro.disconnect(); canvas.remove(); }
   };
 }
@@ -150,12 +161,12 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0xbcd0e0, 0.0011);
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.5, 9000);
+  scene.fog = new THREE.FogExp2(0x8a8aa2, 0.0009);
+  const camera = new THREE.PerspectiveCamera(42, 1, 1, 12000);
   const ADD = '/vendor/three/addons/';
   const SkyMod = settings.sky === 'physical' ? await import(`${ADD}objects/Sky.js`).catch(() => null) : null;
   const normals = settings.water ? waterNormals(THREE) : null;
-  const waterMaterial = settings.water ? createWaterMaterial(THREE, normals, [{ sx: 0, sz: 0, r: ISLAND_R - 6 }]) : null;
+  const waterMaterial = settings.water ? createWaterMaterial(THREE, normals, [], { offset: false }) : null;
   const world = buildWorld(THREE, scene, settings, { normals, waterMaterial, Sky: SkyMod ? SkyMod.Sky : null });
   const actors = createActors(THREE, scene, world, settings);
 
@@ -168,7 +179,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       const envScene = new THREE.Scene(); const skyClone = world.sky.clone(); envScene.add(skyClone);
       const rt = pmrem.fromScene(envScene, 0.02, 0.1, 10000);
       if (envRT) envRT.dispose();
-      envRT = rt; scene.environment = rt.texture; scene.environmentIntensity = 0.55;
+      envRT = rt; scene.environment = rt.texture; scene.environmentIntensity = 0.7;
     } catch (e) { /* the hemisphere light is enough */ }
   };
 
@@ -177,9 +188,10 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   if (settings.rain) {
     const n = settings.tier === 'cinematic' ? 6000 : 2500;
     const p = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) { p[i * 3] = (Math.random() - 0.5) * 260; p[i * 3 + 1] = Math.random() * 120; p[i * 3 + 2] = (Math.random() - 0.5) * 260; }
+    for (let i = 0; i < n; i++) { p[i * 3] = (Math.random() - 0.5) * 700; p[i * 3 + 1] = Math.random() * 300; p[i * 3 + 2] = (Math.random() - 0.5) * 700; }
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(p, 3));
-    rain = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xaab8c8, size: 0.35, transparent: true, opacity: 0, depthWrite: false }));
+    rain = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xaab8c8, size: 0.8, transparent: true, opacity: 0, depthWrite: false }));
+    rain.name = 'rain';
     scene.add(rain);
   }
 
@@ -190,8 +202,11 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   };
   await buildPost();
 
-  // Camera: the viewer's orbit controls; a slow cinematic orbit by default.
-  let focusId = null; let director = false; let lastCut = 0; let captionEvent = null;
+  // Camera: the viewer's orbit controls. By default a slow aerial flyover
+  // (the river leading the eye to the tower); the director (on by default)
+  // moves in close when an event plays, then pulls back.
+  let focusId = null; let director = true; let lastCut = 0; let captionEvent = null; let lastLive = 0;
+  container.dataset.director = 'on';
   const ndc = new THREE.Vector2();
   const controls = createControls(THREE, canvas, camera, {
     onTap(x, y) {
@@ -200,8 +215,9 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       if (id) { focus(id, { user: true }); }
     }
   });
-  controls.minDist = 18; controls.maxDist = 1200; controls.ease = settings.ease; controls.autoRotate = 0.035;
-  controls.jumpTo({ target: new THREE.Vector3(0, 8, 0), dist: coarse ? 300 : 240, theta: 0.9, phi: 1.12 });
+  const home = new THREE.Vector3(...HOME_VIEW.target);
+  controls.minDist = 30; controls.maxDist = 3000; controls.ease = settings.ease; controls.autoRotate = 0;
+  controls.jumpTo({ target: home, dist: coarse ? HOME_VIEW.dist * 1.15 : HOME_VIEW.dist, theta: HOME_VIEW.theta, phi: HOME_VIEW.phi });
 
   const events = new Map();
   function focus(id, { user = false } = {}) {
@@ -212,13 +228,14 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     container.dataset.focus = id || '';
     if (onFocus) onFocus(e || null);
     if (onCaption) onCaption(e || null);
-    if (!id) controls.flyTo({ target: new THREE.Vector3(0, 8, 0), dist: 240 });
+    if (!id) { controls.flyTo({ target: home, dist: coarse ? HOME_VIEW.dist * 1.15 : HOME_VIEW.dist, phi: HOME_VIEW.phi }); actors.commanderTo(null); }
+    else if (e && e.severity === 'high') { const p = actors.whereIs(id); if (p) actors.commanderTo(p); }
   }
   function setDirector(on) {
     director = !!on; lastCut = 0;
     container.dataset.director = director ? 'on' : 'off';
-    controls.autoRotate = director ? 0.02 : 0.035;
   }
+  let lightMode = 'dusk';
 
   // Size and quality.
   const resize = () => {
@@ -266,32 +283,50 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     if (last) governor.sample(now - last, budget);
     last = now;
     const t = (now - t0) / 1000;
-    // The real sun over Dublin.
-    const sun = dublinSun(Date.now());
+    // Dusk (the hero look) or the live sun over Dublin.
+    const sun = lightMode === 'live' ? dublinSun(Date.now()) : DUSK_SUN;
     sunDir.set(Math.sin(sun.azimuth) * Math.cos(sun.elevation), Math.sin(sun.elevation), -Math.cos(sun.azimuth) * Math.cos(sun.elevation)).normalize();
     const light = daylight(sun.elevation);
+    const dusk = Math.max(0, 1 - Math.abs(sun.elevation - 0.06) / 0.2);
     storm += ((threat === 'storm' ? 1 : threat === 'watch' ? 0.3 : 0) - storm) * Math.min(1, dt * 0.25);
-    world.update(dt, t, { sunDir, light, storm });
-    scene.fog.color.setRGB(0.74 * light + 0.04, 0.82 * light + 0.05, 0.88 * light + 0.08).multiplyScalar(1 - storm * 0.4);
-    scene.fog.density = 0.0011 + storm * 0.0016;
+    world.update(dt, t, { sunDir, light, storm, dusk });
+    // Blue atmospheric haze, warmer at dusk, that fades the far city.
+    scene.fog.color.setRGB(0.16 + 0.3 * light * (1 - dusk) + 0.16 * dusk, 0.19 + 0.34 * light * (1 - dusk) + 0.1 * dusk, 0.3 + 0.36 * light * (1 - dusk) + 0.06 * dusk).multiplyScalar(1 - storm * 0.4);
+    scene.fog.density = 0.0006 + storm * 0.0008;
+    renderer.toneMappingExposure = 0.62 + 0.3 * light * (1 - dusk);
     if (rain) { rain.material.opacity += ((storm > 0.6 ? 0.55 : 0) - rain.material.opacity) * Math.min(1, dt); if (rain.material.opacity > 0.01) { const a = rain.geometry.attributes.position; for (let i = 1; i < a.array.length; i += 3) { a.array[i] -= dt * 60; if (a.array[i] < 0) a.array[i] += 120; } a.needsUpdate = true; rain.position.set(controls.target.x, 0, controls.target.z); } }
     if (now - envAt > 180000) { envAt = now; refreshEnv(); }
-    actors.update(dt, t, camera);
+    actors.update(dt, t, camera, { storm });
     // Director: cut to the most important live event every few seconds.
     if (director && now - lastCut > DIRECTOR_CUT_MS) {
       lastCut = now;
       const live = actors.activeIds.map((id) => events.get(id)).filter(Boolean);
       const pick = pickDirectorEvent(live, Date.now(), { exclude: live.length > 1 ? focusId : null }) || (live.length ? live[0] : null);
+      if (pick) lastLive = now;
       if (pick && pick.id !== focusId) focus(pick.id);
-      if (!pick && focusId) focus(null);
+      // Nothing playing for a while: pull back to the aerial view.
+      if (!pick && focusId && now - lastLive > 4000) focus(null);
     }
     if (focusId) {
       const p = actors.whereIs(focusId);
-      if (p) { focusPoint.set(p.x, p.y + 2, p.z); controls.flyTo({ target: focusPoint, dist: Math.min(controls.goalDist, 90) }); }
+      if (p) { focusPoint.set(p.x, p.y + 4, p.z); controls.flyTo({ target: focusPoint, dist: coarse ? 190 : 160, phi: 0.72 }); }
+    } else if (controls.userActive <= 0) {
+      // The slow flyover: a gentle sway across the river axis.
+      controls.goalTheta = HOME_VIEW.theta + 0.38 * Math.sin(t * 0.022);
     }
     controls.update(dt);
+    // The camera never goes into a building: it stays above the roofline.
+    if (camera.position.y < ROOFLINE) { camera.position.y = ROOFLINE; camera.lookAt(controls.target); }
     if (post) post.render(false); else renderer.render(scene, camera);
     container.dataset.attackers = String(actors.attackers);
+    if ((Number(container.dataset.frames) || 0) % 5 === 0) {
+      container.dataset.fired = JSON.stringify(actors.fired);
+      container.dataset.shield = world.domeMesh.visible ? 'visible' : 'hidden';
+      container.dataset.sentinels = String(actors.sentinels);
+      container.dataset.lanterns = String(actors.lanterns);
+      container.dataset.pg1MaxR = String(Math.round(actors.pg1MaxR));
+      container.dataset.commander = actors.commanderMode;
+    }
     container.dataset.frames = String((Number(container.dataset.frames) || 0) + 1);
     for (const fn of frameFns) { try { fn(canvas); } catch (e) { /* a listener never stops the view */ } }
     raf = requestAnimationFrame(frame);
@@ -312,6 +347,21 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     },
     setThreat(level) { threat = ['calm', 'watch', 'storm'].includes(level) ? level : 'calm'; container.dataset.threat = threat; },
     setToday() { /* the legend shows the counts */ },
+    // PG1's real state (the feed's state): the tower's beacon and emblems, sentinels, beacons.
+    setState(raw) {
+      const st = normalizeState(raw);
+      const lit = world.setState(st);
+      const n = actors.setSentinels(st.checks || 0);
+      Object.assign(container.dataset, { beacon: st.beacon, seal: st.seal || 'none', passkeys: String(st.passkeys), signing: String(st.signing), beaconsLit: String(lit), sentinels: String(n) });
+    },
+    setDay(day) { if (day) container.dataset.lanterns = String(actors.setLanterns(day.settled)); },
+    setLight(mode) { lightMode = LIGHT_MODES.includes(mode) ? mode : 'dusk'; container.dataset.light = lightMode; envAt = -Infinity; },
+    // For the tests: what the scene holds (names only).
+    inspect() {
+      const names = new Set(); let unnamed = 0; let meshes = 0;
+      scene.traverse((o) => { if (o.name) names.add(o.name); if (o.isMesh || o.isSprite || o.isPoints) { meshes++; if (!o.name) unnamed++; } });
+      return { names: [...names].sort(), unnamed, meshes, buildings: world.buildingCount };
+    },
     focus: (id) => focus(id, { user: true }),
     setDirector, director: () => director,
     tier: () => tier,

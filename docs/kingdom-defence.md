@@ -1,6 +1,6 @@
-# PG1 Kingdom Defence
+# PG1 City (Kingdom Defence)
 
-The operator's live 3D view of PG1 defending its Command Centre: a modern island city (a glass spire HQ with PG1's shield, a ring of glass towers that light up at dusk, a concrete perimeter with sensor towers, four security gates, the channel and its bridges, the port), drawn only from real defence events.
+The operator's live 3D view of PG1 defending its Command Centre: **PG1 City**, an original near-future city at dusk (the PG1 Tower, a glass spire with the shield near the top, the Command Centre deck, an emblem ring and a beacon at the tip; a skyline of glass and steel towers with procedural lit windows running to the haze; a river with an arched bridge, the toll gantry and the harbour pier; street lights and car light trails), drawn only from real defence events. No island, walls or moat; no third-party assets.
 
 Open it with `/kingdom`, the **Kingdom** button on the threat radar card or radar screen, or the mini-view above the thread (the latest real event in one line).
 
@@ -40,4 +40,18 @@ The Sandbox viewer's engine: the same three.js (`/vendor/three/`), its quality t
 
 ## Tests
 
-`tests/defense-feed.test.mjs`, `tests/kingdom-view.test.mjs`, `tests/browser/kingdom.browser.test.mjs` (412 px, Phone tier, reduced motion, recording; screenshots in `docs/screenshots/kingdom-*.png`).
+`tests/defense-feed.test.mjs`, `tests/kingdom-view.test.mjs`, `tests/browser/kingdom.browser.test.mjs` (412 px, Phone tier, reduced motion, recording, no island/wall/placeholder geometry, the shield hidden until a gadget fires; screenshots in `docs/screenshots/kingdom-city-*.png`).
+
+## The defence side
+
+- **PG1 Tower state** (`lib/defenseState.mjs`, the feed's `state` on full loads, cached a minute): beacon steady gold when the latest production deploy is Ready, an amber pulse when auto-merge is paused or production pinned, dim when a deploy failed, neutral when it could not be read. Emblems: the SealKeeper SEAL tier (`SEAL_TIER_RECORD`, Bronze; changes only by a reviewed edit or `PG1_SEALKEEPER_TIER`), a passkey symbol once a passkey exists, the Ed25519 seal while signing is on.
+- **Guardians** (ambient, never counted or captioned): sentinel drones, one per tool in the live MCP tool list; the commander drone at the deck (lifts over a high-severity event the director focuses on, carries a landed report to a beacon); repair drones; cyan harbour pilots; embankment rovers. Every PG1 unit stays inside the city (`CITY_R`); they block, scan, catch, turn back and repair, never chase or strike back. PG1 units use gold, white and cyan; red is the other side's; allies glow green.
+- **The other side**: scanner drones probing the skyline (probes, caller faults, unpaid calls), swarms (rate-limit floods), dark boats on the river (agent-message verdicts, look-alike domains, malicious packages, sanctioned payers), red rogue-signal trails (failed sign-ins).
+- **Allies**: lit boats to the pier (settled x402), cargo ships (paid A2A jobs), partner drones (licensed integrations, never named).
+- **HUD**: "Defences active: n checks live · x threats turned away today · y payments settled", all from the data. Captions pair the other side's line with PG1's answer: "<gadget> · <check>: <verdict> (<reason code>)".
+- **Lanterns** on the bridge = payments settled today; **rooftop beacons** lit = approvals waiting. The **shield** is invisible until a gadget fires.
+- **Camera**: a slow aerial flyover from the east, the river leading to the tower; the director (on by default) moves in close when an event plays and pulls back after; the camera never goes below the roofline. **Light**: Dusk (the hero look, default and always in Record mode) or the live sun over Dublin. Clips end on the tower with the day's counts and the note that countries come from IP geolocation and are approximate.
+
+## Test fixtures (never in the app)
+
+`tests/helpers/kingdomFixtures.mjs` builds realistic rows for the browser tests: real salted per-caller hashes of documentation-range addresses, times spread over the day, and a 402 only on a paid skill. Screenshots made from it are named `*-test-fixture.png`. `tests/kingdom-view.test.mjs` fails if anything under `public/`, `api/` or `lib/` imports it or carries a literal caller hash; the view shows "—" for a placeholder hash or a source with no caller. A 402 on a free tool (`check_package` and the other free tools) is never a Toll Gantry event.
