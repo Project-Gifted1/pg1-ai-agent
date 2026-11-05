@@ -48,7 +48,7 @@ export default async function handler(req, res) {
     });
   }
 
-  const session = resolveOperatorSession(req);
+  const session = await resolveOperatorSession(req);
   if (session.rateLimited) {
     return res.status(429).json({ error: 'Too many failed authentication attempts. Try again in 15 minutes.' });
   }

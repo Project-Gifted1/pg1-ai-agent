@@ -206,7 +206,7 @@ export function createWatchesHandler({ webpushImpl = null } = {}) {
     if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = null; } }
     if (!body || typeof body !== 'object') return res.status(400).json({ error: 'Invalid JSON body' });
     req.body = body;
-    const session = resolveOperatorSession(req);
+    const session = await resolveOperatorSession(req);
     if (session.rateLimited) return res.status(429).json({ error: 'Too many failed sign-in attempts. Try again later.' });
     if (!session.isOperator) return res.status(401).json({ error: 'unauthorized', message: 'Watches and reports are for the signed-in operator only.' });
 

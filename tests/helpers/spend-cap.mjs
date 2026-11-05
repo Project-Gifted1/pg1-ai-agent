@@ -4,3 +4,6 @@
 // and no paid engine is planned (lib/aiRouter.mjs dailySpendCapUsd);
 // tests/spend-default.test.mjs checks that default with its own env.
 if (process.env.PG1_DAILY_SPEND_CAP_USD === undefined) process.env.PG1_DAILY_SPEND_CAP_USD = '1000';
+
+// The sign-in store for the suite: see tests/helpers/security-store.mjs.
+await import('./security-store.mjs');

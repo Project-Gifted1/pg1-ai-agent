@@ -68,6 +68,15 @@ git push origin main
 GEMINI_API_KEY1=your_gemini_api_key_here
 GITHUB_TOKEN=your_github_token_here
 
+# Operator sign-in (lib/security). Run
+# supabase/migrations/20261114120000_pg1_operator_security.sql first.
+# Sign in with USER_API_KEY / USER_API_PASS, then send
+# "/security passkey add" from your phone (and again from a second
+# device). Once a passkey exists the password alone is refused.
+# Recovery, if every passkey is lost: set this to "on", redeploy, sign in
+# with the password, add a new passkey, then remove it again (default off).
+# PG1_PASSWORD_RECOVERY=on
+
 # Optional: /image engine model IDs (lib/imageEngines.mjs). Defaults shown.
 # The primary/secondary engines need a paid-tier key: image-output models
 # have no free-tier quota and answer 429.

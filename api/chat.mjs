@@ -1,4 +1,9 @@
 import crypto from 'crypto';
+import { safeCompare } from '../lib/security/compare.mjs';
+import { authenticateOperator, startOperatorSession, __resetAuthMirror } from '../lib/security/auth.mjs';
+import { memorySecurityStore } from '../lib/security/store.mjs';
+import { sessionCookie } from '../lib/security/sessions.mjs';
+import { isSecurityCommand, handleSecurityCommand } from '../lib/security/chat.mjs';
 import { turnNeeds, slimCapabilities, toolsForRoute, relayNeeds, RECENT_TURNS_SMALL_TALK } from '../lib/promptBudget.mjs';
 import { classify429, coolDown, isCooling, coolingUntil, readyModels, noteRateHeaders, learnedLimits } from '../lib/router/quota.mjs';
 import { noInfraNames } from '../lib/infraNames.mjs';
@@ -97,59 +102,23 @@ import { parseRelayCommand, isRelayCommand, relayEnvelope, relayedCommands, rela
 import { cleanHistory, cleanSummary, splitHistory, foldSummary, renderConversation, recentTokenBudget, needsRoutingFloor, conversationTokens, cardLines, MAX_CARD_LINES, cheapModelCaller, SELF_CHECK_DIRECTIVE } from '../lib/contextWindow.mjs';
 
 // ---------------------------------------------------------------------
-// AUTH: timing-safe secret comparison + in-memory per-IP failure lockout
+// AUTH: lib/security/auth.mjs decides who the operator is for every route:
+// a live session cookie, or USER_API_KEY / USER_API_PASS (timing-safe
+// compares) while no passkey is registered or the recovery switch is on.
+// The per-IP failure lockout and the global limit live in Supabase
+// (pg1_auth_events), so they hold across instances.
+// safeCompare is re-exported here for the routes that import it from this
+// file.
 // ---------------------------------------------------------------------
-// In-memory (not Supabase) is intentional here, unlike the /api/ioc free-tier
-// counter in lib/freeTier.mjs: a login lockout only needs to survive within a
-// single warm lambda instance for a few minutes to blunt online brute-force,
-// it doesn't need cross-instance/durable accuracy, and adding a DB round-trip
-// to every authenticated request would slow down the hot path for no benefit.
-export function safeCompare(provided, expected) {
-  var providedBuf = Buffer.from(String(provided == null ? '' : provided), 'utf-8');
-  var expectedBuf = Buffer.from(String(expected == null ? '' : expected), 'utf-8');
-  if (providedBuf.length !== expectedBuf.length) {
-    // Still perform a same-length timingSafeEqual so the length mismatch
-    // itself doesn't short-circuit into an early, faster return.
-    crypto.timingSafeEqual(providedBuf, providedBuf);
-    return false;
-  }
-  return crypto.timingSafeEqual(providedBuf, expectedBuf);
-}
+export { safeCompare };
+export { AUTH_MAX_FAILURES, AUTH_FAILURE_WINDOW_MS, AUTH_GLOBAL_MAX_FAILURES } from '../lib/security/auth.mjs';
 
-export const AUTH_MAX_FAILURES = 5;
-export const AUTH_FAILURE_WINDOW_MS = 15 * 60 * 1000;
-export const AUTH_LOCKOUT_MS = 15 * 60 * 1000;
-
-var authFailuresByIp = new Map();
-
-export function isAuthRateLimited(ip) {
-  var entry = authFailuresByIp.get(ip);
-  if (!entry) return false;
-  if (entry.lockedUntil && entry.lockedUntil > Date.now()) return true;
-  return false;
-}
-
-export function recordAuthFailure(ip) {
-  var now = Date.now();
-  var entry = authFailuresByIp.get(ip);
-  if (!entry || (entry.windowStart + AUTH_FAILURE_WINDOW_MS) < now) {
-    entry = { count: 0, windowStart: now, lockedUntil: 0 };
-  }
-  entry.count += 1;
-  if (entry.count >= AUTH_MAX_FAILURES) {
-    entry.lockedUntil = now + AUTH_LOCKOUT_MS;
-  }
-  authFailuresByIp.set(ip, entry);
-}
-
-export function resetAuthFailures(ip) {
-  authFailuresByIp.delete(ip);
-}
-
-// Exposed for tests only (isolated Map per re-import isn't possible for a
-// singleton module in the same process, so tests need a way to reset state).
+// Tests only: clears the process's sign-in state (the memory store the
+// suite uses: failures, passkeys, sessions) and this instance's mirror of
+// failures.
 export function __clearAuthRateLimitState() {
-  authFailuresByIp.clear();
+  memorySecurityStore().reset();
+  __resetAuthMirror();
 }
 
 export const config = {
@@ -2548,20 +2517,19 @@ async function chatRequest(req, res) {
 
     var rawActionType = action || actionType || 'CHAT';
 
-    // AUTH: only USER_API_KEY + USER_API_PASS authenticate this endpoint.
-    // The old fallback that accepted GITHUB_TOKEN itself (via Bearer header
-    // or the 'pass' field) as a login credential was removed — GITHUB_TOKEN
-    // stays in use below purely for server-side GitHub API calls, it's no
-    // longer an acceptable thing for a caller to present back to us.
-    var expectedUser = (process.env.USER_API_KEY || process.env.USER_API_USER || '').trim();
-    var expectedPass = (process.env.USER_API_PASS || process.env.USER_API_PASSS || '').trim();
-
+    // AUTH: only a session (from a passkey or password sign-in) or
+    // USER_API_KEY + USER_API_PASS authenticate this endpoint. The old
+    // fallback that accepted GITHUB_TOKEN itself as a login credential was
+    // removed - GITHUB_TOKEN stays in use below purely for server-side
+    // GitHub API calls, it's no longer an acceptable thing for a caller to
+    // present back to us.
     var clientIp = getRequestIdentifier(req);
-    var authAttempted = !!(user || pass);
 
-    var isAuthed = !!(
-      expectedUser && expectedPass && safeCompare(user, expectedUser) && safeCompare(pass, expectedPass)
-    );
+    // A live session cookie, else the password (lib/security/auth.mjs:
+    // refused once a passkey exists unless PG1_PASSWORD_RECOVERY=on; every
+    // failure recorded for the durable lockout and the burst alert).
+    var operatorAuth = await authenticateOperator(req, { user: user, pass: pass });
+    var isAuthed = operatorAuth.isOperator;
     // ROLE: the one place a chat request's role is decided. 'operator' only
     // ever comes from the authenticated session above; everything else -
     // no credentials, wrong credentials, anything a request body says about
@@ -2570,19 +2538,11 @@ async function chatRequest(req, res) {
     var sessionRole = isAuthed ? 'operator' : LEAST_PRIVILEGED_ROLE;
     var isOperator = sessionRole === 'operator';
 
-    if (isAuthRateLimited(clientIp)) {
+    if (operatorAuth.rateLimited) {
       recordServerError(supUrl, supKey, 'AUTH', 429, 'rate_limited');
       return sendJSON(res, 429, {
         success: false, reply: 'Too many failed authentication attempts. Try again in 15 minutes.', traceId: requestTraceId
       });
-    }
-
-    if (authAttempted) {
-      if (isAuthed) {
-        resetAuthFailures(clientIp);
-      } else {
-        recordAuthFailure(clientIp);
-      }
     }
 
     // RELAY MODE: relaying is the signed-in operator's; nobody else's
@@ -2712,11 +2672,20 @@ async function chatRequest(req, res) {
     if (promptText === 'AUTH_VERIFY') {
       if (!isAuthed) {
         log401('AUTH_VERIFY', 'unauthenticated', supUrl, supKey);
+        if (operatorAuth.passwordDisabled) return sendJSON(res, 401, { success: false, passkeyRequired: true, reply: 'Use your passkey to sign in.', traceId: requestTraceId });
         return sendJSON(res, 401, { success: false, reply: 'Access Denied', traceId: requestTraceId });
+      }
+      // A password sign-in starts a session (the cookie, 12 h): from then on
+      // the page sends no password. A request that came in on a session
+      // keeps it.
+      var verifySession = null;
+      if (operatorAuth.via !== 'session') {
+        try { verifySession = await startOperatorSession(req, operatorAuth.via); } catch (e) { verifySession = null; }
+        if (verifySession) res.setHeader('Set-Cookie', sessionCookie(verifySession.token, verifySession.expiresAt));
       }
       return sendJSON(res, 200, {
         success: true, authenticated: true, isValid: true,
-        status: 'SUCCESS', reply: 'Access Granted', traceId: requestTraceId
+        status: 'SUCCESS', reply: 'Access Granted', session: !!(verifySession || operatorAuth.via === 'session'), traceId: requestTraceId
       });
     }
 
@@ -3474,6 +3443,12 @@ async function chatRequest(req, res) {
         var usageCredit = await creditReport({ env: process.env, keyRows: await keysStatus({ env: process.env, cachedOnly: true }).catch(function () { return []; }), supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: function (u, o) { return globalThis.fetch(u, o); } }).catch(function () { return null; });
         // FREE QUOTAS: each free engine's state, what is left and its reset.
         return sendJSON(res, 200, { reply: usageLead(usageOutcome.result, { storage: usageStorage }) + (usageCredit ? '\n\n' + usageCredit.markdown : '') + '\n\n' + quotaTable(quotaRows({ env: process.env })), toolResults: [usageCard], cards: usageContextLines(usageOutcome.result), ...(usageMilestone ? { milestone: usageMilestone } : {}), traceId: requestTraceId });
+      } else if (isSecurityCommand(lower)) {
+        // SECURITY (lib/security/chat.mjs, signed-in operator only): the
+        // passkeys, removing one, and signing out every other session.
+        // Adding a passkey runs in the page (it needs the phone's prompt).
+        var securityOut = await handleSecurityCommand({ text: promptText, session: operatorAuth.session || null, env: process.env });
+        return sendJSON(res, securityOut.status, { reply: securityOut.reply, ...(securityOut.actions ? { actions: securityOut.actions } : {}), traceId: requestTraceId });
       } else if (isVoicesCommand(lower)) {
         // FILM VOICES (lib/film/voices.mjs, signed-in operator only): the
         // voices films can use, a short description from their labels and
