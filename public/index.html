@@ -1435,6 +1435,11 @@
     .suggestion:focus-visible { border-radius: var(--r-lg); }
     /* chat saved during the first redesign pass laid suggestions out in a row */
     .suggestion > .icon:first-child + span { margin-top: auto; }
+    /* live home text (loadHomeContext): a short fade when it replaces
+       today's defaults */
+    .welcome .is-home-swap { animation: home-swap 240ms ease-out; }
+    @keyframes home-swap { from { opacity: 0; } to { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .welcome .is-home-swap { animation: none; } }
 
     /* pending: "thinking" indicator while a directive is in flight */
     .pending-text { color: var(--text-2); display: flex; align-items: center; gap: var(--sp-3); }
@@ -5765,6 +5770,7 @@
       cookieSession = false;
       sessionUser = null;
       sessionPass = null;
+      homeLive = null;
       const modal = document.getElementById('auth-modal');
       if (modal) modal.style.display = '';
       setAuthMessage('Your session ended. Sign in again.', false);
@@ -6233,6 +6239,7 @@
       pollReportsSoon(500);
       showOperatorPushPanel();
       showAutonomousSwitch();
+      startHomeContext();
     }
 
     function startCookieSession() {
@@ -6448,12 +6455,14 @@
     let lastUnresolvedErrorCount = 0;
     const PLUS_MENU_HTML = '<svg class="icon icon-inline" aria-hidden="true" focusable="false"><use href="#i-plus"/></svg><span class="sr-only">the plus menu</span>';
 
-    function welcomeSubtitle(healthState, unresolvedCount) {
+    function welcomeSubtitle(healthState, unresolvedCount, liveText) {
       if (unresolvedCount > 0) {
         return `${unresolvedCount} ${unresolvedCount === 1 ? 'error needs' : 'errors need'} a look. Open the error log from ${PLUS_MENU_HTML}.`;
       }
       if (healthState === 'red') return "Can't reach the core right now. Messages will fail until it's back.";
       if (healthState === 'amber') return 'Responses may be slow right now.';
+      // The operator's live line (loadHomeContext), as plain text.
+      if (typeof liveText === 'string' && liveText) return escapeHTML(liveText);
       return 'PG1 is online. Ask anything, or pick a starting point.';
     }
 
@@ -6462,12 +6471,100 @@
     function refreshWelcomeSubtitle() {
       const el = document.querySelector('#chat-container .message-bubble.welcome .message-text');
       if (!el) return;
-      const html = welcomeSubtitle(lastHealthState, lastUnresolvedErrorCount);
+      const html = welcomeSubtitle(lastHealthState, lastUnresolvedErrorCount, homeLive && sessionUser ? homeLive.subtitle : null);
       if (el.pg1Subtitle !== html) {
+        const swap = el.pg1Subtitle !== undefined && el.pg1Fade === true;
         el.innerHTML = html;
         el.pg1Subtitle = html;
+        if (swap) fadeIn(el);
+      }
+      el.pg1Fade = false;
+    }
+
+    // HOME CONTEXT (/api/home-context, lib/homeContext.mjs): for the
+    // signed-in operator, the subtitle and the four starting points follow
+    // PG1's real state. The page shows today's defaults first and swaps the
+    // live text in with a short fade; a signed-out page keeps the defaults. This text is
+    // not a chat reply: it is set as text here and never goes through the
+    // reply pipeline, so its digits show as they are.
+    var homeLive = null;
+    var homeContextTimer = null;
+    var homeContextLoading = false;
+    var HOME_CONTEXT_REFRESH_MS = 180000;
+    var HOME_ICONS = ['i-radar', 'i-pulse', 'i-cart', 'i-help', 'i-check', 'i-file', 'i-alert', 'i-code', 'i-eye', 'i-sync'];
+
+    function fadeIn(el) {
+      if (!el) return;
+      el.classList.remove('is-home-swap');
+      void el.offsetWidth;
+      el.classList.add('is-home-swap');
+    }
+
+    function homeCardButton(card) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'suggestion';
+      btn.dataset.command = card.command;
+      btn.addEventListener('click', () => runQuick(card.command));
+      const icon = HOME_ICONS.includes(card.icon) ? card.icon : 'i-help';
+      btn.innerHTML = `<svg class="icon" aria-hidden="true"><use href="#${icon}"/></svg><span><strong></strong><small></small></span>`;
+      btn.querySelector('strong').textContent = card.label;
+      btn.querySelector('small').textContent = card.command;
+      return btn;
+    }
+
+    function validHomeCards(cards) {
+      if (!Array.isArray(cards) || cards.length !== 4) return false;
+      return cards.every((c) => c && typeof c.label === 'string' && c.label && typeof c.command === 'string' && /^\/[a-z0-9-]+(?: [a-z0-9-]+)?$/.test(c.command))
+        && cards.some((c) => c.command === '/help');
+    }
+
+    function applyHomeCards(fade) {
+      const group = document.querySelector('#chat-container .message-bubble.welcome .welcome-suggestions');
+      if (!group || !homeLive || !sessionUser || !validHomeCards(homeLive.cards)) return;
+      const key = JSON.stringify(homeLive.cards);
+      if (group.pg1Cards === key) return;
+      group.replaceChildren(...homeLive.cards.map(homeCardButton));
+      group.pg1Cards = key;
+      if (fade) fadeIn(group);
+    }
+
+    function applyHomeContext(fade) {
+      const el = document.querySelector('#chat-container .message-bubble.welcome .message-text');
+      if (el) el.pg1Fade = !!fade;
+      refreshWelcomeSubtitle();
+      applyHomeCards(fade);
+    }
+
+    function welcomeShowing() {
+      return !!document.querySelector('#chat-container .message-bubble.welcome') && !document.querySelector('#chat-container .message-bubble:not(.welcome)');
+    }
+
+    async function loadHomeContext() {
+      if (!sessionUser || !sessionPass || homeContextLoading) return;
+      homeContextLoading = true;
+      try {
+        const res = await fetch('/api/home-context', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: sessionUser, pass: sessionPass }) });
+        if (!res.ok) return;
+        const data = await res.json();
+        const home = data && data.home;
+        if (!home || typeof home.subtitle !== 'string' || !validHomeCards(home.cards) || !sessionUser) return;
+        homeLive = { subtitle: home.subtitle, cards: home.cards };
+        applyHomeContext(true);
+      } catch (e) {
+        // Unreachable: the defaults stay.
+      } finally {
+        homeContextLoading = false;
       }
     }
+
+    function startHomeContext() {
+      loadHomeContext();
+      if (homeContextTimer === null) {
+        homeContextTimer = setInterval(() => { if (!document.hidden && welcomeShowing()) loadHomeContext(); }, HOME_CONTEXT_REFRESH_MS);
+      }
+    }
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && welcomeShowing()) loadHomeContext(); });
 
     // EMPTY STATE: a fresh session and Clear chat both show the greeting
     // from <template id="welcome-template">.
@@ -6491,6 +6588,7 @@
         welcomeTime.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       }
       refreshWelcomeSubtitle();
+      applyHomeCards(false);
     }
 
     // APPEARANCE: System / Light / Dark, saved per device. The <head> script

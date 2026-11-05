@@ -55,6 +55,8 @@ function startServer(store) {
       }
       if (url.pathname.startsWith('/api/')) {
         if (url.pathname === '/api/health') return json(200, { status: 'ok' });
+        // The empty state's live text (api/home-context.mjs): none here, so the defaults stay.
+        if (url.pathname === '/api/home-context') return json(200, { ok: true });
         if (url.pathname === '/api/errors') return json(200, { errors: [], ok: true });
         if (url.pathname === '/api/handoffs') return json(200, { handoffs: [] });
         if (url.pathname === '/api/threads') return json(200, { threads: [] });

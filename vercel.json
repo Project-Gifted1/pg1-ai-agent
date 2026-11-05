@@ -268,7 +268,7 @@
       ]
     },
     {
-      "source": "/api/:path((?!chat$|errors$|errors/cleanup$|handoffs$|threads$|watches$|playground$|video-render$|mcp$|a2a$|preflight$|watchlists$).*)",
+      "source": "/api/:path((?!chat$|errors$|errors/cleanup$|handoffs$|threads$|watches$|home-context$|playground$|video-render$|mcp$|a2a$|preflight$|watchlists$).*)",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
