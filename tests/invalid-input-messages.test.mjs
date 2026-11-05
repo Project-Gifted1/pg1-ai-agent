@@ -151,9 +151,13 @@ test('A2A invalid-input errors carry a fix-it message and keep their code', asyn
   assert.match(unknownSkill.body.error.message, /Unknown skill/);
   assertFixIt(unknownSkill.body.error.message, unknownSkill, 'unknown skill');
 
+  // A text-only message is not an input error: it gets the free description
+  // of PG1 (tests/a2a-registry-probe.test.mjs), and the text is not echoed
+  // into the agent's reply.
   const noDataPart = await callA2a([{ kind: 'text', text: MARKER }]);
-  assert.equal(noDataPart.body.error.code, -32602);
-  assertFixIt(noDataPart.body.error.message, noDataPart, 'no DataPart');
+  assert.equal(noDataPart.body.error, undefined);
+  assert.equal(noDataPart.body.result.status.state, 'completed');
+  assert.doesNotMatch(JSON.stringify(noDataPart.body.result.status.message), new RegExp(MARKER));
 
   const missingDomain = await callA2a([{ kind: 'data', data: { skill: 'check_domain_age', arguments: {} } }]);
   assert.equal(missingDomain.body.error.code, -32602);

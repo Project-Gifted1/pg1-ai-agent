@@ -55,6 +55,9 @@
  *
  * Request shape: params.message.parts must contain a DataPart carrying
  * { skill: "<tool name>", arguments: { ... } }.
+ * A message with no skill call (text only, or a DataPart without "skill")
+ * gets a free, completed Task describing PG1, its skills and how to pay
+ * (introTask); never a payment request. The same reply for every caller.
  *
  * Response shape: a Task object with a "completed" artifact whose part is
  * a DataPart carrying the tool's JSON result, plus a history entry echoing
@@ -346,6 +349,64 @@ function taskResult(skill, args, result, version, inboundMessage, { paymentMetad
   return task;
 }
 
+// A plain message with no skill call (text only, or a DataPart without
+// "skill"): a free, completed Task describing PG1, its free and paid skills
+// and how to pay. The same for every caller (no User-Agent special case);
+// never a payment request. Paid skills keep their x402 gate below.
+export function introText() {
+  return [
+    'PG1 Sovereign Threat Intelligence: threat intelligence and safety checks for AI agents.',
+    `Free skills: ${A2A_FREE_SKILL_NAMES.join(', ')}.`,
+    `Paid skills (${x402PriceUsd(X402_PRICE)} USD per call after 5 free calls a day per caller): ${A2A_PAID_SKILL_NAMES.join(', ')}. Paid jobs: ${JOB_SKILL} (quoted first). Commissioned tools: ${FOUNDRY_SKILL}.`,
+    `To call a skill, send a DataPart {"skill": "<skill name>", "arguments": {...}}, e.g. {"skill": "check_domain_age", "arguments": {"domain": "example.com"}}.`,
+    `To pay: x402 v2 over the a2a-x402 extension (a paid skill called without payment answers with the x402 requirements; send the PaymentPayload in message.metadata["${X402_META.payload}"]), or a Gumroad licence key in X-API-KEY.`,
+    'Agent card: https://pg1-ai-agent.vercel.app/.well-known/agent-card.json. Docs: https://pg1-ai-agent.vercel.app/docs/agents.'
+  ].join('\n');
+}
+
+function buildTextPart(text, version) {
+  if (version === '1.0') return { text, mediaType: 'text/plain' };
+  return { kind: 'text', text };
+}
+
+function introTask(version, inboundMessage) {
+  const taskId = crypto.randomUUID();
+  const contextId = (inboundMessage && inboundMessage.contextId) || crypto.randomUUID();
+  const text = introText();
+  const info = {
+    agent: 'PG1 Sovereign Threat Intelligence',
+    free: true,
+    free_skills: [...A2A_FREE_SKILL_NAMES],
+    paid_skills: [...A2A_PAID_SKILL_NAMES],
+    jobs: JOB_SKILL,
+    commissioned_tools: FOUNDRY_SKILL,
+    price_per_paid_call_usd: x402PriceUsd(X402_PRICE),
+    free_paid_calls_per_day: 5,
+    payment: { x402: { extension: 'https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.1', payload_metadata_key: X402_META.payload }, licence_key_header: 'X-API-KEY' },
+    call_example: { skill: 'check_domain_age', arguments: { domain: 'example.com' } },
+    agent_card: 'https://pg1-ai-agent.vercel.app/.well-known/agent-card.json',
+    documentation: 'https://pg1-ai-agent.vercel.app/docs/agents'
+  };
+  const reply = buildMessage('agent', info, version, { contextId, taskId });
+  reply.parts = [buildTextPart(text, version), ...reply.parts];
+  const history = [];
+  if (inboundMessage && Array.isArray(inboundMessage.parts)) {
+    const echoed = { role: roleValue('user', version), parts: inboundMessage.parts, messageId: inboundMessage.messageId || crypto.randomUUID(), contextId, taskId };
+    if (version === '0.3') echoed.kind = 'message';
+    history.push(echoed);
+  }
+  history.push(reply);
+  const task = {
+    id: taskId,
+    contextId,
+    status: { state: stateValue('completed', version), timestamp: new Date().toISOString(), message: reply },
+    artifacts: [{ artifactId: crypto.randomUUID(), name: 'about_pg1', parts: [buildTextPart(text, version), buildDataPart(info, version)] }],
+    history
+  };
+  if (version === '0.3') task.kind = 'task';
+  return task;
+}
+
 // Telemetry for one skill call (lib/telemetry.mjs): the skill name (always
 // one of A2A_SKILL_NAMES), how it was paid for (free skills: 'free'; paid
 // skills: license / free_tier / x402 / none), how it ended, and a salted
@@ -628,6 +689,11 @@ export default async function handler(req, res) {
       }
     }
     const data = extractDataPart(inboundMessage);
+    // No skill call (plain text, or a DataPart without "skill"): the free
+    // description of PG1. Never a 402 or payment request.
+    if (inboundMessage && typeof inboundMessage === 'object' && (!data || data.skill === undefined || data.skill === null || data.skill === '')) {
+      return res.status(200).json({ jsonrpc: '2.0', result: introTask(version, inboundMessage), id: requestId });
+    }
     if (!data) {
       return jsonRpcError(
         res, 400, -32602,
