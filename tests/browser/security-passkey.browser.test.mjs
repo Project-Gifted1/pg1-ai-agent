@@ -27,6 +27,7 @@ import http from 'node:http';
 import { existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { routeReplyFont } from '../helpers/replyFont.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PUBLIC_DIR = join(ROOT, 'public');
@@ -122,6 +123,8 @@ test('passkey sign-in on Android Chrome: add a passkey from a password session, 
   const browser = await chromium.launch();
   try {
     const context = await browser.newContext({ ...devices['Pixel 7'], colorScheme: 'dark' });
+    // The reply font from a local copy (CI blocks the network).
+    await routeReplyFont(context);
     await context.addInitScript(() => { try { localStorage.setItem('pg1_theme', 'dark'); } catch (e) {} });
     const page = await context.newPage();
     const errors = [];
