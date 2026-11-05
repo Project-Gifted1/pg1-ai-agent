@@ -42,6 +42,12 @@
           "alg": "EdDSA",
           "metadata_key": "pg1.signature"
         }
+      },
+      {
+        "uri": "https://sealkeeper.run/ext/claim",
+        "params": {
+          "token": "1rNWOUGu3zo6fixH3wDCsIXB_uCwRGNKVf_S3ON6RH0"
+        }
       }
     ]
   },
