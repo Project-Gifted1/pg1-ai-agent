@@ -2,6 +2,7 @@
   "name": "pg1-ai-agent",
   "version": "1.0.3",
   "private": true,
+  "license": "BUSL-1.1",
   "type": "module",
   "scripts": {
     "dev": "next dev",

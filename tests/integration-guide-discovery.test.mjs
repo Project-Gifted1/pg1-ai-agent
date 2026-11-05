@@ -1,8 +1,8 @@
 /**
  * The public integration guide at /docs/crypto-alert-bot is discoverable
  * from the agent-facing discovery files: an "Integration guides" section in
- * public/llms.txt, documentationUrl in the A2A agent card, and externalDocs
- * in public/openapi.json. No release goes with this: server.json and the
+ * public/llms.txt and externalDocs in public/openapi.json. (The A2A agent
+ * card's documentationUrl now points to /docs/agents, for the A2A Registry.) No release goes with this: server.json and the
  * MCP tool definitions stay byte-identical to the 1.14.0 release (pinned
  * below by hash), and no version moves. The 1.15.0 licensing release has
  * since moved the versions and hashes pinned here (see
@@ -67,8 +67,8 @@ test('llms.txt has a short "Integration guides" section linking the guide', () =
   noVendorNames('llms.txt Integration guides', section);
 });
 
-test('agent card documentationUrl points to the guide; nothing else in the card changes', () => {
-  assert.equal(CARD.documentationUrl, GUIDE_URL);
+test('agent card documentationUrl points to the agent docs (A2A Registry); the version is unchanged', () => {
+  assert.equal(CARD.documentationUrl, `${BASE_URL}/docs/agents`);
   assert.equal(CARD.version, '1.21.1');
   assert.doesNotMatch(CARD.description, /docs\/crypto-alert-bot/, 'the spec field carries the link; the description stays as is');
 });

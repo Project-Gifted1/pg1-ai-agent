@@ -120,13 +120,14 @@ test('"message/send" (v0.3 name) behaves identically to "SendMessage"', async (t
   assert.equal(viaPrimary.body.result.status.state, 'completed');
 });
 
-test('missing DataPart returns a clear -32602 error', async () => {
+test('a text-only message (no DataPart) gets the free description of PG1, not an error', async () => {
   const req = makeReq('SendMessage', { message: { role: 'user', parts: [{ kind: 'text', text: 'hi' }] } });
   const res = makeRes();
   await handler(req, res);
-  assert.equal(res.statusCode, 400);
-  assert.equal(res.body.error.code, -32602);
-  assert.match(res.body.error.message, /DataPart/);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.error, undefined);
+  assert.equal(res.body.result.status.state, 'completed');
+  assert.match(res.body.result.status.message.parts[0].text, /Free skills/);
 });
 
 test('unknown skill returns a clear -32602 error listing available skills', async () => {

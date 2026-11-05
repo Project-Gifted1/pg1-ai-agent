@@ -683,3 +683,7 @@ Each film's voice is chosen per film; no environment variable is required.
 - **Frits** ([x402 Doctor](https://x402-doctor.onrender.com/)): found the payment-gate ordering bug and confirmed the fix, so PG1 now returns a proper x402 payment challenge by default.
 - **`check_package`** data sources and licences (OpenSSF Malicious Packages, GitHub Advisory Database, PyPI Advisory Database, Go Vulnerability Database, RustSec, via OSV.dev; the npm public registry and PyPI) are listed on [/docs/attributions](https://pg1-ai-agent.vercel.app/docs/attributions), generated from `lib/attributions.mjs`.
 - **`check_hostname_reputation`** blocklist/allowlist/fuzzylist data is sourced from [MetaMask eth-phishing-detect](https://github.com/MetaMask/eth-phishing-detect), used under the [Don't Be A Dick (DBAD) Public License](https://github.com/MetaMask/eth-phishing-detect/blob/main/LICENSE).
+
+## License
+
+Business Source License 1.1 (see [LICENSE](LICENSE)). Using PG1's API, MCP server or A2A agent is not affected. Converts to Apache 2.0 on 2030-11-05.
