@@ -16,6 +16,7 @@ import { getRequestIdentifier, setFreeTierHeaders } from '../lib/freeTier.mjs';
 import { PREFLIGHT_TOOL } from '../lib/preflight.mjs';
 import { signResult, addJwksLink } from '../lib/signing.mjs';
 import { recordTelemetry } from '../lib/telemetry.mjs';
+import { requestCountry, recordDefenseEvent } from '../lib/defenseEvents.mjs';
 import { callerKindOf } from '../lib/ownTraffic.mjs';
 import { X402_PRICE, x402PriceUsd } from '../lib/x402Config.mjs';
 import { queryOf } from '../lib/requestQuery.mjs';
@@ -91,12 +92,13 @@ export function makePaidRestHandler({ tool, endpoint, argsFrom, usage }) {
         throw err;
       }
       result.request_id = requestId;
+      recordDefenseEvent({ toolName: tool, endpoint, result, country: requestCountry(req), callerHash: requestCallerHash(req), callerKind: callerKindOf(req) });
 
       if (gate.settle) {
         let settled = null;
         try { settled = await gate.settle(); } catch (e) { settled = null; }
         const ok = !!(settled && settled.success);
-        recordTelemetry({ eventType: 'settlement', endpoint, toolName: tool, paymentType: 'x402', status: ok ? 'settled' : 'failed', latencyMs: Date.now() - startedAt, callerHash: requestCallerHash(req), callerKind: callerKindOf(req), amountUsd: ok ? x402PriceUsd(X402_PRICE) : null });
+        recordTelemetry({ eventType: 'settlement', endpoint, toolName: tool, paymentType: 'x402', status: ok ? 'settled' : 'failed', latencyMs: Date.now() - startedAt, callerHash: requestCallerHash(req), countryCode: requestCountry(req), callerKind: callerKindOf(req), amountUsd: ok ? x402PriceUsd(X402_PRICE) : null });
         if (!ok) {
           telemetry.status = 'settlement_failed';
           const paymentRequired = await gate.settlementFailurePaymentRequired((settled && (settled.errorMessage || settled.errorReason)) || 'Settlement failed');
@@ -116,7 +118,7 @@ export function makePaidRestHandler({ tool, endpoint, argsFrom, usage }) {
       telemetry.status = 'server_error';
       return res.status(500).json({ error: 'internal_error', request_id: requestId });
     } finally {
-      recordTelemetry({ eventType: 'tool_call', endpoint, toolName: tool, paymentType: telemetry.paymentType, status: telemetry.status, latencyMs: Date.now() - startedAt, callerHash: requestCallerHash(req), callerKind: callerKindOf(req) });
+      recordTelemetry({ eventType: 'tool_call', endpoint, toolName: tool, paymentType: telemetry.paymentType, status: telemetry.status, latencyMs: Date.now() - startedAt, callerHash: requestCallerHash(req), countryCode: requestCountry(req), callerKind: callerKindOf(req) });
     }
   };
 }
