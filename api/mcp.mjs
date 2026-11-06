@@ -149,6 +149,7 @@ import { extractRegistrableDomain } from '../lib/domainExtraction.mjs';
 import { domainToASCII, domainToUnicode } from 'node:url';
 import { logApiError } from '../lib/errorLog.mjs';
 import { recordTelemetry, callerHash, toolErrorTelemetryStatus } from '../lib/telemetry.mjs';
+import { requestCountry, recordDefenseEvent } from '../lib/defenseEvents.mjs';
 import { callerKindOf } from '../lib/ownTraffic.mjs';
 import { reason } from '../lib/reasonCodes.mjs';
 import { buildCheck, withResponseMeta, withActionResponseMeta, classifyToolErrorCheckResult, errorResponseMeta } from '../lib/responseMeta.mjs';
@@ -3627,7 +3628,7 @@ async function settleAndRespondOnFailure(res, requestId, gate, pg1RequestId, cal
   const settleStartedAt = Date.now();
   const recordSettlement = (status) => {
     if (callTelemetry && status !== 'settled') callTelemetry.status = 'settlement_failed';
-    recordTelemetry({ eventType: 'settlement', endpoint: '/api/mcp', toolName: callTelemetry?.toolName, paymentType: 'x402', status, latencyMs: Date.now() - settleStartedAt, callerHash: callTelemetry?.callerHash, callerKind: callTelemetry?.callerKind, amountUsd: status === 'settled' ? x402PriceUsd(X402_PRICE) : null });
+    recordTelemetry({ eventType: 'settlement', endpoint: '/api/mcp', toolName: callTelemetry?.toolName, paymentType: 'x402', status, latencyMs: Date.now() - settleStartedAt, callerHash: callTelemetry?.callerHash, countryCode: callTelemetry?.countryCode, callerKind: callTelemetry?.callerKind, amountUsd: status === 'settled' ? x402PriceUsd(X402_PRICE) : null });
   };
   try {
     settleResult = await gate.settle();
@@ -3840,7 +3841,7 @@ function statusFromHttp(statusCode) {
 // stored reduced (sanitizeMcpMethod), so /usage can name it.
 function recordMcpRequestTelemetry(req, method, status) {
   try {
-    recordTelemetry({ eventType: 'mcp_request', endpoint: '/api/mcp', mcpMethod: method, status, callerHash: requestCallerHash(req), callerKind: callerKindOf(req) });
+    recordTelemetry({ eventType: 'mcp_request', endpoint: '/api/mcp', mcpMethod: method, status, callerHash: requestCallerHash(req), countryCode: requestCountry(req), callerKind: callerKindOf(req) });
   } catch {
     // Best-effort - telemetry never affects the response.
   }
@@ -3859,6 +3860,7 @@ function recordToolCallTelemetry(callTelemetry, res) {
       status: known ? (callTelemetry.status || statusFromHttp(res.statusCode)) : 'unknown_tool',
       latencyMs: Date.now() - callTelemetry.startedAt,
       callerHash: callTelemetry.callerHash,
+      countryCode: callTelemetry.countryCode,
       callerKind: callTelemetry.callerKind,
       isFixture: callTelemetry.isFixture === true
     });
@@ -4022,7 +4024,7 @@ export default async function handler(req, res) {
       // version (sanitised and cut short in lib/telemetry.mjs) and a salted
       // hash of the caller IP - nothing else from the request.
       const clientInfo = params && typeof params.clientInfo === 'object' && params.clientInfo ? params.clientInfo : {};
-      recordTelemetry({ eventType: 'initialize', endpoint: '/api/mcp', status: 'ok', clientName: clientInfo.name, clientVersion: clientInfo.version, callerHash: requestCallerHash(req), callerKind: callerKindOf(req) });
+      recordTelemetry({ eventType: 'initialize', endpoint: '/api/mcp', status: 'ok', clientName: clientInfo.name, clientVersion: clientInfo.version, callerHash: requestCallerHash(req), countryCode: requestCountry(req), callerKind: callerKindOf(req) });
       return res.status(200).json({
         jsonrpc: '2.0',
         result: { protocolVersion: ['2025-06-18', '2025-03-26', '2024-11-05'].includes(params?.protocolVersion) ? params.protocolVersion : '2025-06-18', capabilities: MCP_SERVER_CAPABILITIES, serverInfo: { name: 'pg1-threat-intel', version: pg1Version() } },
@@ -4072,6 +4074,10 @@ export default async function handler(req, res) {
           const r = out && out.result;
           if (r && !r.isError && Array.isArray(r.content) && r.content[0] && typeof r.content[0].text === 'string') {
             const parsed = JSON.parse(r.content[0].text);
+            // PG1 Kingdom Defence (lib/defenseEvents.mjs): a defence verdict
+            // in the result (a flagged check, a malicious message) is one
+            // row: check, verdict and reason codes only, never what was checked.
+            if (callTelemetry) recordDefenseEvent({ toolName, endpoint: '/api/mcp', result: parsed, country: callTelemetry.countryCode, callerHash: callTelemetry.callerHash, callerKind: callTelemetry.callerKind, isFixture: callTelemetry.isFixture });
             const sig = signResult({ tool: toolName, args: toolArgs, result: parsed });
             if (sig) { r._meta = { ...(r._meta || {}), [MCP_SIGNATURE_META]: sig }; addJwksLink(res); }
           }
@@ -4085,7 +4091,7 @@ export default async function handler(req, res) {
       // free, for every caller, key or no key.
       // Fixture calls are recorded too, flagged is_fixture, so the usage
       // stats can leave them out.
-      callTelemetry = { toolName, paymentType: 'none', status: null, startedAt: Date.now(), callerHash: requestCallerHash(req), callerKind: callerKindOf(req) };
+      callTelemetry = { toolName, paymentType: 'none', status: null, startedAt: Date.now(), callerHash: requestCallerHash(req), countryCode: requestCountry(req), callerKind: callerKindOf(req) };
       const fixtureOutcome = resolveTestFixture(toolName, toolArgs);
       if (fixtureOutcome) {
         callTelemetry.isFixture = true;
