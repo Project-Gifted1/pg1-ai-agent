@@ -122,14 +122,14 @@ test('telemetry rows map to gadgets; ordinary traffic, fixtures and own traffic 
   const row = (o) => ({ created_at: iso(1000), endpoint: '/api/mcp', event_type: 'tool_call', caller_hash: HASH, country_code: 'US', ...o });
   const cases = [
     [{ status: 'unknown_tool' }, 'gate_wardens', 'UNKNOWN_TOOL', 'attacker'],
-    [{ status: 'payment_required', tool_name: 'check_package' }, 'toll_bridge', 'PAYMENT_REQUIRED_402', 'attacker'],
-    [{ status: 'free_limit_reached' }, 'toll_bridge', 'FREE_LIMIT_REACHED', 'attacker'],
+    [{ status: 'payment_required', tool_name: 'preflight_check' }, 'toll_bridge', 'PAYMENT_REQUIRED_402', 'attacker'],
+    [{ status: 'free_limit_reached', tool_name: 'get_cve_batch' }, 'toll_bridge', 'FREE_LIMIT_REACHED', 'attacker'],
     [{ event_type: 'settlement', status: 'settled' }, 'toll_bridge', 'SETTLED', 'ally'],
     [{ status: 'payer_refused' }, 'sanctions_gate', 'PAYER_REFUSED', 'attacker'],
     [{ status: 'rate_limited' }, 'rate_shield', 'RATE_LIMITED', 'attacker'],
     [{ status: 'invalid_input' }, 'gate_wardens', 'CALLER_FAULT', 'attacker'],
-    [{ status: 'server_error' }, 'keep_wall', 'PG1_FAULT', 'kingdom'],
-    [{ status: 'upstream_error' }, 'keep_wall', 'SOURCE_FAULT', 'kingdom'],
+    [{ status: 'server_error' }, 'repair_crews', 'PG1_FAULT', 'kingdom'],
+    [{ status: 'upstream_error' }, 'repair_crews', 'SOURCE_FAULT', 'kingdom'],
     [{ event_type: 'mcp_request', status: 'method_not_found', mcp_method: 'admin/exec' }, 'gate_wardens', 'UNKNOWN_METHOD', 'attacker'],
     [{ event_type: 'mcp_request', status: 'client_error', mcp_method: 'invalid_json' }, 'gate_wardens', 'INVALID_JSON', 'attacker']
   ];
@@ -188,7 +188,7 @@ function fakeDb(tables, { fail = [], noCountry = false } = {}) {
 const TABLES = {
   agent_telemetry: [
     ...Array.from({ length: 40 }, () => ({ created_at: iso(2 * 60000), event_type: 'tool_call', endpoint: '/api/mcp', status: 'unknown_tool', caller_hash: HASH, country_code: 'RU', requested_tool: 'get_admin_token' })),
-    { created_at: iso(30 * 60000), event_type: 'settlement', endpoint: '/api/mcp', status: 'settled', tool_name: 'check_package', caller_hash: HASH, country_code: 'IE' },
+    { created_at: iso(30 * 60000), event_type: 'settlement', endpoint: '/api/mcp', status: 'settled', tool_name: 'get_cve_details', caller_hash: HASH, country_code: 'IE' },
     { created_at: iso(40 * 60000), event_type: 'tool_call', endpoint: '/api/a2a', status: 'payment_required', tool_name: 'preflight_check', caller_hash: null, country_code: null },
     { created_at: iso(25 * 3600000), event_type: 'tool_call', endpoint: '/api/mcp', status: 'rate_limited', caller_hash: HASH }
   ],
@@ -297,4 +297,91 @@ test('the migration is additive and never run by PG1; the route is outside the w
   const vercel = JSON.parse(readFileSync(join(ROOT, 'vercel.json'), 'utf8'));
   const wildcard = vercel.headers.find((h) => h.source.startsWith('/api/:path'));
   assert.ok(wildcard.source.includes('defense-feed$'));
+});
+
+test('PG1 state: the tower beacon follows the deploy and pin state; the SEAL tier only from the record', async () => {
+  const { towerBeacon, sealTier, buildDefenseState, SEAL_TIER_RECORD } = await import('../lib/defenseState.mjs');
+  assert.equal(towerBeacon({ deploy: { state: 'READY', failed: false } }).beacon, 'gold');
+  assert.equal(towerBeacon({ deploy: { state: 'READY' }, auto_merge: { state: 'paused' } }).beacon, 'amber');
+  assert.equal(towerBeacon({ deploy: { state: 'READY' }, auto_merge: { production_pinned: true } }).beacon, 'amber');
+  assert.equal(towerBeacon({ deploy: { state: 'ERROR', failed: true }, auto_merge: { production_pinned: true } }).beacon, 'dim', 'a failed deploy is shown, not hidden');
+  assert.equal(towerBeacon(null).beacon, 'unknown', 'unread is unknown, never gold');
+  assert.deepEqual([sealTier({}).tier, SEAL_TIER_RECORD.tier], ['bronze', 'bronze']);
+  assert.equal(sealTier({ PG1_SEALKEEPER_TIER: 'nonsense' }).tier, 'bronze', 'no upgrade without real data');
+  assert.equal(sealTier({ PG1_SEALKEEPER_TIER: 'silver' }).tier, 'silver');
+  assert.equal(sealTier({ PG1_SEALKEEPER_TIER: 'none' }), null);
+  const st = await buildDefenseState({ env: {}, deps: { home: async () => ({ deploy: { state: 'READY' }, approvals: { total: 2 } }), tools: async () => 17, passkeys: async () => true } });
+  assert.deepEqual([st.tower.beacon, st.checks_live, st.passkeys, st.approvals_waiting, st.seal.tier], ['gold', 17, true, 2, 'bronze']);
+  const broken = await buildDefenseState({ env: {}, deps: { home: async () => { throw new Error('x'); }, tools: async () => { throw new Error('x'); }, passkeys: async () => null } });
+  assert.deepEqual([broken.tower.beacon, broken.checks_live, broken.passkeys, broken.approvals_waiting], ['unknown', null, null, null]);
+  const live = await buildDefenseState({ env: {}, deps: { home: async () => ({}), passkeys: async () => false } });
+  assert.ok(live.checks_live > 10, 'the real MCP tool list');
+});
+
+test('allies and day totals: paid A2A jobs, licensed partners, verify_result; the HUD counts', async () => {
+  const { dayTotals } = await import('../lib/defenseFeed.mjs');
+  const r = (o) => ({ created_at: iso(60000), endpoint: '/api/mcp', event_type: 'tool_call', caller_hash: HASH, country_code: 'IE', ...o });
+  assert.equal(classifyTelemetryRow(r({ event_type: 'settlement', status: 'settled', tool_name: 'job.audit', endpoint: '/api/a2a' })).verdict, 'JOB_PAID');
+  assert.equal(classifyTelemetryRow(r({ status: 'ok', payment_type: 'license', tool_name: 'check_package' })).check, 'partner', 'a partner is never named');
+  assert.equal(classifyTelemetryRow(r({ status: 'ok', tool_name: 'verify_result' })).verdict, 'SEAL_VERIFIED');
+  const ev2 = (o) => ({ time: iso(60000), role: 'attacker', count: 1, country_code: 'CN', verdict_code: 'X', ...o });
+  assert.deepEqual(dayTotals([ev2({ count: 30 }), ev2({ country_code: 'NL' }), ev2({ country_code: null }), ev2({ role: 'ally', verdict_code: 'SETTLED', count: 3 }), ev2({ role: 'ally', verdict_code: 'JOB_PAID' })], NOW), { turned_away: 32, countries: 2, settled: 4 });
+});
+
+test('Fix 1: a 402 is a Toll Gantry event only on a paid skill; check_package only reaches the Supply Inspector', async () => {
+  const { NEVER_402_TOOLS, EDGE_FREE_TOOLS: mine, isPaidTool } = await import('../lib/defenseFeed.mjs');
+  const { EDGE_FREE_TOOLS } = await import('../api/mcp.mjs');
+  assert.deepEqual([...mine].sort(), [...EDGE_FREE_TOOLS].sort(), 'the free lists stay in sync');
+  assert.ok(NEVER_402_TOOLS.includes('check_package'));
+  const r = (o) => ({ created_at: iso(1000), endpoint: '/api/mcp', event_type: 'tool_call', caller_hash: HASH, country_code: 'US', ...o });
+  for (const status of ['payment_required', 'free_limit_reached', 'settlement_failed']) {
+    for (const tool of NEVER_402_TOOLS) assert.equal(classifyTelemetryRow(r({ status, tool_name: tool })), null, `${status} on free ${tool}`);
+    assert.equal(classifyTelemetryRow(r({ status, tool_name: null })), null, `${status} with no tool`);
+    assert.equal(classifyTelemetryRow(r({ status, tool_name: 'preflight_check' })).gadget, 'toll_bridge');
+  }
+  assert.ok(isPaidTool('get_cve_details') && !isPaidTool('check_package'));
+  // Every row check_package can produce lands on the Supply Inspector, a fault gadget, or nowhere: never the toll.
+  for (const status of ['ok', 'unknown_tool', 'payment_required', 'free_limit_reached', 'settlement_failed', 'payer_refused', 'rate_limited', 'invalid_input', 'client_error', 'tool_error', 'server_error', 'upstream_error']) {
+    const e = classifyTelemetryRow(r({ status, tool_name: 'check_package' }), { signing: true });
+    assert.ok(!e || e.gadget !== 'toll_bridge', status);
+  }
+  assert.equal(classifyVerdictRow({ created_at: iso(0), check_name: 'check_package', verdict_code: 'flagged', reason_codes: ['PACKAGE_REPORTED_MALICIOUS'] }).gadget, 'supply_inspector');
+});
+
+test('Fix 1: each gadget receives only its own event kinds', async () => {
+  const { GADGET_KINDS, GADGET_IDS: ids } = await import('../lib/defenseFeed.mjs');
+  assert.deepEqual(Object.keys(GADGET_KINDS).sort(), [...ids].sort());
+  const statuses = ['ok', 'not_found', 'unknown_tool', 'payment_required', 'free_limit_reached', 'settlement_failed', 'payer_refused', 'rate_limited', 'invalid_input', 'client_error', 'tool_error', 'server_error', 'upstream_error', 'settled', 'failed', 'method_not_found'];
+  const types = ['tool_call', 'settlement', 'mcp_request', 'initialize'];
+  const tools = [null, 'check_package', 'preflight_check', 'verify_result', 'job.audit', 'get_cve_details'];
+  let n = 0;
+  for (const event_type of types) for (const status of statuses) for (const tool_name of tools) for (const payment_type of ['none', 'license', 'x402']) {
+    const e = classifyTelemetryRow({ created_at: iso(0), event_type, status, tool_name, payment_type, endpoint: '/api/mcp', mcp_method: 'admin/x' }, { signing: true });
+    if (!e) continue; n++;
+    assert.ok(GADGET_KINDS[e.gadget].includes(e.kind), `${e.gadget} got ${e.kind}`);
+  }
+  for (const check of ['check_agent_message', 'check_hostname_reputation', 'check_domain_age', 'check_wallet_sanctions', 'check_package', 'preflight_check']) {
+    const e = classifyVerdictRow({ created_at: iso(0), check_name: check, verdict_code: 'flagged' });
+    assert.ok(GADGET_KINDS[e.gadget].includes(e.kind));
+  }
+  for (const e of [classifySigninRow({ created_at: iso(0), kind: 'failure' }), classifySigninRow({ created_at: iso(0), kind: 'burst_alert' })]) assert.ok(GADGET_KINDS[e.gadget].includes(e.kind));
+  assert.ok(n > 20);
+});
+
+test('Fix 1: a source with no caller identity has no caller hash (the view shows "—")', async () => {
+  const { classifyScreeningRow, classifyReportRow } = await import('../lib/defenseFeed.mjs');
+  assert.equal(classifySigninRow({ created_at: iso(0), kind: 'failure', ip_hash: HASH }).caller, null);
+  assert.equal(classifyScreeningRow({ created_at: iso(0), lists: ['ofac'] }).caller, null);
+  assert.equal(classifyReportRow({ created_at: iso(0), kind: 'daily' }).caller, null);
+});
+
+test('origins: hostile traffic by country over the 24 h window, most first; no country is not counted', async () => {
+  const { originsOf } = await import('../lib/defenseFeed.mjs');
+  const e = (cc, count, role = 'attacker') => ({ role, country_code: cc, count });
+  assert.deepEqual(originsOf([e('CN', 30), e('FR', 1), e('CN', 2), e(null, 9), e('DE', 4, 'ally')]), [{ country_code: 'CN', count: 32 }, { country_code: 'FR', count: 1 }]);
+  const { fetchImpl } = fakeDb(TABLES);
+  const feed = await buildDefenseFeed({ supUrl: 'https://db.test', supKey: 'k', fetchImpl, now: NOW, env: {} });
+  assert.deepEqual(feed.origins.map((o) => o.country_code), ['RU', 'NL']);
+  const poll = await buildDefenseFeed({ supUrl: 'https://db.test', supKey: 'k', fetchImpl, now: NOW, since: NOW - 60000, env: {} });
+  assert.equal(poll.origins, null);
 });

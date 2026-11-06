@@ -56,6 +56,8 @@ function startStubServer() {
       if (url.pathname === '/api/health') return json(res, 200, { status: 'ok' });
       // The empty state's live text (api/home-context.mjs): none here, so the defaults stay.
       if (url.pathname === '/api/home-context') return json(res, 200, { ok: true });
+      // PG1 Kingdom Defence's feed (api/defense-feed.mjs): nothing logged here.
+      if (url.pathname === '/api/defense-feed') return json(res, 200, { ok: true, events: [], today: {}, threat: { level: 'calm' }, gadgets: [] });
       if (url.pathname === '/api/errors') return json(res, 200, { errors: [], ok: true });
       if (url.pathname === '/api/handoffs') return json(res, 200, { handoffs: [] });
       if (url.pathname === '/api/watches') return json(res, 200, { ok: true, reports: [] });
