@@ -68,7 +68,9 @@ function assertFreeReply(res, version) {
   assert.equal(res.body.jsonrpc, '2.0');
   assert.equal(res.body.id, 'probe-1');
   assert.equal(res.body.error, undefined, 'no JSON-RPC error');
-  const task = res.body.result;
+  // 1.0: a SendMessageResponse { task }; 0.3: the Task itself.
+  if (version === '1.0') assert.deepEqual(Object.keys(res.body.result), ['task']);
+  const task = version === '1.0' ? res.body.result.task : res.body.result;
   const completed = version === '1.0' ? 'TASK_STATE_COMPLETED' : 'completed';
   assert.equal(task.status.state, completed);
   if (version === '0.3') {

@@ -46,7 +46,7 @@ Both checks use the same JSON-RPC 2.0 envelope. The method is `message/send`. `S
 }
 ```
 
-Send `Content-Type: application/json`. Without an `A2A-Version` header the server answers in the 0.3 shape shown in this guide (`"kind": "data"` parts, task state `"completed"`). Sending `A2A-Version: 1.0` changes the shape: parts lose `kind` and the state becomes `TASK_STATE_COMPLETED`. The bot below leaves the header off.
+Send `Content-Type: application/json`. Without an `A2A-Version` header the server answers in the 0.3 shape shown in this guide (`"kind": "data"` parts, task state `"completed"`). Sending `A2A-Version: 1.0` changes the shape to A2A 1.0's: the result wraps the task (read `result.task.artifacts[0].parts[0].data`), parts lose `kind`, the state becomes `TASK_STATE_COMPLETED`, and an error comes back as HTTP 200 with `error.data` a list holding one ErrorInfo entry (a reason, a domain and string metadata). The bot below leaves the header off.
 
 ### Where the result is
 

@@ -266,7 +266,8 @@ for (const version of ['0.3', '1.0']) {
     // X-Free-Tier: 0 so the challenge comes at once (the free tier is automatic).
     const res = await callA2a('get_threat_actor_profile', { actor_name: 'APT29' }, { headers: { 'a2a-version': version, 'x-free-tier': '0' } });
     assert.equal(res.statusCode, 200);
-    const task = res.body.result;
+    // 1.0: a SendMessageResponse { task }; 0.3: the Task itself.
+    const task = version === '1.0' ? res.body.result.task : res.body.result;
     assert.equal(task.status.state, version === '1.0' ? 'TASK_STATE_INPUT_REQUIRED' : 'input-required');
     const meta = task.status.message.metadata;
     assert.equal(meta['x402.payment.status'], 'payment-required');

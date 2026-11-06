@@ -39,15 +39,25 @@
  *
  * Version negotiation (spec 3.6.2): the A2A-Version header, or the
  * A2A-Version query param if the header is absent/empty, selects the wire
- * shape. Missing/empty => "0.3" (default). "1.0" => "1.0". Any other value
- * is rejected with VersionNotSupportedError.
- *   - 1.0: method name "SendMessage". Parts carry no "kind" field; a data
- *     part is { data: {...}, mediaType: "application/json" }. Task states
- *     are "TASK_STATE_COMPLETED" / "TASK_STATE_FAILED". Roles are
- *     "ROLE_USER" / "ROLE_AGENT".
+ * shape. Missing/empty => "0.3" (default). "1.0" (or "1.0.x") => "1.0";
+ * "0.3"/"0.3.x" => "0.3". Any other value is rejected with
+ * VersionNotSupportedError (-32009, in the 1.0 error shape). The official
+ * SDKs send "A2A-Version: 1.0" with the 1.0 method names and
+ * "A2A-Version: 0.3" with the 0.3 ones.
+ *   - 1.0 (ProtoJSON, as the official a2a-sdk / @a2a-js/sdk parse it):
+ *     SendMessage returns a SendMessageResponse, { "task": Task } - never a
+ *     bare Task. GetTask / CancelTask return the Task itself. Parts carry no
+ *     "kind" field; a data part is { data: {...}, mediaType:
+ *     "application/json" }, a text part { text, mediaType: "text/plain" }.
+ *     Task states are "TASK_STATE_*", roles "ROLE_USER" / "ROLE_AGENT".
+ *     Errors are HTTP 200 JSON-RPC errors whose data is an array holding one
+ *     google.rpc.ErrorInfo { reason, domain, metadata (strings only) }:
+ *     domain "a2a-protocol.org" for A2A codes, "pg1-ai-agent.vercel.app" for
+ *     PG1's own (-32000, -32010..-32012).
  *   - 0.3: method name "message/send". Parts use "kind": "data". Task
  *     states are "completed" / "failed". Roles are "user" / "agent". The
- *     Task carries "kind": "task" and messages carry "kind": "message".
+ *     result is the Task itself with "kind": "task", and messages carry
+ *     "kind": "message". Errors keep their HTTP status and an object data.
  * "SendMessage" and "message/send" are both accepted as aliases regardless
  * of the negotiated version; only the response shape changes. Incoming
  * DataParts are accepted in either shape (with or without "kind"/"type"),
@@ -59,7 +69,8 @@
  * gets a free, completed Task describing PG1, its skills and how to pay
  * (introTask); never a payment request. The same reply for every caller.
  *
- * Response shape: a Task object with a "completed" artifact whose part is
+ * Response shape: a Task (wrapped as { "task": Task } on 1.0) with a
+ * "completed" artifact whose part is
  * a DataPart carrying the tool's JSON result, plus a history entry echoing
  * the inbound message.
  *
@@ -172,7 +183,8 @@ const A2A_ERROR_CODES = {
   ContentTypeNotSupportedError: -32005,
   InvalidAgentResponseError: -32006,
   AuthenticatedExtendedCardNotConfiguredError: -32007,
-  VersionNotSupportedError: -32008
+  // 1.0's code (-32008 is ExtensionSupportRequiredError in 1.0).
+  VersionNotSupportedError: -32009
 };
 
 // App-level (non-A2A) error code for an upstream outage, kept distinct from
@@ -185,8 +197,12 @@ const METHODS = {
   subscribeToTask: ['SubscribeToTask', 'tasks/resubscribe'],
   getTask: ['GetTask', 'tasks/get'],
   cancelTask: ['CancelTask', 'tasks/cancel'],
+  // Tasks are not listed (a job is read by its id with GetTask).
+  listTasks: ['ListTasks', 'tasks/list'],
   getExtendedAgentCard: ['GetExtendedAgentCard', 'agent/getAuthenticatedExtendedCard'],
   pushNotificationConfig: [
+    // 1.0 names first, then the earlier aliases and the 0.3 names.
+    'CreateTaskPushNotificationConfig', 'ListTaskPushNotificationConfigs',
     'SetTaskPushNotificationConfig', 'tasks/pushNotificationConfig/set',
     'GetTaskPushNotificationConfig', 'tasks/pushNotificationConfig/get',
     'ListTaskPushNotificationConfig', 'tasks/pushNotificationConfig/list',
@@ -221,16 +237,81 @@ async function runSkill(skill, args, identifier, licenseKey, req) {
   }
 }
 
+// The negotiated wire version of each in-flight response, so every error
+// path (jsonRpcError) answers in the caller's version without threading it
+// through each call.
+const RESPONSE_VERSION = new WeakMap();
+
+// A2A 1.0 JSON-RPC errors (as the official SDKs read and write them):
+// HTTP 200, and error.data is an array of google.rpc typed details whose
+// first entry is a google.rpc.ErrorInfo { reason, domain, metadata } with
+// metadata a string-to-string map. Codes are the 1.0 ones (-32009 is
+// VersionNotSupportedError in 1.0; -32008 is ExtensionSupportRequiredError).
+const ERROR_INFO_TYPE = 'type.googleapis.com/google.rpc.ErrorInfo';
+const A2A_ERROR_DOMAIN = 'a2a-protocol.org';
+const PG1_ERROR_DOMAIN = 'pg1-ai-agent.vercel.app';
+const V1_ERROR_REASONS = {
+  [-32001]: 'TASK_NOT_FOUND',
+  [-32002]: 'TASK_NOT_CANCELABLE',
+  [-32003]: 'PUSH_NOTIFICATION_NOT_SUPPORTED',
+  [-32004]: 'UNSUPPORTED_OPERATION',
+  [-32005]: 'CONTENT_TYPE_NOT_SUPPORTED',
+  [-32006]: 'INVALID_AGENT_RESPONSE',
+  [-32007]: 'EXTENDED_AGENT_CARD_NOT_CONFIGURED',
+  [-32008]: 'EXTENSION_SUPPORT_REQUIRED',
+  [-32009]: 'VERSION_NOT_SUPPORTED',
+  [-32600]: 'INVALID_REQUEST',
+  [-32601]: 'METHOD_NOT_FOUND',
+  [-32602]: 'INVALID_PARAMS',
+  [-32603]: 'INTERNAL_ERROR',
+  [-32700]: 'PARSE_ERROR'
+};
+// PG1's own (non-A2A) codes, under PG1's domain.
+const PG1_ERROR_REASONS = {
+  [-32000]: 'TOOL_ERROR',
+  [-32010]: 'SERVICE_UNAVAILABLE',
+  [-32011]: 'LICENSE_REJECTED',
+  [-32012]: 'PAYER_REFUSED'
+};
+
+function errorInfoMetadata(data) {
+  const out = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (value === undefined || value === null) continue;
+    out[key] = typeof value === 'string' ? value : JSON.stringify(value);
+  }
+  return out;
+}
+
 function jsonRpcError(res, status, code, message, id, data, pg1RequestId) {
   // request_id lives in error.data (and the X-Request-Id header), never at
   // the top level of the JSON-RPC envelope.
-  const error = { code, message, data: { ...(data || {}), request_id: pg1RequestId } };
+  const details = { ...(data || {}), request_id: pg1RequestId };
+  if (RESPONSE_VERSION.get(res) === '1.0') {
+    const pg1Reason = PG1_ERROR_REASONS[code];
+    const info = {
+      '@type': ERROR_INFO_TYPE,
+      reason: pg1Reason || V1_ERROR_REASONS[code] || 'UNKNOWN_ERROR',
+      domain: pg1Reason ? PG1_ERROR_DOMAIN : A2A_ERROR_DOMAIN,
+      metadata: errorInfoMetadata(details)
+    };
+    return res.status(200).json({ jsonrpc: '2.0', error: { code, message, data: [info] }, id: id === undefined ? null : id });
+  }
+  const error = { code, message, data: details };
   return res.status(status).json({ jsonrpc: '2.0', error, id: id === undefined ? null : id });
 }
 
+// SendMessage's result. 1.0: a SendMessageResponse, { "task": Task } (the
+// official SDKs parse nothing else). 0.3: the Task itself, unwrapped, with
+// "kind": "task" (unchanged).
+function sendMessageResult(task, version) {
+  return version === '1.0' ? { task } : task;
+}
+
 // Spec 3.6.2: header takes precedence over the query param; missing/empty
-// resolves to "0.3"; anything besides "1.0", "0.3" and empty/missing is
-// rejected.
+// resolves to "0.3" (so a caller that sends no version keeps the 0.3 shapes,
+// whichever method name it uses). "1.0"/"0.3" and their patch forms
+// ("1.0.0", "0.3.0") are accepted; anything else is rejected.
 function resolveVersion(req) {
   let raw = req.headers && req.headers['a2a-version'];
   if (raw === undefined || raw === '') {
@@ -240,9 +321,10 @@ function resolveVersion(req) {
   }
   if (Array.isArray(raw)) raw = raw[0];
   if (raw === undefined || raw === null || raw === '') return { version: '0.3', requested: raw };
-  if (raw === '1.0') return { version: '1.0', requested: raw };
+  const trimmed = String(raw).trim();
+  if (/^1\.0(\.\d+)?$/.test(trimmed)) return { version: '1.0', requested: raw };
   // An explicit "0.3" is as valid as leaving it out (supportedVersions).
-  if (raw === '0.3') return { version: '0.3', requested: raw };
+  if (/^0\.3(\.\d+)?$/.test(trimmed)) return { version: '0.3', requested: raw };
   return { version: null, requested: raw };
 }
 
@@ -365,6 +447,28 @@ export function introText() {
   ].join('\n');
 }
 
+// An inbound part echoed into a 1.0 history: the 1.0 Part (one of text /
+// raw / url / data, plus metadata, filename, mediaType; no "kind"), whatever
+// shape the caller sent it in. A part with none of those is dropped.
+function toV1Part(part) {
+  if (!part || typeof part !== 'object') return null;
+  const out = {};
+  const file = part.file && typeof part.file === 'object' ? part.file : null;
+  if (typeof part.text === 'string') out.text = part.text;
+  else if (part.data !== undefined && (part.kind === undefined || part.kind === 'data')) out.data = part.data;
+  else if (typeof part.url === 'string') out.url = part.url;
+  else if (typeof part.raw === 'string') out.raw = part.raw;
+  else if (file && typeof file.uri === 'string') out.url = file.uri;
+  else if (file && typeof file.bytes === 'string') out.raw = file.bytes;
+  else return null;
+  if (part.metadata && typeof part.metadata === 'object') out.metadata = part.metadata;
+  const filename = part.filename || (file && file.name);
+  const mediaType = part.mediaType || (file && file.mimeType);
+  if (typeof filename === 'string') out.filename = filename;
+  if (typeof mediaType === 'string') out.mediaType = mediaType;
+  return out;
+}
+
 function buildTextPart(text, version) {
   if (version === '1.0') return { text, mediaType: 'text/plain' };
   return { kind: 'text', text };
@@ -392,7 +496,8 @@ function introTask(version, inboundMessage) {
   reply.parts = [buildTextPart(text, version), ...reply.parts];
   const history = [];
   if (inboundMessage && Array.isArray(inboundMessage.parts)) {
-    const echoed = { role: roleValue('user', version), parts: inboundMessage.parts, messageId: inboundMessage.messageId || crypto.randomUUID(), contextId, taskId };
+    const parts = version === '1.0' ? inboundMessage.parts.map(toV1Part).filter(Boolean) : inboundMessage.parts;
+    const echoed = { role: roleValue('user', version), parts, messageId: inboundMessage.messageId || crypto.randomUUID(), contextId, taskId };
     if (version === '0.3') echoed.kind = 'message';
     history.push(echoed);
   }
@@ -564,7 +669,8 @@ export default async function handler(req, res) {
   // Link: <.../.well-known/pg1-signing-key>; rel="jwks".
   const sendJson = res.json.bind(res);
   res.json = (out) => {
-    const meta = out && out.result && out.result.metadata;
+    const result = out && out.result;
+    const meta = result && ((result.task && result.task.metadata) || result.metadata);
     if (meta && meta[A2A_SIGNATURE_META]) addJwksLink(res);
     return sendJson(out);
   };
@@ -586,6 +692,12 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method Not Allowed. Use POST for A2A JSON-RPC requests.', request_id: pg1RequestId });
   }
 
+  // The version first, so a parse error is answered in the caller's version.
+  const { version, requested } = resolveVersion(req);
+  // VersionNotSupportedError exists only in 1.0 (code -32009), so an
+  // unsupported version is answered in the 1.0 error shape.
+  RESPONSE_VERSION.set(res, version || '1.0');
+
   let body = req.body;
   if (typeof body === 'string') {
     try { body = JSON.parse(body); } catch { body = null; }
@@ -600,11 +712,18 @@ export default async function handler(req, res) {
   let skillTelemetry = null;
 
   try {
-    const { version, requested } = resolveVersion(req);
     if (version === null) {
       return jsonRpcError(
         res, 400, A2A_ERROR_CODES.VersionNotSupportedError,
         `Unsupported A2A-Version: '${requested}'. Supported versions: '1.0', '0.3' (default).`,
+        requestId, undefined, pg1RequestId
+      );
+    }
+
+    if (METHODS.listTasks.includes(method)) {
+      return jsonRpcError(
+        res, 200, A2A_ERROR_CODES.UnsupportedOperationError,
+        `Method not supported: ${method}. This agent does not list tasks; read a job's task with ${version === '1.0' ? 'GetTask' : 'tasks/get'} and its id.`,
         requestId, undefined, pg1RequestId
       );
     }
@@ -672,11 +791,11 @@ export default async function handler(req, res) {
         const paid = await payJob({ jobId: inboundMessage.taskId, deps: { ...deps, gate: (job) => deps.gate(job, jobPayment) } });
         if (paid.paymentRequired) {
           skillTelemetry.status = 'payment_required';
-          return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(paid.job, version, inboundMessage, { paymentRequired: paid.paymentRequired }), id: requestId });
+          return res.status(200).json({ jsonrpc: '2.0', result: sendMessageResult(await jobTask(paid.job, version, inboundMessage, { paymentRequired: paid.paymentRequired }), version), id: requestId });
         }
         if (paid.accepted && paid.settlement) recordTelemetry({ eventType: 'settlement', endpoint: '/api/a2a', toolName: `job.${paid.job.job_type}`.slice(0, 64), paymentType: 'x402', status: 'settled', callerHash: requestCallerHash(req), countryCode: requestCountry(req), callerKind: callerKindOf(req), amountUsd: Number(paid.job.price_usd) });
         skillTelemetry.status = 'ok';
-        return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(paid.job, version, inboundMessage, { settlement: paid.settlement, signArtifact: (a) => deps.outputs.sign(a) }), id: requestId });
+        return res.status(200).json({ jsonrpc: '2.0', result: sendMessageResult(await jobTask(paid.job, version, inboundMessage, { settlement: paid.settlement, signArtifact: (a) => deps.outputs.sign(a) }), version), id: requestId });
       } catch (err) {
         if (err && err.jobRefusal) {
           skillTelemetry.status = err.status === 503 ? 'server_error' : err.status === 429 ? 'rate_limited' : 'client_error';
@@ -694,7 +813,7 @@ export default async function handler(req, res) {
     // No skill call (plain text, or a DataPart without "skill"): the free
     // description of PG1. Never a 402 or payment request.
     if (inboundMessage && typeof inboundMessage === 'object' && (!data || data.skill === undefined || data.skill === null || data.skill === '')) {
-      return res.status(200).json({ jsonrpc: '2.0', result: introTask(version, inboundMessage), id: requestId });
+      return res.status(200).json({ jsonrpc: '2.0', result: sendMessageResult(introTask(version, inboundMessage), version), id: requestId });
     }
     if (!data) {
       return jsonRpcError(
@@ -735,11 +854,11 @@ export default async function handler(req, res) {
         if (submitted.accepted) {
           skillTelemetry.paymentType = 'free_tier';
           skillTelemetry.status = 'ok';
-          return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(submitted.job, version, inboundMessage), id: requestId });
+          return res.status(200).json({ jsonrpc: '2.0', result: sendMessageResult(await jobTask(submitted.job, version, inboundMessage), version), id: requestId });
         }
         const gate = await deps.gate(submitted.job, undefined);
         skillTelemetry.status = 'payment_required';
-        return res.status(200).json({ jsonrpc: '2.0', result: await jobTask(submitted.job, version, inboundMessage, { paymentRequired: gate.paymentRequired }), id: requestId });
+        return res.status(200).json({ jsonrpc: '2.0', result: sendMessageResult(await jobTask(submitted.job, version, inboundMessage, { paymentRequired: gate.paymentRequired }), version), id: requestId });
       } catch (err) {
         if (err && err.jobRefusal) {
           skillTelemetry.status = err.status === 503 ? 'server_error' : 'invalid_input';
@@ -775,7 +894,7 @@ export default async function handler(req, res) {
             if (['quoted', 'counter_offer'].includes(job.status)) out.paymentRequired = (await runPricedX402Gate(req, { priceUsd: Number(job.build_fee_usd), description: `PG1 Foundry build fee: ft_${job.spec.name}` })).paymentRequired;
           }
           skillTelemetry.status = 'ok';
-          return res.status(200).json({ jsonrpc: '2.0', result: foundryTask(out.job, version, inboundMessage, { paymentRequired: out.paymentRequired, settlement: out.settlement, tool: out.tool }), id: requestId });
+          return res.status(200).json({ jsonrpc: '2.0', result: sendMessageResult(foundryTask(out.job, version, inboundMessage, { paymentRequired: out.paymentRequired, settlement: out.settlement, tool: out.tool }), version), id: requestId });
         }
         const store = createFoundryStore({ supUrl: creds.supUrl, supKey: creds.supKey });
         const called = await callFoundryTool({ name: skill, args, toolKey: req.headers[TOOL_KEY_HEADER] || null }, {
@@ -788,12 +907,12 @@ export default async function handler(req, res) {
         });
         if (called.paymentRequired) {
           skillTelemetry.status = 'payment_required';
-          return res.status(200).json({ jsonrpc: '2.0', result: paymentRequiredTask(skill, args, called.paymentRequired, version, inboundMessage), id: requestId });
+          return res.status(200).json({ jsonrpc: '2.0', result: sendMessageResult(paymentRequiredTask(skill, args, called.paymentRequired, version, inboundMessage), version), id: requestId });
         }
         skillTelemetry.paymentType = 'x402';
         skillTelemetry.status = called.result.status === 'unknown' && called.result.checks.some((c) => c.result !== 'ok') ? 'upstream_error' : 'ok';
         const paymentMetadata = called.settlement ? { [X402_META.status]: 'payment-completed', [X402_META.receipts]: [called.settlement] } : undefined;
-        return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, { ...called.result, request_id: pg1RequestId }, version, inboundMessage, { paymentMetadata }), id: requestId });
+        return res.status(200).json({ jsonrpc: '2.0', result: sendMessageResult(taskResult(skill, args, { ...called.result, request_id: pg1RequestId }, version, inboundMessage, { paymentMetadata }), version), id: requestId });
       } catch (err) {
         if (err && (err.foundryRefusal || err.foundryCall)) {
           skillTelemetry.status = err.status >= 500 ? 'server_error' : 'invalid_input';
@@ -840,7 +959,7 @@ export default async function handler(req, res) {
       }
       const fixtureResult = fixtureOutcome.result;
       fixtureResult.request_id = pg1RequestId;
-      return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, fixtureResult, version, inboundMessage), id: requestId });
+      return res.status(200).json({ jsonrpc: '2.0', result: sendMessageResult(taskResult(skill, args, fixtureResult, version, inboundMessage), version), id: requestId });
     }
 
     const licenseKey = req.headers['x-api-key'];
@@ -869,7 +988,7 @@ export default async function handler(req, res) {
       }
       if (!gate.authorized) {
         skillTelemetry.status = gate.freeLimitReached ? 'free_limit_reached' : 'payment_required';
-        return res.status(200).json({ jsonrpc: '2.0', result: paymentRequiredTask(skill, args, gate.paymentRequired, version, inboundMessage), id: requestId });
+        return res.status(200).json({ jsonrpc: '2.0', result: sendMessageResult(paymentRequiredTask(skill, args, gate.paymentRequired, version, inboundMessage), version), id: requestId });
       }
     }
 
@@ -926,7 +1045,7 @@ export default async function handler(req, res) {
       if (!ok) {
         skillTelemetry.status = 'settlement_failed';
         const paymentRequired = await gate.settlementFailurePaymentRequired(failure);
-        return res.status(200).json({ jsonrpc: '2.0', result: paymentRequiredTask(skill, args, paymentRequired, version, inboundMessage, { failed: true }), id: requestId });
+        return res.status(200).json({ jsonrpc: '2.0', result: sendMessageResult(paymentRequiredTask(skill, args, paymentRequired, version, inboundMessage, { failed: true }), version), id: requestId });
       }
       paymentMetadata = { [X402_META.status]: 'payment-completed', [X402_META.receipts]: [settled] };
     }
@@ -934,7 +1053,7 @@ export default async function handler(req, res) {
     // PG1 Kingdom Defence (lib/defenseEvents.mjs): verdict and reason codes only.
     recordDefenseEvent({ toolName: skill, endpoint: '/api/a2a', result: toolResult, country: requestCountry(req), callerHash: requestCallerHash(req), callerKind: callerKindOf(req) });
 
-    return res.status(200).json({ jsonrpc: '2.0', result: taskResult(skill, args, toolResult, version, inboundMessage, { paymentMetadata }), id: requestId });
+    return res.status(200).json({ jsonrpc: '2.0', result: sendMessageResult(taskResult(skill, args, toolResult, version, inboundMessage, { paymentMetadata }), version), id: requestId });
   } catch (err) {
     // Catch-all for anything the specific handling above didn't already turn
     // into a sanitized message (a genuine bug, not an expected failure) -
