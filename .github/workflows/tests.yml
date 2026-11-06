@@ -114,7 +114,9 @@ jobs:
 
   browser:
     name: browser tests
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.56.1 cannot install Chromium on ubuntu-latest
+    # (Ubuntu 26.04). Move back once Playwright supports it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -169,7 +171,9 @@ jobs:
   # hour. Here each group has a runner of its own and runs one file at a time.
   sandbox-browser:
     name: sandbox browser tests (${{ matrix.group }})
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.56.1 cannot install Chromium on ubuntu-latest
+    # (Ubuntu 26.04). Move back once Playwright supports it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 60
     strategy:
       fail-fast: false
