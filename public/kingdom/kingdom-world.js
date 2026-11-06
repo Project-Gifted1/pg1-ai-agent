@@ -716,6 +716,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   const cool = new THREE.Color(0x9fb8ff);
   const env = { night: 0 };
   let emblemPulse = 0;
+  let cloudLag = 0;
   return {
     root, gates, portcullis, vaultDoors, beacons, lanterns, forge: { group: forge, seal: sealMat }, harbour: { bearing: Math.atan2(harbourPoint.x, -harbourPoint.z), point: harbourPoint },
     tollBarrier: barrier, toll, dome: domeUniforms, domeMesh: dome, preflight, crane, xray, deckY: DECK_Y, tip: tip.position, roofSpots,
@@ -735,6 +736,8 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       if (high) { const p = new THREE.Vector3(0, emblemY, radiusAt(emblemY)).normalize(); domeUniforms.uHit.value.copy(p); domeUniforms.uHitT.value = 0; }
     },
     get emblemPulse() { return emblemPulse; },
+    // How far the clouds still are from the storm level they ease toward.
+    get cloudLag() { return cloudLag; },
     state: null,
     setState(st) {
       this.state = st;
@@ -773,10 +776,12 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
         riverMat.uniforms.uZenith.value.copy(gradU.uMid.value);
         riverMat.uniforms.uHorizon.value.copy(gradU.uHorizon.value);
       }
+      cloudLag = 0;
       for (const cu of cloudLayers) {
         cu.uTime.value = t;
         cu.uCover.value += ((0.3 + storm * 0.5) - cu.uCover.value) * Math.min(1, dt * 0.3);
         cu.uDark.value += (storm - cu.uDark.value) * Math.min(1, dt * 0.3);
+        cloudLag = Math.max(cloudLag, Math.abs((0.3 + storm * 0.5) - cu.uCover.value), Math.abs(storm - cu.uDark.value));
         cu.uLight.value = 0.2 + 0.8 * Math.max(light, dusk * 0.8);
         cu.uSunXZ.value.set(tmp.x, tmp.z);
         cu.uWarm.value.setRGB(1, 0.55 + 0.4 * (1 - dusk), 0.35 + 0.6 * (1 - dusk));

@@ -1,7 +1,8 @@
 /**
  * PG1 City (Kingdom Defence) in the Command Centre, in a real browser at
  * 412 px (the Pixel-class phone profile the viewer tests use), dark, and on
- * a desktop at the Cinematic tier.
+ * a desktop at the Cinematic tier (the Phone tier in CI, where 3D is drawn in
+ * software; frame times are logged as diagnostics, not asserted).
  *
  * The feed in these tests is a TEST FIXTURE (tests/helpers/kingdomFixtures.mjs),
  * built through the real lib/defenseFeed.mjs; screenshots made from it are
@@ -59,12 +60,45 @@ const launch = () => chromium.launch({ executablePath, args: ['--use-gl=angle', 
 const view = (page) => page.evaluate(() => ({ ...document.getElementById('kingdom-view').dataset }));
 const status = (page) => page.evaluate(() => window.kingdomUi.status());
 const shot = async (page, name) => { mkdirSync(SHOTS_DIR, { recursive: true }); await page.screenshot({ path: join(SHOTS_DIR, name) }); };
-const frames = (page, n, timeout = 120000) => page.waitForFunction((k) => Number(document.getElementById('kingdom-view').dataset.frames || 0) > k, n, { timeout });
+const frames = (page, n, timeout = 120000) => page.waitForFunction((k) => Number(document.getElementById('kingdom-view').dataset.frames || 0) > k, n, { timeout, polling: 250 });
+// CI draws 3D in software (SwiftShader, no GPU) beside other browser test
+// files, so a frame there can take seconds. In CI the Kingdom tests run on
+// the Phone tier; locally the desktop test keeps Cinematic. Waits are on
+// rendered frames (the scene has drawn what the camera now sees), never on a
+// fixed time, and frame times are reported, not asserted.
+const IN_CI = !!process.env.CI;
+const DESKTOP_TIER = IN_CI ? 'phone' : 'cinematic';
+const forcePhoneTierInCi = (page) => (IN_CI ? page.evaluate(() => { try { localStorage.setItem('pg1_kingdom_quality', 'phone'); } catch (e) {} }) : null);
+const frameCount = (page) => page.evaluate(() => Number(document.getElementById('kingdom-view').dataset.frames || 0));
+// After a camera move (an instant jump; the camera's lift off rooftops eases
+// over about a second of scene time): wait until at least `n` more frames
+// have been drawn and `ms` of page time has passed, whichever comes later
+// (scene time per frame is capped at 0.1 s, so slow frames need the count).
+async function settle(page, { n = 8, ms = 1500 } = {}) {
+  const f0 = await frameCount(page);
+  await page.waitForFunction(({ f0, n, ms }) => {
+    const f = Number(document.getElementById('kingdom-view').dataset.frames || 0);
+    const w = (window.__kdSettle ||= {});
+    if (w.f0 !== f0) { w.f0 = f0; w.t0 = performance.now(); }
+    return f >= f0 + n && performance.now() - w.t0 >= ms;
+  }, { f0, n, ms }, { timeout: 300000, polling: 100 });
+}
+// The mean time per drawn frame over `n` frames, in ms: a measurement for
+// the log (t.diagnostic), never a pass/fail.
+async function frameTime(page, n = 20) {
+  const a = await page.evaluate(() => ({ f: Number(document.getElementById('kingdom-view').dataset.frames || 0), t: performance.now() }));
+  await frames(page, a.f + n, 300000);
+  const b = await page.evaluate(() => ({ f: Number(document.getElementById('kingdom-view').dataset.frames || 0), t: performance.now() }));
+  return (b.t - a.t) / Math.max(1, b.f - a.f);
+}
 // The hero shot's rules: the whole tower in view (below the overlays), the
 // crown emblem from the brand asset readable, no emblem near the lens, no
 // upright emblem at street level, and no saturated red strip on the left
 // (the unfogged-mirror artefact).
 async function heroChecks(page, label) {
+  // The picture is judged once the weather has eased to the feed's threat
+  // level: it eases in scene time, which slow (software) frames stretch out.
+  await page.waitForFunction(() => document.getElementById('kingdom-view').dataset.weatherSettled === 'yes', null, { timeout: 300000, polling: 250 });
   const r = await page.evaluate(() => {
     const s = window.kingdomUi.scene();
     const st = document.getElementById('kingdom-view').getBoundingClientRect();
@@ -100,6 +134,7 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   await page.locator('#kingdom-mini').waitFor({ state: 'visible', timeout: 20000 });
   assert.ok(!log.paths.some((p) => p.startsWith('/vendor/three/')), 'no 3D before the view opens');
   assert.ok(log.feeds.every((f) => f.operator && !/user|pass/.test(f.query)), 'credentials in the body only');
+  await forcePhoneTierInCi(page);
   await page.locator('#kingdom-mini').click();
   await page.locator('#kingdom-screen').waitFor({ state: 'visible' });
 
@@ -116,6 +151,8 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   await page.waitForFunction(() => document.getElementById('kingdom-view').dataset.renderer === 'webgl', null, { timeout: 90000 });
   await frames(page, 4);
   await page.waitForFunction(() => document.getElementById('kingdom-globe-intro').hidden, null, { timeout: 30000 });
+  if (IN_CI) assert.equal((await view(page)).tier, 'phone', 'CI runs the Phone tier');
+  t.diagnostic(`412 px, ${(await view(page)).tier} tier: ${(await frameTime(page)).toFixed(0)} ms per frame`);
   await shot(page, 'kingdom-city-hero-412-test-fixture.png');
 
   // Replays on open are "Earlier today", never LIVE.
@@ -171,17 +208,17 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   await page.waitForFunction(() => document.getElementById('kingdom-view').dataset.windowHour === '19', null, { timeout: 15000 });
   // The hero shot: the whole tower in view below the overlays, the crown emblem readable, nothing near the lens.
   await page.evaluate(() => window.kingdomUi.scene().home());
-  await page.waitForTimeout(6000);
+  await settle(page);
   await heroChecks(page, 'phone');
   await shot(page, 'kingdom-city-hero-dusk-412.png');
   await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [12, 182, 2], dist: 95, theta: 0.16, phi: 1.5 }));
-  await page.waitForTimeout(5000);
+  await settle(page);
   await shot(page, 'kingdom-city-emblem-412.png');
   await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [160, 4, -120], dist: 70, theta: Math.PI / 2, phi: 1.38 }));
-  await page.waitForTimeout(5000);
+  await settle(page);
   await shot(page, 'kingdom-city-street-412.png');
   await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [260, 0, 120], dist: 160, theta: 0.5, phi: 1.2 }));
-  await page.waitForTimeout(5000);
+  await settle(page);
   await shot(page, 'kingdom-city-river-boats-412.png');
   await page.evaluate(() => { const s = window.kingdomUi.scene(); s.home(); s.setDirector(true); });
 
@@ -218,13 +255,13 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   // The window pattern never aliases into noise: close, mid and far.
   for (const [name, dist] of [['close', 70], ['mid', 320], ['far', 1300]]) {
     await page.evaluate((k) => window.kingdomUi.scene().debugView({ target: [120, 60, -120], dist: k, theta: 0.6, phi: 1.25 }), dist);
-    await page.waitForTimeout(4000);
+    await settle(page);
     const m = await page.evaluate(() => window.kingdomUi.scene().sampleNoise());
     assert.ok(m.rel < 0.3, `${name}: noise ${m.rel.toFixed(3)}`);
     if (name === 'close') await shot(page, 'kingdom-city-facade-412.png');
   }
   await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [0, 10, 120], dist: 260, theta: 0.9, phi: 1.2 }));
-  await page.waitForTimeout(4000);
+  await settle(page);
   await shot(page, 'kingdom-city-river-bridge-412.png');
   assert.equal((await view(page)).camInside, '0');
 
@@ -273,6 +310,7 @@ test('an empty feed: the claim and the counter are there, nothing plays, the tic
     const { page, context } = await openPhonePage(browser, origin, { width: w, height: h, routeReplyFont });
     await page.waitForTimeout(1000);
     assert.equal(await page.locator('#kingdom-mini').isHidden(), true, 'no events, no mini-view');
+    await forcePhoneTierInCi(page);
     await page.fill('#prompt-input', '/kingdom');
     await page.click('.execute-btn');
     await frames(page, 12);
@@ -296,7 +334,7 @@ test('an empty feed: the claim and the counter are there, nothing plays, the tic
   }
 });
 
-test('desktop, Cinematic: the hero shot, a facade, the river and bridge, a live event', { skip, timeout: 900000 }, async (t) => {
+test(`desktop, ${IN_CI ? 'Phone tier (CI; Cinematic locally)' : 'Cinematic'}: the hero shot, a facade, the river and bridge, a live event`, { skip, timeout: 900000 }, async (t) => {
   const control = {};
   const feed = fixtureFeed(control);
   const { server, origin } = await startCommandCentreServer({ publicDir: PUBLIC_DIR, defenseFeed: (url) => feed(url) });
@@ -304,43 +342,42 @@ test('desktop, Cinematic: the hero shot, a facade, the river and bridge, a live 
   t.after(async () => { await browser.close(); await new Promise((r) => server.close(r)); });
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1, colorScheme: 'dark' });
   await routeReplyFont(context);
-  await context.addInitScript(() => { try { localStorage.setItem('pg1_theme', 'dark'); localStorage.setItem('pg1_kingdom_quality', 'cinematic'); } catch (e) {} });
+  await context.addInitScript((tier) => { try { localStorage.setItem('pg1_theme', 'dark'); localStorage.setItem('pg1_kingdom_quality', tier); } catch (e) {} }, DESKTOP_TIER);
   const page = await context.newPage();
   await page.goto(origin + '/', { waitUntil: 'load' });
   await page.fill('#auth-user', 'operator'); await page.fill('#auth-pass', 'passkey'); await page.press('#auth-pass', 'Enter');
   await page.waitForSelector('#auth-modal', { state: 'hidden' });
   await page.fill('#prompt-input', '/kingdom');
   await page.click('.execute-btn');
-  await page.waitForFunction(() => document.getElementById('kingdom-view').dataset.tier === 'cinematic', null, { timeout: 120000 });
+  await page.waitForFunction((tier) => document.getElementById('kingdom-view').dataset.tier === tier, DESKTOP_TIER, { timeout: 120000, polling: 250 });
   await frames(page, 3, 300000);
-  await page.waitForFunction(() => document.getElementById('kingdom-globe-intro').hidden, null, { timeout: 60000 });
+  await page.waitForFunction(() => document.getElementById('kingdom-globe-intro').hidden, null, { timeout: 60000, polling: 250 });
+  t.diagnostic(`1280 px, ${DESKTOP_TIER} tier: ${(await frameTime(page)).toFixed(0)} ms per frame`);
   await page.selectOption('#kingdom-light', 'dusk');
+  await page.waitForFunction(() => document.getElementById('kingdom-view').dataset.windowHour === '19', null, { timeout: 60000, polling: 250 });
   await page.evaluate(() => window.kingdomUi.scene().home());
-  await page.waitForTimeout(20000);
+  await settle(page);
   await heroChecks(page, 'desktop');
-  await shot(page, 'kingdom-city-hero-1280-cinematic-test-fixture.png');
-  assert.equal((await view(page)).tier, 'cinematic', 'a tier chosen by hand holds');
-  await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [12, 182, 2], dist: 95, theta: 0.16, phi: 1.5 }));
-  await page.waitForTimeout(12000);
-  await shot(page, 'kingdom-city-emblem-1280-cinematic.png');
-  await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [160, 4, -120], dist: 70, theta: Math.PI / 2, phi: 1.38 }));
-  await page.waitForTimeout(10000);
-  await shot(page, 'kingdom-city-street-1280-cinematic.png');
-  await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [260, 0, 120], dist: 160, theta: 0.5, phi: 1.2 }));
-  await page.waitForTimeout(10000);
-  await shot(page, 'kingdom-city-river-boats-1280-cinematic.png');
-  await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [120, 60, -120], dist: 90, theta: 0.6, phi: 1.25 }));
-  await page.waitForTimeout(10000);
-  await shot(page, 'kingdom-city-facade-1280-cinematic.png');
-  await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [0, 10, 120], dist: 300, theta: 0.9, phi: 1.2 }));
-  await page.waitForTimeout(10000);
-  await shot(page, 'kingdom-city-river-bridge-1280-cinematic.png');
+  await shot(page, `kingdom-city-hero-1280-${DESKTOP_TIER}-test-fixture.png`);
+  assert.equal((await view(page)).tier, DESKTOP_TIER, 'a tier chosen by hand holds');
+  for (const [name, v] of [
+    ['emblem', { target: [12, 182, 2], dist: 95, theta: 0.16, phi: 1.5 }],
+    ['street', { target: [160, 4, -120], dist: 70, theta: Math.PI / 2, phi: 1.38 }],
+    ['river-boats', { target: [260, 0, 120], dist: 160, theta: 0.5, phi: 1.2 }],
+    ['facade', { target: [120, 60, -120], dist: 90, theta: 0.6, phi: 1.25 }],
+    ['river-bridge', { target: [0, 10, 120], dist: 300, theta: 0.9, phi: 1.2 }],
+  ]) {
+    await page.evaluate((x) => window.kingdomUi.scene().debugView(x), v);
+    await settle(page);
+    await shot(page, `kingdom-city-${name}-1280-${DESKTOP_TIER}.png`);
+  }
   const h = fixtureCallerHashes();
   await page.evaluate(() => window.kingdomUi.scene().setDirector(true));
   for (let i = 0; i < 6; i++) control.addTelemetry({ event_type: 'tool_call', endpoint: '/api/a2a', status: 'rate_limited', tool_name: 'get_cve_batch', caller_hash: h.d, country_code: 'KR' });
-  await page.waitForFunction(() => window.kingdomUi.status().live.length > 0, null, { timeout: 20000 });
-  await page.waitForTimeout(20000);
-  await shot(page, 'kingdom-city-live-event-1280-cinematic-test-fixture.png');
+  await page.waitForFunction(() => window.kingdomUi.status().live.length > 0, null, { timeout: 20000, polling: 200 });
+  await page.waitForFunction(() => /^LIVE · \d+ s ago$/.test(document.querySelector('#kingdom-caption .kd-cap-when').textContent), null, { timeout: 20000, polling: 200 });
+  await settle(page);
+  await shot(page, `kingdom-city-live-event-1280-${DESKTOP_TIER}-test-fixture.png`);
   assert.equal((await view(page)).camInside, '0');
 });
 

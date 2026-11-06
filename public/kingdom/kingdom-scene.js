@@ -422,6 +422,9 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       container.dataset.pg1MaxR = String(Math.round(actors.pg1MaxR));
       container.dataset.commander = actors.commanderMode;
       container.dataset.camInside = String(camInside);
+      // The weather has eased to the threat level (sky, fog and clouds).
+      const stormGoal = threat === 'storm' ? 1 : threat === 'watch' ? 0.3 : 0;
+      container.dataset.weatherSettled = Math.abs(storm - stormGoal) < 0.01 && (world.cloudLag || 0) < 0.01 ? 'yes' : 'no';
     }
     container.dataset.frames = String((Number(container.dataset.frames) || 0) + 1);
     for (const fn of frameFns) { try { fn(canvas); } catch (e) { /* a listener never stops the view */ } }
