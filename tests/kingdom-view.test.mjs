@@ -253,3 +253,13 @@ test('the city\'s own life: windows follow Dublin time, weather by day, billboar
   for (const c of Object.values(ENEMY_COLORS)) if (c !== ENEMY_COLORS.shadow) assert.ok(isEnemyColour(c), c.toString(16));
   for (const c of Object.values(PG1_COLORS)) assert.ok(!isEnemyColour(c), c.toString(16));
 });
+
+test('the river mirror takes the fog (the left-side wedge was an unfogged mirror); one crown emblem, no upright projection', () => {
+  const w = readFileSync(join(ROOT, 'public/kingdom/kingdom-world.js'), 'utf8');
+  assert.match(w, /shader: foggedShader/);
+  assert.match(w, /mirror\.material\.fog = true/);
+  assert.match(w, /#include <fog_fragment>/);
+  assert.ok(!/pg1-emblem-projection|pg1-emblem-crown-south|pg1-emblem-crown-\$\{/.test(w), 'no upright projection plane, one crown emblem');
+  assert.match(w, /'pg1-emblem-plaza'/);
+  assert.match(w, /inlay\.rotation\.x = -Math\.PI \/ 2/, 'the plaza emblem lies flat in the paving');
+});

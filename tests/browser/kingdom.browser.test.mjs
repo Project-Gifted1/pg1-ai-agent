@@ -60,6 +60,34 @@ const view = (page) => page.evaluate(() => ({ ...document.getElementById('kingdo
 const status = (page) => page.evaluate(() => window.kingdomUi.status());
 const shot = async (page, name) => { mkdirSync(SHOTS_DIR, { recursive: true }); await page.screenshot({ path: join(SHOTS_DIR, name) }); };
 const frames = (page, n, timeout = 120000) => page.waitForFunction((k) => Number(document.getElementById('kingdom-view').dataset.frames || 0) > k, n, { timeout });
+// The hero shot's rules: the whole tower in view (below the overlays), the
+// crown emblem from the brand asset readable, no emblem near the lens, no
+// upright emblem at street level, and no saturated red strip on the left
+// (the unfogged-mirror artefact).
+async function heroChecks(page, label) {
+  const r = await page.evaluate(() => {
+    const s = window.kingdomUi.scene();
+    const st = document.getElementById('kingdom-view').getBoundingClientRect();
+    const ov = document.querySelector('.kd-overlay').getBoundingClientRect();
+    const cap = document.getElementById('kingdom-caption');
+    const capTop = cap && !cap.hidden ? cap.getBoundingClientRect().top - st.top : st.height;
+    return { tower: s.towerScreen(), emblem: s.emblemScreen(), emblems: s.emblems(), overlayBottom: ov.bottom - st.top, capTop };
+  });
+  const { tower, emblem } = r;
+  assert.ok(tower.top.front && tower.base.front, `${label}: tower in front of the camera`);
+  assert.ok(tower.top.y >= r.overlayBottom - 2, `${label}: the tower top (${tower.top.y.toFixed(0)}) is below the overlays (${r.overlayBottom.toFixed(0)})`);
+  assert.ok(tower.base.y <= Math.min(tower.height, r.capTop) + 2, `${label}: the tower base (${tower.base.y.toFixed(0)}) is in view`);
+  assert.ok(tower.top.x > 0 && tower.top.x < tower.width, `${label}: tower centred in view`);
+  assert.ok(emblem && emblem.inView && emblem.height >= 24, `${label}: emblem ${JSON.stringify(emblem)}`);
+  assert.ok(emblem.height < tower.height * 0.25, `${label}: the emblem never fills the screen`);
+  for (const e of r.emblems) {
+    assert.ok(e.distance >= 150, `${label}: ${e.name} ${e.distance.toFixed(0)} m from the lens`);
+    if (e.y < 30) assert.equal(e.upright, false, `${label}: ${e.name} stands upright at street level`);
+  }
+  const left = await page.evaluate(() => window.kingdomUi.scene().sampleRegion({ x0: 0, x1: 0.33, y0: 0.2, y1: 0.8 }));
+  assert.ok(left.red < 0.01, `${label}: red strip on the left (${(left.red * 100).toFixed(2)} %)`);
+}
+
 const realN = async () => { const f = await fixtureFeed()(new URL('http://x/api/defense-feed')); return f.origins.length; };
 
 test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 1, the city and Record mode', { skip, timeout: 600000 }, async (t) => {
@@ -115,7 +143,8 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   const brandFills = parseBrandSvg(readFileSync(join(ROOT, 'public/brand/pg1-shield.svg'), 'utf8')).paths.map((p) => p.fill);
   assert.equal(inside.emblemSource, '/brand/pg1-shield.svg');
   assert.deepEqual([...inside.brandFills].sort(), [...brandFills].sort());
-  for (const n of ['pg1-emblem-crown-east', 'pg1-emblem-hologram', 'pg1-emblem-plaza', 'pg1-emblem-projection', 'billboard-east']) assert.ok(inside.names.includes(n), `${n} missing`);
+  for (const n of ['pg1-emblem-crown', 'pg1-emblem-hologram', 'pg1-emblem-plaza', 'pg1-emblem-glow', 'billboard-east']) assert.ok(inside.names.includes(n), `${n} missing`);
+  assert.ok(!inside.names.includes('pg1-emblem-projection') && !inside.names.includes('pg1-emblem-crown-south'), 'one crown emblem, no upright projection');
   // The city's own life: there, and never in the enemy palette.
   assert.ok(inside.lifeCounts.vehicles > 50 && inside.lifeCounts.people > 100 && inside.lifeCounts.boats > 0);
   for (const c of inside.lifeColours) assert.ok(!isEnemyColour(c), `ambient colour ${c.toString(16)} is enemy red`);
@@ -140,13 +169,12 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   assert.equal(Number((await view(page)).windowHour), Math.floor(dublinHour(Date.now())));
   await page.selectOption('#kingdom-light', 'dusk');
   await page.waitForFunction(() => document.getElementById('kingdom-view').dataset.windowHour === '19', null, { timeout: 15000 });
-  // The emblem in the hero shot, readable at 412 px.
-  await page.evaluate(() => { const s = window.kingdomUi.scene(); s.setDirector(false); s.focus(null); });
+  // The hero shot: the whole tower in view below the overlays, the crown emblem readable, nothing near the lens.
+  await page.evaluate(() => window.kingdomUi.scene().home());
   await page.waitForTimeout(6000);
-  const em = await page.evaluate(() => window.kingdomUi.scene().emblemScreen());
-  assert.ok(em && em.inView && em.height >= 24, `emblem ${JSON.stringify(em)}`);
+  await heroChecks(page, 'phone');
   await shot(page, 'kingdom-city-hero-dusk-412.png');
-  await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [6, 186, 0], dist: 70, theta: 0.15, phi: 1.45 }));
+  await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [12, 182, 2], dist: 95, theta: 0.16, phi: 1.5 }));
   await page.waitForTimeout(5000);
   await shot(page, 'kingdom-city-emblem-412.png');
   await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [160, 4, -120], dist: 70, theta: Math.PI / 2, phi: 1.38 }));
@@ -155,7 +183,7 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [260, 0, 120], dist: 160, theta: 0.5, phi: 1.2 }));
   await page.waitForTimeout(5000);
   await shot(page, 'kingdom-city-river-boats-412.png');
-  await page.evaluate(() => { const s = window.kingdomUi.scene(); s.debugView({ target: [-40, 95, 70], dist: 700 }); s.setDirector(true); });
+  await page.evaluate(() => { const s = window.kingdomUi.scene(); s.home(); s.setDirector(true); });
 
   // A live arrival: in the scene within 10 s, captioned LIVE, at the top of the ticker.
   const before = Number((await view(page)).attackers);
@@ -287,12 +315,13 @@ test('desktop, Cinematic: the hero shot, a facade, the river and bridge, a live 
   await frames(page, 3, 300000);
   await page.waitForFunction(() => document.getElementById('kingdom-globe-intro').hidden, null, { timeout: 60000 });
   await page.selectOption('#kingdom-light', 'dusk');
-  await page.evaluate(() => { const s = window.kingdomUi.scene(); s.setDirector(false); s.focus(null); });
-  await page.waitForTimeout(10000);
+  await page.evaluate(() => window.kingdomUi.scene().home());
+  await page.waitForTimeout(20000);
+  await heroChecks(page, 'desktop');
   await shot(page, 'kingdom-city-hero-1280-cinematic-test-fixture.png');
   assert.equal((await view(page)).tier, 'cinematic', 'a tier chosen by hand holds');
-  await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [6, 186, 0], dist: 70, theta: 0.15, phi: 1.45 }));
-  await page.waitForTimeout(10000);
+  await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [12, 182, 2], dist: 95, theta: 0.16, phi: 1.5 }));
+  await page.waitForTimeout(12000);
   await shot(page, 'kingdom-city-emblem-1280-cinematic.png');
   await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [160, 4, -120], dist: 70, theta: Math.PI / 2, phi: 1.38 }));
   await page.waitForTimeout(10000);

@@ -493,6 +493,16 @@
     .kd-cap-when { font-size: 0.72rem; font-weight: 700; color: #a8a8b0; }
     .kd-cap-when[data-live="true"] { color: #3ddc84; }
     @media (prefers-reduced-motion: reduce) { .kd-badge[data-state="live"] { animation: none; } }
+    @media (max-width: 560px) {
+      .kd-overlay { top: 6px; left: 8px; right: 8px; gap: 3px; }
+      .kd-overlay > * { padding: 3px 8px; border-radius: 8px; }
+      .kd-badge { font-size: 0.64rem; }
+      .kd-countries { font-size: 0.8rem; gap: 4px; }
+      .kd-hud { font-size: 0.64rem; }
+      .kd-ticker { font-size: 0.62rem; }
+      .kd-ticker li:nth-child(n+3) { display: none; }
+      .kd-globe-pip { width: 84px; height: 84px; bottom: 90px; }
+    }
     .kd-caption { display: flex; flex-direction: column; gap: 2px; }
     .kd-cap-enemy { color: #ff8a7a; font-size: 0.76rem; }
     .kd-cap-defence { color: #f3c623; font-weight: 600; }

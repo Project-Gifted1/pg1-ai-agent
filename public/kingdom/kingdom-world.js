@@ -43,6 +43,14 @@ export const DECK_Y = PODIUM_H + 150;
 export const TOWER_TOP = PODIUM_H + SPIRE_H + 22;
 export const GATE_BEARINGS = Object.freeze({ north: 0, east: Math.PI / 2, south: Math.PI, west: Math.PI * 1.5 });
 export const STYLES = Object.freeze({ glass: 0, stone: 1, brick: 2, metal: 3 });
+// The hero shot looks at the tower from this bearing (radians from +x towards
+// +z), along the river. No building stands in that sightline.
+export const HERO_BEARING = 0.16;
+export function inHeroCorridor(x, z, margin = 0) {
+  const dx = Math.cos(HERO_BEARING); const dz = Math.sin(HERO_BEARING);
+  const along = x * dx + z * dz; const across = Math.abs(-x * dz + z * dx);
+  return along > 30 && along < 1100 && across < 34 + along * 0.03 + margin;
+}
 
 export const at = (bearing, r, y = 0) => ({ x: Math.sin(bearing) * r, y, z: -Math.cos(bearing) * r });
 export const inRiver = (z) => Math.abs(z - RIVER.z) < RIVER.half;
@@ -237,8 +245,9 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   // The shield inlaid in the plaza paving at the tower's foot, lit.
   let inlay = null;
   if (brand) {
-    const tex = new THREE.CanvasTexture(brandCanvas(brand, 256, { glow: true })); tex.colorSpace = THREE.SRGBColorSpace;
-    inlay = named(new THREE.Mesh(new THREE.PlaneGeometry(14, 14), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.85, depthWrite: false })), 'pg1-emblem-plaza');
+    // Lit gold lines set into the stone, flat: the shield's outline and its "1".
+    const tex = new THREE.CanvasTexture(brandCanvas(brand, 512, { outline: true })); tex.colorSpace = THREE.SRGBColorSpace;
+    inlay = named(new THREE.Mesh(new THREE.PlaneGeometry(16, 16), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.85, depthWrite: false })), 'pg1-emblem-plaza');
     inlay.rotation.x = -Math.PI / 2; inlay.position.set(0, 0.14, 41); root.add(inlay);
   }
 
@@ -246,7 +255,18 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   let riverMat = waterMaterial;
   let mirror = null;
   if (cinematic && Reflector) {
-    mirror = named(new Reflector(new THREE.PlaneGeometry(9000, RIVER.half * 2), { textureWidth: 1024, textureHeight: 512, color: 0x46546a }), 'river-mirror');
+    // The mirror takes the scene's fog like everything else (three's own
+    // Reflector shader ignores fog, which left the far river as an unfogged
+    // red-and-blue strip rising out of the haze).
+    const base = Reflector.ReflectorShader;
+    const foggedShader = {
+      name: 'PG1FoggedReflector',
+      uniforms: THREE.UniformsUtils.merge([base.uniforms, THREE.UniformsLib.fog]),
+      vertexShader: base.vertexShader.replace('#include <logdepthbuf_pars_vertex>', '#include <logdepthbuf_pars_vertex>\n#include <fog_pars_vertex>').replace('gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );', 'vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );\n\t\t\tgl_Position = projectionMatrix * mvPosition;\n\t\t\t#include <fog_vertex>'),
+      fragmentShader: base.fragmentShader.replace('#include <logdepthbuf_pars_fragment>', '#include <logdepthbuf_pars_fragment>\n#include <fog_pars_fragment>').replace('#include <colorspace_fragment>', '#include <colorspace_fragment>\n\t\t\t#include <fog_fragment>')
+    };
+    mirror = named(new Reflector(new THREE.PlaneGeometry(9000, RIVER.half * 2), { textureWidth: 1024, textureHeight: 512, color: 0x46546a, shader: foggedShader }), 'river-mirror');
+    mirror.material.fog = true;
     mirror.rotation.x = -Math.PI / 2; mirror.position.set(0, -3.3, RIVER.z); root.add(mirror);
   }
   if (!riverMat) riverMat = new THREE.MeshStandardMaterial({ color: 0x2c4c6c, roughness: 0.25, metalness: 0.1, emissive: 0x16243a, emissiveIntensity: 0.6 });
@@ -304,6 +324,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     if (!offRoad(l.x, l.w) || !offRoad(l.z, l.d, 40)) return false;
     if (l.x > 150 && l.x < 270 && l.z > 10 && l.z < RIVER.z) return false;
     if (inPark(l.x, l.z, big)) return false;
+    if (inHeroCorridor(l.x, l.z, big * 0.6)) return false;
     lots.push({ seed: r() * 1000, ...l });
     return true;
   };
@@ -425,29 +446,29 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   // PG1's emblem, from the brand asset (kingdom-emblem.js): a large 3D
   // shield on the crown facing east (the hero shot) and south, a hologram
   // above the beacon at night, and the shield projected softly on the glass.
-  const emblemY = PODIUM_H + SPIRE_H - 46;
+  const emblemY = PODIUM_H + SPIRE_H - 36;
   const emblems3d = [];
-  let hologram = null; let projection = null;
+  let hologram = null; let emblemGlow = null;
   const brandTex = brand ? new THREE.CanvasTexture(brandCanvas(brand, 256)) : null;
   if (brandTex) brandTex.colorSpace = THREE.SRGBColorSpace;
   if (brand) {
-    for (const [nm, ry, dx, dz] of [['east', Math.PI / 2, 1, 0], ['south', 0, 0, 1]]) {
-      const e = buildEmblem(THREE, brand, { height: 30, phone });
-      e.group.name = `pg1-emblem-crown-${nm}`;
-      const off = radiusAt(emblemY) * Math.cos(Math.PI / 6) + 1.2;
-      e.group.position.set(dx * off, emblemY, dz * off);
-      e.group.rotation.y = ry;
-      keep.add(e.group);
-      emblems3d.push(e);
-    }
+    // One emblem, high on the crown, facing the hero camera (HERO_BEARING).
+    const e = buildEmblem(THREE, brand, { height: 28, phone });
+    e.group.name = 'pg1-emblem-crown';
+    const dx = Math.cos(HERO_BEARING); const dz = Math.sin(HERO_BEARING);
+    const off = radiusAt(emblemY) + 1.6;
+    e.group.position.set(dx * off, emblemY, dz * off);
+    e.group.rotation.y = Math.atan2(dx, dz);
+    keep.add(e.group);
+    emblems3d.push(e);
+    // A soft glow behind it (seen as bloom on Balanced and Cinematic, and on Phone too).
+    const glowTex = (() => { const cv = document.createElement('canvas'); cv.width = cv.height = 64; const g = cv.getContext('2d'); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,214,90,0.9)'); gr.addColorStop(1, 'rgba(255,214,90,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+    emblemGlow = named(new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false })), 'pg1-emblem-glow');
+    emblemGlow.scale.setScalar(52); emblemGlow.position.set(dx * (off - 1), emblemY, dz * (off - 1));
+    keep.add(emblemGlow);
     hologram = buildHologram(THREE, brand, { height: 24 });
     hologram.mesh.position.y = PODIUM_H + SPIRE_H + 40;
     keep.add(hologram.mesh);
-    projection = named(new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: brandTex, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending, depthWrite: false })), 'pg1-emblem-projection');
-    projection.scale.set(26, 26, 1);
-    const py = PODIUM_H + 70; const pr = radiusAt(py) * Math.cos(Math.PI / 6) + 0.4;
-    projection.position.set(pr, py, 0); projection.rotation.y = Math.PI / 2; projection.rotation.z = 0;
-    keep.add(projection);
   }
   const deckR = radiusAt(DECK_Y) + 5;
   const deck = named(new THREE.Mesh(new THREE.CylinderGeometry(deckR, deckR - 1.5, 3, 6), new THREE.MeshStandardMaterial({ color: 0x2a4a68, roughness: 0.08, metalness: 0.6, emissive: 0x6fd8ff, emissiveIntensity: 0.6, transparent: true, opacity: 0.88 })), 'command-deck');
@@ -784,7 +805,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       const dark = Math.max(dusk, moon);
       for (const e of emblems3d) { e.gold.emissiveIntensity = 0.12 + 0.35 * dark + 1.4 * emblemPulse; e.edge.opacity = Math.min(1, 0.35 + 0.65 * dark + emblemPulse); }
       if (hologram) { hologram.uniforms.uTime.value = t; hologram.uniforms.uAlpha.value = Math.max(0, moon - 0.35) * 1.4 + emblemPulse * 0.3; hologram.mesh.rotation.y = t * 0.15; hologram.mesh.visible = hologram.uniforms.uAlpha.value > 0.01; }
-      if (projection) projection.material.opacity = 0.06 + 0.16 * dark;
+      if (emblemGlow) emblemGlow.material.opacity = 0.12 + 0.3 * dark + 0.4 * emblemPulse;
       if (inlay) inlay.material.opacity = 0.55 + 0.4 * dark;
     }
   };

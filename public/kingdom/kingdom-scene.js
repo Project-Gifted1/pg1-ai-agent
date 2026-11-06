@@ -32,7 +32,7 @@ import { TIER_SETTINGS, pickTier, createGovernor, QUALITY_KEY } from '../sandbox
 import { createPost } from '../sandbox/post.js';
 import { createControls } from '../sandbox/controls.js';
 import { createWaterMaterial } from '../sandbox/water.js';
-import { buildWorld, RIVER } from './kingdom-world.js';
+import { buildWorld, RIVER, HERO_BEARING, TOWER_TOP } from './kingdom-world.js';
 import { createActors } from './kingdom-actors.js';
 import { createLife } from './kingdom-life.js';
 import { loadBrand, BRAND_SVG_URL } from './kingdom-emblem.js';
@@ -61,7 +61,12 @@ export function clearCamera(cam, target, obstacles, clearance = CAMERA_CLEARANCE
 }
 // The default view: an aerial angle from the east, the river leading the eye to the tower.
 // The hero shot: low along the river from the east, towards the PG1 Tower.
-export const HOME_VIEW = Object.freeze({ target: [-40, 95, 70], dist: 700, theta: 0.07, phi: 1.36 });
+export const HOME_VIEW = Object.freeze({ target: [0, 135, 0], dist: 640, theta: HERO_BEARING, phi: 1.38 });
+// On a phone the overlays cover the top of the view: aim higher and stand
+// further back, so the whole tower sits below them.
+export const HOME_VIEW_PHONE = Object.freeze({ target: [0, 150, 0], dist: 570, theta: HERO_BEARING, phi: 1.37 });
+// No emblem may come nearer the camera than this in the hero shot (metres).
+export const EMBLEM_CLEARANCE = 150;
 
 export const KINGDOM_TIERS = Object.freeze(['phone', 'balanced', 'cinematic']);
 export const KINGDOM_TIER_LABEL = Object.freeze({ phone: 'Phone', balanced: 'Balanced', cinematic: 'Cinematic' });
@@ -217,6 +222,18 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   // Blue-hour height fog on every material in the city (thicker low down).
   const fogDefine = (o) => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []; for (const m of ms) if (!m.isShaderMaterial && !m.isSpriteMaterial && !m.isPointsMaterial && m.fog !== false && !(m.defines && m.defines.PG1_HEIGHT_FOG !== undefined)) { m.defines = { ...(m.defines || {}), PG1_HEIGHT_FOG: '' }; m.needsUpdate = true; } };
   scene.traverse(fogDefine);
+  // The emblem's gold reflects a dusk sky on every tier (a small prefiltered
+  // sky made in code; on Balanced and up the scene's sky also lights it).
+  try {
+    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 128;
+    const g = cv.getContext('2d'); const gr = g.createLinearGradient(0, 0, 0, 128);
+    gr.addColorStop(0, '#1b2a52'); gr.addColorStop(0.45, '#6b6f9a'); gr.addColorStop(0.55, '#f2a35e'); gr.addColorStop(0.62, '#3a3440'); gr.addColorStop(1, '#14161c');
+    g.fillStyle = gr; g.fillRect(0, 0, 256, 128);
+    g.fillStyle = 'rgba(255,230,180,0.9)'; g.beginPath(); g.ellipse(70, 68, 22, 6, 0, 0, Math.PI * 2); g.fill();
+    const eq = new THREE.CanvasTexture(cv); eq.mapping = THREE.EquirectangularReflectionMapping; eq.colorSpace = THREE.SRGBColorSpace;
+    const pm = new THREE.PMREMGenerator(renderer); const envTex = pm.fromEquirectangular(eq).texture; pm.dispose(); eq.dispose();
+    for (const grp of world.emblemMeshes) grp.traverse((m) => { if (m.isMesh && m.material && m.material.isMeshPhysicalMaterial) { m.material.envMap = envTex; m.material.needsUpdate = true; } });
+  } catch (e) { /* the scene's light is enough */ }
   const actors = createActors(THREE, scene, world, settings);
   actors.onFire = (g, e) => { if (onGadget) onGadget(g, e); };
   const life = createLife(THREE, scene, world, settings);
@@ -266,9 +283,10 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       if (id) { focus(id, { user: true }); }
     }
   });
-  const home = new THREE.Vector3(...HOME_VIEW.target);
+  const HV = coarse ? HOME_VIEW_PHONE : HOME_VIEW;
+  const home = new THREE.Vector3(...HV.target);
   controls.minDist = 30; controls.maxDist = 3000; controls.ease = settings.ease; controls.autoRotate = 0;
-  controls.jumpTo({ target: home, dist: coarse ? HOME_VIEW.dist * 1.15 : HOME_VIEW.dist, theta: HOME_VIEW.theta, phi: HOME_VIEW.phi });
+  controls.jumpTo({ target: home, dist: HV.dist, theta: HV.theta, phi: HV.phi });
 
   const events = new Map();
   function focus(id, { user = false } = {}) {
@@ -279,7 +297,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     container.dataset.focus = id || '';
     if (onFocus) onFocus(e || null);
     if (onCaption) onCaption(e || null);
-    if (!id) { controls.flyTo({ target: home, dist: coarse ? HOME_VIEW.dist * 1.15 : HOME_VIEW.dist, phi: HOME_VIEW.phi }); actors.commanderTo(null); }
+    if (!id) { controls.flyTo({ target: home, dist: HV.dist, theta: HV.theta, phi: HV.phi }); actors.commanderTo(null); }
     else if (e && e.severity === 'high') { const p = actors.whereIs(id); if (p) actors.commanderTo(p); }
   }
   function setDirector(on) {
@@ -381,7 +399,8 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       if (p) { focusPoint.set(p.x, p.y + 4, p.z); controls.flyTo({ target: focusPoint, dist: coarse ? 150 : 130, phi: 0.95 }); }
     } else if (controls.userActive <= 0) {
       // The slow flyover: a gentle sway across the river axis.
-      controls.goalTheta = HOME_VIEW.theta + 0.16 * Math.sin(t * 0.03);
+      // A slow sway that keeps the sightline along the river (no building enters it).
+      controls.goalTheta = HV.theta + 0.025 * Math.sin(t * 0.03);
     }
     controls.update(dt);
     // The camera never goes into or through a building: lifted clear of
@@ -419,7 +438,9 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     // next frame is (mean absolute Laplacian of the luminance over the
     // central region, relative to its mean): window patterns that alias
     // into noise make it jump.
-    debugView({ target, dist, theta = HOME_VIEW.theta, phi = HOME_VIEW.phi }) { setDirector(false); focusId = null; controls.userActive = 1e9; controls.jumpTo({ target: new THREE.Vector3(...target), dist, theta, phi }); },
+    // home(): back to the hero shot, held.
+    home() { setDirector(false); focusId = null; controls.userActive = 1e9; controls.jumpTo({ target: home.clone(), dist: HV.dist, theta: HV.theta, phi: HV.phi }); },
+    debugView({ target, dist, theta = HV.theta, phi = HV.phi }) { setDirector(false); focusId = null; controls.userActive = 1e9; controls.jumpTo({ target: new THREE.Vector3(...target), dist, theta, phi }); },
     sampleNoise() {
       return new Promise((resolve) => {
         const off = this.onFrame((cv) => {
@@ -479,6 +500,37 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       return { inView, height: Math.max(...ys) - Math.min(...ys), x: (Math.max(...xs) + Math.min(...xs)) / 2, y: (Math.max(...ys) + Math.min(...ys)) / 2 };
     },
     setBillboards(stats) { world.setBillboards(stats); container.dataset.billboard = world.billboardText.join(' | '); },
+    // For the tests: where the whole tower is on screen (CSS px, base and top).
+    towerScreen() {
+      const r = canvas.getBoundingClientRect();
+      const p = (y) => { const v = new THREE.Vector3(0, y, 0).project(camera); return { x: (v.x + 1) / 2 * r.width, y: (1 - v.y) / 2 * r.height, front: v.z < 1 }; };
+      return { base: p(0), top: p(TOWER_TOP), width: r.width, height: r.height };
+    },
+    // Every emblem in the scene: how far it is from the camera, and whether it stands upright.
+    emblems() {
+      const out = []; const n = new THREE.Vector3(); const q = new THREE.Quaternion(); const wp = new THREE.Vector3();
+      scene.traverse((o) => {
+        if (!/^pg1-emblem/.test(o.name) || (o.parent && /^pg1-emblem/.test(o.parent.name))) return;
+        o.getWorldPosition(wp); o.getWorldQuaternion(q);
+        n.set(0, 0, 1).applyQuaternion(q);
+        out.push({ name: o.name, y: wp.y, distance: wp.distanceTo(camera.position), upright: Math.abs(n.y) < 0.9, visible: o.visible });
+      });
+      return out;
+    },
+    // For the tests: colour statistics of a region of the next frame (fractions of the canvas).
+    sampleRegion({ x0 = 0, x1 = 1, y0 = 0, y1 = 1 } = {}) {
+      return new Promise((resolve) => {
+        const off = this.onFrame((cv) => {
+          off();
+          const c2 = document.createElement('canvas'); c2.width = cv.width; c2.height = cv.height;
+          const g = c2.getContext('2d'); g.drawImage(cv, 0, 0);
+          const X0 = Math.floor(x0 * cv.width); const Y0 = Math.floor(y0 * cv.height); const W = Math.max(1, Math.floor((x1 - x0) * cv.width)); const H = Math.max(1, Math.floor((y1 - y0) * cv.height));
+          const d = g.getImageData(X0, Y0, W, H).data; let red = 0; let sat = 0; const n = W * H;
+          for (let i = 0; i < n; i++) { const r = d[i * 4] / 255; const gg = d[i * 4 + 1] / 255; const b = d[i * 4 + 2] / 255; const mx = Math.max(r, gg, b); const mn = Math.min(r, gg, b); if (r > 0.45 && r - Math.max(gg, b) > 0.22) red++; if (mx > 0.35 && mx - mn > 0.45) sat++; }
+          resolve({ red: red / n, saturated: sat / n });
+        });
+      });
+    },
     focus: (id) => focus(id, { user: true }),
     // The director cuts straight to a live arrival (it stays on).
     cutTo(id) { if (!director) return; lastCut = performance.now(); lastLive = lastCut; focus(id); },
