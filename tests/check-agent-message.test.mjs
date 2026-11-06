@@ -510,7 +510,7 @@ test('privacy over MCP and A2A: the content is never written to a log, console, 
   assert.equal(mcp.body.result.structuredContent.verdict, 'malicious');
   const a2a = makeRes();
   await a2aHandler({ method: 'POST', headers: { 'a2a-version': '1.0' }, query: {}, body: { jsonrpc: '2.0', id: 2, method: 'SendMessage', params: { message: { messageId: 'm1', role: 'ROLE_USER', parts: [{ data: { skill: 'check_agent_message', arguments: { text, kind: 'skill_md' } } }] } } } }, a2a);
-  assert.equal(a2a.body.result.artifacts[0].parts[0].data.verdict, 'malicious');
+  assert.equal(a2a.body.result.task.artifacts[0].parts[0].data.verdict, 'malicious');
   await new Promise((r) => setTimeout(r, 50));
   assert.ok(printed.some((l) => l.startsWith('[check_agent_message] ')), 'the one log line is printed');
   assert.deepEqual(printed.filter((l) => l.includes(MARKER)), [], 'no content in console output');

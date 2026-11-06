@@ -301,7 +301,9 @@ test('version negotiation: A2A-Version: 1.0 header switches to the 1.0 shape', a
   withUsageStatusFetch(t);
   const res = await callSkill('SendMessage', 'get_usage_status', { identifier: 'v10' }, { 'a2a-version': '1.0' });
   assert.equal(res.statusCode, 200);
-  const task = res.body.result;
+  // A SendMessageResponse: { task }, never a bare Task.
+  assert.deepEqual(Object.keys(res.body.result), ['task']);
+  const task = res.body.result.task;
   assert.equal(task.kind, undefined);
   assert.equal(task.status.state, 'TASK_STATE_COMPLETED');
   const part = task.artifacts[0].parts[0];
@@ -317,15 +319,20 @@ test('version negotiation: A2A-Version query param is honored when the header is
   withUsageStatusFetch(t);
   const res = await callSkill('SendMessage', 'get_usage_status', { identifier: 'v10-query' }, {}, { 'A2A-Version': '1.0' });
   assert.equal(res.statusCode, 200);
-  assert.equal(res.body.result.status.state, 'TASK_STATE_COMPLETED');
+  assert.equal(res.body.result.task.status.state, 'TASK_STATE_COMPLETED');
 });
 
 test('version negotiation: an unsupported A2A-Version returns VersionNotSupportedError', async (t) => {
   withUsageStatusFetch(t);
   const res = await callSkill('SendMessage', 'get_usage_status', { identifier: 'v99' }, { 'a2a-version': '2.0' });
-  assert.equal(res.statusCode, 400);
-  assert.equal(res.body.error.code, -32008);
+  // VersionNotSupportedError is a 1.0 error: code -32009 (1.0's; -32008 is
+  // ExtensionSupportRequiredError), HTTP 200, data = [google.rpc.ErrorInfo].
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.error.code, -32009);
   assert.match(res.body.error.message, /Unsupported A2A-Version/);
+  assert.equal(res.body.error.data[0]['@type'], 'type.googleapis.com/google.rpc.ErrorInfo');
+  assert.equal(res.body.error.data[0].reason, 'VERSION_NOT_SUPPORTED');
+  assert.equal(res.body.error.data[0].domain, 'a2a-protocol.org');
 });
 
 test('SendMessage accepts a 1.0-shaped DataPart (no "kind", { data, mediaType }) regardless of negotiated version', async (t) => {

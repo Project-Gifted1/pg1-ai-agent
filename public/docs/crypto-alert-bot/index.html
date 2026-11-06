@@ -85,7 +85,7 @@
   }
 }
 </code></pre></div>
-<p>Send <code>Content-Type: application/json</code>. Without an <code>A2A-Version</code> header the server answers in the 0.3 shape shown in this guide (<code>&quot;kind&quot;: &quot;data&quot;</code> parts, task state <code>&quot;completed&quot;</code>). Sending <code>A2A-Version: 1.0</code> changes the shape: parts lose <code>kind</code> and the state becomes <code>TASK_STATE_COMPLETED</code>. The bot below leaves the header off.</p>
+<p>Send <code>Content-Type: application/json</code>. Without an <code>A2A-Version</code> header the server answers in the 0.3 shape shown in this guide (<code>&quot;kind&quot;: &quot;data&quot;</code> parts, task state <code>&quot;completed&quot;</code>). Sending <code>A2A-Version: 1.0</code> changes the shape to A2A 1.0&#39;s: the result wraps the task (read <code>result.task.artifacts[0].parts[0].data</code>), parts lose <code>kind</code>, the state becomes <code>TASK_STATE_COMPLETED</code>, and an error comes back as HTTP 200 with <code>error.data</code> a list holding one ErrorInfo entry (a reason, a domain and string metadata). The bot below leaves the header off.</p>
 <h3 id="where-the-result-is">Where the result is</h3>
 <p>A successful call returns HTTP 200 with a task. The check&#39;s result is the <code>data</code> of the first part of the first artifact:</p>
 <div class="code"><div class="code-bar"><span class="code-lang">text</span><button type="button" class="copy" data-copy hidden>Copy</button></div><pre tabindex="0"><code>response.data.result.artifacts[0].parts[0].data

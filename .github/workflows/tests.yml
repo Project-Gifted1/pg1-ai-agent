@@ -47,6 +47,15 @@ jobs:
           sudo apt-get install -y -qq ffmpeg fonts-dejavu-core python3-cryptography
           ffmpeg -version | head -1
           python3 -c "import cryptography; print('cryptography', cryptography.__version__)"
+      # The official A2A Python SDK, for tests/a2a-official-sdk.test.mjs
+      # (it drives /api/a2a with the SDK's own client, both protocol
+      # versions). Installed here, before the network is blocked.
+      - name: Install the official A2A Python SDK
+        run: |
+          python3 -m venv "$RUNNER_TEMP/a2a-sdk"
+          "$RUNNER_TEMP/a2a-sdk/bin/pip" install --quiet --disable-pip-version-check a2a-sdk==1.3.0
+          "$RUNNER_TEMP/a2a-sdk/bin/python" -c "import a2a.client; from importlib.metadata import version; print('a2a-sdk', version('a2a-sdk'))"
+          echo "A2A_SDK_PYTHON=$RUNNER_TEMP/a2a-sdk/bin/python" >> "$GITHUB_ENV"
       # Chromium is not installed in this job, so tests/browser/ skip here
       # and run in the browser job below.
       - name: npm test (network blocked)
@@ -60,6 +69,11 @@ jobs:
           # would be a silent pass; treat it as a failure.
           if grep -q '# SKIP ffmpeg is not installed' "$RUNNER_TEMP/unit.tap"; then
             echo "::error::Film tests were skipped: ffmpeg not found"
+            exit 1
+          fi
+          # Likewise the official A2A SDK run: installed above, so a skip is a failure.
+          if grep -q '# SKIP a2a-sdk' "$RUNNER_TEMP/unit.tap"; then
+            echo "::error::The official A2A SDK tests were skipped: a2a-sdk not found"
             exit 1
           fi
       # The full log is long; a failing test is easier to find here.
