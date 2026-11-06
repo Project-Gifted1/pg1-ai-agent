@@ -80,6 +80,8 @@ function startStubServer() {
           const home = state.home;
           return setTimeout(() => json(200, { ok: true, signals: {}, home }), state.delayMs);
         }
+        // PG1 Kingdom Defence's feed: operator only, nothing logged here.
+        if (url.pathname === '/api/defense-feed') return json(operator ? 200 : 401, operator ? { ok: true, events: [], today: {}, threat: { level: 'calm' }, gadgets: [] } : { error: 'unauthorized' });
         if (url.pathname === '/api/watches') {
           if (!operator) return json(401, { error: 'unauthorized' });
           if (parsed.op === 'auto_state') return json(200, { ok: true, autonomous: { enabled: false, available: true, todayCount: 0, pendingApprovals: 0 } });

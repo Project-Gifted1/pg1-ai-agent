@@ -52,6 +52,15 @@
       "client": false
     },
     {
+      "command": "/kingdom",
+      "area": "Threat checks",
+      "description": "PG1 Kingdom Defence: a live 3D view of PG1 defending its Command Centre, from real defence events of the last 24 hours only",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": true
+    },
+    {
       "command": "/commerce-status",
       "area": "Keys & usage",
       "description": "Payments and licensing state",

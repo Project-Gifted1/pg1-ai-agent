@@ -18,6 +18,7 @@
 
 import { resolveOperatorSession } from '../lib/operatorSession.mjs';
 import { buildDefenseFeed } from '../lib/defenseFeed.mjs';
+import { buildDefenseState } from '../lib/defenseState.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { queryOf } from '../lib/requestQuery.mjs';
 
@@ -25,7 +26,11 @@ import { queryOf } from '../lib/requestQuery.mjs';
 // open tabs do not each read 24 h of rows.
 export const DEFENSE_FEED_CACHE_MS = 4000;
 let cache = null;
-export function __resetDefenseFeedCache() { cache = null; }
+// PG1's own state (lib/defenseState.mjs: the tower's beacon, live checks,
+// SEAL tier, passkeys, approvals) changes slowly: read at most once a minute.
+export const DEFENSE_STATE_CACHE_MS = 60 * 1000;
+let stateCache = null;
+export function __resetDefenseFeedCache() { cache = null; stateCache = null; }
 
 function vault() {
   try { return getSupabaseCreds(); } catch (e) { return { supUrl: null, supKey: null }; }
@@ -56,7 +61,13 @@ export function createDefenseFeedHandler(opts = {}) {
     if (since == null && cache && now - cache.at < DEFENSE_FEED_CACHE_MS) return res.status(200).json({ ...cache.body, cached: true });
     const { supUrl, supKey } = opts.vault || vault();
     try {
-      const body = await buildDefenseFeed({ supUrl, supKey, fetchImpl: opts.fetchImpl || globalThis.fetch, now, since, env: opts.env || process.env });
+      const env = opts.env || process.env;
+      const fetchImpl = opts.fetchImpl || globalThis.fetch;
+      const body = await buildDefenseFeed({ supUrl, supKey, fetchImpl, now, since, env });
+      if (since == null) {
+        if (!stateCache || now - stateCache.at >= DEFENSE_STATE_CACHE_MS) stateCache = { at: now, state: await (opts.buildState || buildDefenseState)({ supUrl, supKey, fetchImpl, env, now }).catch(() => null) };
+        body.state = stateCache.state;
+      }
       if (since == null) cache = { at: now, body };
       return res.status(200).json({ ...body, cached: false });
     } catch (e) {
