@@ -31,6 +31,8 @@ export const TICKER_ROWS = 5;
 export const LIVE_WINDOW_MS = 90 * 1000;
 export const PAUSED_AFTER_FAILS = 2;
 export const FLAG_PX = 24;
+// Threats only: payment events (a settled payment, a paid job) are not shown.
+export const isPayment = (e) => !!e && (e.verdict === 'SETTLED' || e.verdict === 'JOB_PAID');
 const POLL_OVERLAP_MS = 70 * 1000;
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -96,7 +98,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
   }
 
   function renderSide() {
-    const list = store.list();
+    const list = store.list().filter((e) => !isPayment(e));
     const feed = $('kingdom-feed');
     if (feed) feed.innerHTML = list.length ? list.slice(0, FEED_ROWS).map(feedRowHtml).join('') : '<li class="kd-empty">No defence events in the last 24 hours. The kingdom is calm.</li>';
     const legend = $('kingdom-legend');
@@ -241,11 +243,11 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
       // "Earlier today". Everything a poll brings in after that is LIVE.
       let stage;
       if (initial) {
-        stage = store.list().filter((e) => e.role !== 'kingdom' || e.gadget !== 'seal_forge').slice(0, REPLAY_ON_OPEN).reverse().map((e) => ({ event: e, delta: e.count }));
+        stage = store.list().filter((e) => !isPayment(e) && (e.role !== 'kingdom' || e.gadget !== 'seal_forge')).slice(0, REPLAY_ON_OPEN).reverse().map((e) => ({ event: e, delta: e.count }));
         for (const f of stage) replayIds.add(f.event.id);
       } else {
-        stage = fresh;
-        for (const f of fresh) {
+        stage = fresh.filter((f) => !isPayment(f.event));
+        for (const f of stage) {
           if (!replayIds.has(f.event.id)) liveIds.add(f.event.id);
           ticker = [f.event, ...ticker.filter((x) => x.id !== f.event.id)].slice(0, 20);
           if (f.event.role === 'attacker' && f.event.country) { arcs.push({ cc: f.event.country, at: Date.now() }); popFlag(f.event); }
@@ -313,7 +315,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
 
   // --- Record mode (kingdom-record.js) ---------------------------------------------------
   function recStatus(text) { const el = $('kingdom-record-status'); if (el) el.textContent = text; }
-  function endReplay() { replaying = false; for (const t of replayTimers) clearTimeout(t); replayTimers = []; }
+  function endReplay() { replaying = false; for (const t of replayTimers) clearTimeout(t); replayTimers = []; if (open) renderBadge(); }
   async function finishRecording(result) {
     recording = null; endReplay();
     const btn = $('kingdom-record-go'); if (btn) btn.textContent = 'Start';
@@ -345,6 +347,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
       const plan = replaySchedule(store.list(), seconds * 1000, { now: lastAt || Date.now() });
       replaying = true;
       for (const { event } of plan) { replayIds.add(event.id); liveIds.delete(event.id); }
+      renderBadge();
       replayTimers = plan.map(({ at, event }) => setTimeout(() => { if (scene) scene.ingest([{ event, delta: event.count }]); }, at));
     }
     recording = rec; lastRec = rec;
@@ -372,7 +375,8 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
   function renderMini() {
     const mini = $('kingdom-mini');
     if (!mini) return;
-    const latest = store.list().find((e) => e.role !== 'kingdom') || store.list()[0];
+    const shown = store.list().filter((e) => !isPayment(e));
+    const latest = shown.find((e) => e.role !== 'kingdom') || shown[0];
     if (!latest) { mini.hidden = true; return; }
     mini.hidden = false;
     mini.dataset.role = latest.role;

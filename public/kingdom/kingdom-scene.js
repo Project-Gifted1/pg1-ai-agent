@@ -321,7 +321,8 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   }
   const governor = createGovernor({ tier: VIEWER_TIER[tier], budgetMs: 1000 / settings.targetFps, onChange: (vt, { manual }) => { if (!manual) applyTier(kingdomTierOf(vt)); } });
   // A tier chosen by the caller (a test, a recording) holds.
-  if (forced) governor.setAuto(false);
+  // A tier chosen by hand (remembered on this device) holds too.
+  if (forced || KINGDOM_TIERS.includes(saved)) governor.setAuto(false);
 
   // The loop: paused while hidden; frame listeners (the recorder) after each frame.
   const frameFns = new Set();

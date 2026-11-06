@@ -103,6 +103,7 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   for (const x of shown) { assert.ok(!PLACEHOLDER_CALLER_HASHES.includes(x), x); assert.ok(x === '—' || real.has(x), x); }
   const text = await page.locator('#kingdom-feed').textContent();
   assert.ok(!/check_package · stopped at the toll/.test(text));
+  assert.ok(!/paid and crossed|A2A job paid/.test(text), 'threats only: no payment events shown');
   assert.match(text, /🇫🇷 FR/, 'flag and ISO code in the feed');
   assert.match(text, /—/);
 
@@ -289,6 +290,7 @@ test('desktop, Cinematic: the hero shot, a facade, the river and bridge, a live 
   await page.evaluate(() => { const s = window.kingdomUi.scene(); s.setDirector(false); s.focus(null); });
   await page.waitForTimeout(10000);
   await shot(page, 'kingdom-city-hero-1280-cinematic-test-fixture.png');
+  assert.equal((await view(page)).tier, 'cinematic', 'a tier chosen by hand holds');
   await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [6, 186, 0], dist: 70, theta: 0.15, phi: 1.45 }));
   await page.waitForTimeout(10000);
   await shot(page, 'kingdom-city-emblem-1280-cinematic.png');
