@@ -939,8 +939,9 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       gradU.uSunDir.value.copy(tmp);
       gradU.uTop.value.setRGB(0.04 + 0.16 * light * (1 - dusk), 0.07 + 0.3 * light * (1 - dusk), 0.17 + 0.55 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.5);
       gradU.uMid.value.setRGB(0.18 + 0.4 * light * (1 - dusk), 0.25 + 0.45 * light * (1 - dusk), 0.45 + 0.4 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.45);
-      gradU.uHorizon.value.setRGB(0.95, 0.55 + 0.35 * (1 - dusk), 0.32 + 0.55 * (1 - dusk)).multiplyScalar((0.25 + 0.75 * light) * (1 - storm * 0.5));
-      gradU.uGlow.value.setRGB(1, 0.7, 0.4).multiplyScalar(Math.max(0.08, dusk) * (1 - storm));
+      // Golden hour, not red: the horizon stays amber-peach (red is the enemy's colour).
+      gradU.uHorizon.value.setRGB(0.95, 0.74 + 0.16 * (1 - dusk), 0.52 + 0.36 * (1 - dusk)).multiplyScalar((0.25 + 0.75 * light) * (1 - storm * 0.5));
+      gradU.uGlow.value.setRGB(1, 0.84, 0.62).multiplyScalar(Math.max(0.08, dusk) * (1 - storm));
       if (riverMat.uniforms) {
         riverMat.uniforms.uTime.value = t;
         riverMat.uniforms.uSunDir.value.copy(tmp);
@@ -959,7 +960,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
         cloudLag = Math.max(cloudLag, Math.abs(cover - cu.uCover.value), Math.abs(storm - cu.uDark.value));
         cu.uLight.value = 0.2 + 0.8 * Math.max(light, dusk * 0.8);
         cu.uSunXZ.value.set(tmp.x, tmp.z);
-        cu.uWarm.value.setRGB(1, 0.55 + 0.4 * (1 - dusk), 0.35 + 0.6 * (1 - dusk));
+        cu.uWarm.value.setRGB(1, 0.74 + 0.22 * (1 - dusk), 0.52 + 0.44 * (1 - dusk));
       }
       facade.userData.windows.uNight.value = 0.15 + 1.6 * Math.max(dusk * 0.8, moon);
       facade.userData.windows.uSkyTop.value.copy(gradU.uTop.value).lerp(gradU.uMid.value, 0.5).multiplyScalar(1.15);

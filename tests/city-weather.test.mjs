@@ -6,7 +6,7 @@
  *     foggy (the fog codes, or visibility under 1 km);
  *   - the source is Open-Meteo at api.open-meteo.com only (the network
  *     guard's allowlist), read at most every 15 minutes and cached;
- *   - when it cannot be read: a calm, clear evening, never a random storm;
+ *   - when it cannot be read: a calm, clear sky at the real time of day, never a random storm;
  *   - the weather never changes a count, a caption or the threat level, and
  *     the threat level never changes the weather;
  *   - credited on /docs/attributions (CC BY 4.0).
@@ -76,7 +76,7 @@ test('the source: api.open-meteo.com only, read at most every 15 minutes, cached
   __resetCityWeather();
 });
 
-test('when it cannot be read: a calm, clear evening, never a storm', async () => {
+test('when it cannot be read: a calm, clear sky, never a storm', async () => {
   for (const fetchImpl of [
     async () => { throw new Error('network'); },
     async () => new Response('busy', { status: 503 }),

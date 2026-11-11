@@ -217,7 +217,7 @@ export function dublinHour(ms = Date.now()) {
 // wet streets: never a count, a caption, the ticker or an attacker, and the
 // threat level never changes the weather.
 export const WEATHER_STATES = Object.freeze(['clear', 'partly_cloudy', 'overcast', 'drizzle', 'rain', 'heavy_rain', 'fog', 'snow']);
-// What the city shows when the weather cannot be read: a calm, clear evening.
+// What the city shows when the weather cannot be read: a calm, clear sky (the light still follows real Dublin time).
 export const FALLBACK_WEATHER = Object.freeze({ state: 'clear', cloud: 0.05, wind: 0, gusts: 0, rain: 0, is_day: null, evening: true, moon_phase: 0.5, source: 'fallback' });
 const clamp01 = (v, d = 0) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(1, Number(v))) : d);
 

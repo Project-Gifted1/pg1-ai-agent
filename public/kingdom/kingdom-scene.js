@@ -428,8 +428,8 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     last = now;
     const t = (now - t0) / 1000;
     // Dusk (the hero look) or the live sun over Dublin.
-    // When the weather cannot be read the city shows a calm, clear evening.
-    const sun = lightMode === 'live' && !look.evening ? dublinSun(Date.now()) : DUSK_SUN;
+    // The light always follows real Dublin time (or the chosen dusk); an unread weather only means a calm, clear sky.
+    const sun = lightMode === 'live' ? dublinSun(Date.now()) : DUSK_SUN;
     sunDir.set(Math.sin(sun.azimuth) * Math.cos(sun.elevation), Math.sin(sun.elevation), -Math.cos(sun.azimuth) * Math.cos(sun.elevation)).normalize();
     const light = daylight(sun.elevation);
     const dusk = Math.max(0, 1 - Math.abs(sun.elevation - 0.06) / 0.2);

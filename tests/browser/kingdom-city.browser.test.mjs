@@ -14,7 +14,7 @@
  *   - choosing Legacy phone rebuilds the city on that tier (the same path
  *     the automatic drop takes);
  *   - the feed's weather drives the sky (rain at night: wet roads, rain
- *     streaks) and never the counts; with no weather, a calm clear evening;
+ *     streaks) and never the counts; with no weather, a calm clear sky;
  *   - the traffic never overlaps.
  * Skipped (not failed) when Playwright or a Chromium is not installed.
  */
@@ -115,7 +115,7 @@ test('choosing Legacy phone rebuilds the city on that tier (the automatic drop t
   assert.deepEqual(errors, []);
 });
 
-test('the real weather drives the sky (rain at night: wet roads, streaks), never the counts; no weather: a calm clear evening', { skip, timeout: 600000 }, async (t) => {
+test('the real weather drives the sky (rain at night: wet roads, streaks), never the counts; no weather: a calm clear sky', { skip, timeout: 600000 }, async (t) => {
   const { page, errors } = await openCity(t, { tier: 'legacy', weather: null });
   await frames(page, 3);
   let v = await view(page);

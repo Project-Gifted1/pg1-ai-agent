@@ -246,7 +246,7 @@ test('the city\'s own life: windows follow Dublin time, the real weather (not a 
   const h = dublinHour(Date.parse('2026-07-01T12:00:00Z'));
   assert.equal(Math.floor(h), 13, 'Dublin summer time');
   assert.equal(Math.floor(dublinHour(Date.parse('2026-12-01T12:00:00Z'))), 12);
-  assert.equal(weatherLook(null).state, 'clear', 'no weather read: a calm clear evening, never a made-up storm');
+  assert.equal(weatherLook(null).state, 'clear', 'no weather read: a calm clear sky, never a made-up storm');
   assert.deepEqual(billboardLines({ countries: 5, threats: 31, checks: 21 }), ['5 countries · hostile traffic, last 24 h', '31 threats turned away today', '21 checks live']);
   assert.deepEqual(billboardLines({}), ['not read countries · hostile traffic, last 24 h', 'not read threats turned away today', 'not read checks live']);
   assert.ok(!billboardLines({ countries: 1, threats: 1, checks: 1 }).some((l) => /payment/.test(l)));
