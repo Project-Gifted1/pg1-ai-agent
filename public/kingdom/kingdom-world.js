@@ -212,7 +212,7 @@ function facadeMaterial(THREE, { reflective, envMap = null }) {
           vec3 rf = reflect(-vd, nW);
           vec3 skyC = rf.y > 0.0 ? mix(uSkyHor, uSkyTop, smoothstep(0.0, 0.55, rf.y)) : mix(uSkyHor * 0.55, uGround, smoothstep(0.0, 0.25, -rf.y));
           float fres = 0.05 + 0.95 * pow(1.0 - clamp(dot(vd, nW), 0.0, 1.0), 5.0);
-          float glassAmt = (pane + spandrel * 0.6) * mix(0.32, 1.0, fres) * (1.0 - 0.75 * uNight);
+          float glassAmt = (pane + spandrel * 0.6) * mix(0.24, 1.0, fres) * (1.0 - 0.75 * uNight);
           totalEmissiveRadiance += skyC * glassAmt * mix(0.85, 1.1, paneSeed);
         }
         // Street level: shop fronts spill warm light while the shops are open;

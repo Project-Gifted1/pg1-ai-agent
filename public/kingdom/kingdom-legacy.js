@@ -75,7 +75,9 @@ export function mergeStatic(THREE, scene, names = STATIC_NAMES, instanced = STAT
     if (!geos.length) continue;
     const merged = new THREE.Mesh(mergeGeometries(THREE, geos), list[0].material);
     for (const g of geos) g.dispose();
-    merged.name = `${list[0].name}-merged`;
+    // The merged mesh keeps the names of what it holds (the scene's inventory lists them).
+    merged.name = list[0].name;
+    merged.userData.mergedNames = [...new Set(list.map((m) => m.name))];
     merged.matrixAutoUpdate = false;
     merged.castShadow = shadows && list.some((m) => m.castShadow); merged.receiveShadow = shadows && list.some((m) => m.receiveShadow);
     for (const m of list) { m.parent.remove(m); removed++; }

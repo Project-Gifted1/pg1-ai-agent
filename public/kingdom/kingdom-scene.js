@@ -564,7 +564,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     // For the tests: what the scene holds (names only).
     inspect() {
       const names = new Set(); let unnamed = 0; let meshes = 0;
-      scene.traverse((o) => { if (o.name) names.add(o.name); if (o.isMesh || o.isSprite || o.isPoints) { meshes++; if (!o.name) unnamed++; } });
+      scene.traverse((o) => { if (o.name) names.add(o.name); if (o.userData && o.userData.mergedNames) for (const n of o.userData.mergedNames) names.add(n); if (o.isMesh || o.isSprite || o.isPoints) { meshes++; if (!o.name) unnamed++; } });
       const brandFills = world.emblemMeshes.flatMap((g) => g.children.filter((m) => m.material && m.material.userData.brandFill).map((m) => m.material.userData.brandFill));
       return { names: [...names].sort(), unnamed, meshes, buildings: world.buildingCount, emblemSource: world.emblemMeshes.length ? BRAND_SVG_URL : null, brandFills: [...new Set(brandFills)], lifeColours: life.colours(), lifeCounts: life.counts(), billboard: world.billboardText };
     },
@@ -635,6 +635,8 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       const fbBytes = W * H * 4 * 3 + (settings.shadows ? settings.shadows * settings.shadows * 4 : 0);
       return { tier, calls: lastInfo.calls, triangles: lastInfo.triangles, textures: seen.size, maxTexture: maxTex, gpuMemoryMB: Math.round((texBytes + geoBytes + fbBytes) / 1048576), targetFps: settings.targetFps, pixelRatio: renderer.getPixelRatio(), life: life.counts(), weather: wx.counts() };
     },
+    // For screenshots: the junction with the longest queue now.
+    busiestJunction: () => life.traffic.busiest(),
     // For screenshots: the tallest towers near the centre (x, z, height, width).
     towers: () => world.roofSpots.filter((r) => r.ring === 'near').slice(0, 12).map((r) => ({ x: Math.round(r.x), z: Math.round(r.z), h: Math.round(r.h), w: Math.round(r.w) })),
     // For tuning: what each named object costs (renderables, triangles), largest first.

@@ -110,7 +110,7 @@ export function createWeatherFx(THREE, scene, world, settings) {
   moon.scale.setScalar(240); root.add(moon);
   let moonDrawn = -1;
   const sunCv = document.createElement('canvas'); sunCv.width = sunCv.height = 128;
-  { const g = sunCv.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,250,235,1)'); gr.addColorStop(0.18, 'rgba(255,240,200,1)'); gr.addColorStop(0.3, 'rgba(255,214,150,0.45)'); gr.addColorStop(1, 'rgba(255,190,120,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); }
+  { const g = sunCv.getContext('2d'); const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,252,244,1)'); gr.addColorStop(0.16, 'rgba(255,248,232,1)'); gr.addColorStop(0.28, 'rgba(255,240,215,0.35)'); gr.addColorStop(1, 'rgba(255,236,210,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); }
   const sunTex = new THREE.CanvasTexture(sunCv); sunTex.colorSpace = THREE.SRGBColorSpace;
   const sunDisc = named(new THREE.Sprite(new THREE.SpriteMaterial({ map: sunTex, transparent: true, depthWrite: false, fog: false, opacity: 0, blending: THREE.AdditiveBlending })), 'sun-disc');
   sunDisc.scale.setScalar(700); root.add(sunDisc);
@@ -130,7 +130,9 @@ export function createWeatherFx(THREE, scene, world, settings) {
       state.wind = ease(state.wind, look.wind, dt, 0.3);
       const night = Math.max(0, 1 - light * 1.4 - dusk * 0.6);
       state.stars = ease(state.stars, night * look.stars, dt, 0.4);
-      state.sun = ease(state.sun, look.sun * Math.min(1, light * 1.5) * (sunDir.y > -0.02 ? 1 : 0), dt, 0.4);
+      // The disc only once the sun is a few degrees up: low down, the sky's own glow is the sun.
+      const up = Math.max(0, Math.min(1, (sunDir.y - 0.05) / 0.1));
+      state.sun = ease(state.sun, look.sun * Math.min(1, light * 1.5) * up, dt, 0.4);
       const cx = target ? target.x : 0; const cz = target ? target.z : 0;
       // Rain.
       rain.visible = state.rain > 0.01;

@@ -189,7 +189,7 @@ export function createTraffic({ density = 1, seed = 11, cols = 6, rowsNorth = 4,
   let nextId = 1;
   let t = 0;
   const stats = { spawned: 0, despawned: 0, stoppedAtRed: 0, enteredOnRed: 0, entered: 0, refusedBlocked: 0 };
-  const target = Math.round(net.links.length * 2.2 * density);
+  const target = Math.round(net.links.length * 3.4 * density);
 
   // Bus stops: on some links, a third of the way along.
   if (busStops) for (const l of net.links) if (l.len > 100 && r() < 0.18) l.busStop = { s: Math.min(l.stopAt - 30, l.len * 0.45), people: 2 + Math.floor(r() * 5) };
@@ -213,7 +213,7 @@ export function createTraffic({ density = 1, seed = 11, cols = 6, rowsNorth = 4,
     let s = link.stopAt - r() * 20;
     while (s > link.start + 6) {
       if (vehicles.length >= target) break;
-      if (r() < 0.32 * density) { const type = pickType(); const spec = VEHICLE_TYPES[type]; if (s - spec.len > link.start) { place(link, s, type); s -= spec.len + MIN_GAP + 6 + r() * 14; continue; } }
+      if (r() < 0.45 * Math.min(1.5, density)) { const type = pickType(); const spec = VEHICLE_TYPES[type]; if (s - spec.len > link.start) { place(link, s, type); s -= spec.len + MIN_GAP + 6 + r() * 14; continue; } }
       s -= 12 + r() * 10;
     }
   }
@@ -502,6 +502,12 @@ export function createTraffic({ density = 1, seed = 11, cols = 6, rowsNorth = 4,
     get time() { return t; },
     step, overlaps,
     signal: (j, axis) => signalFor(j, axis, t),
+    // The junction with the most vehicles waiting at it right now (for the camera).
+    busiest() {
+      let best = null; let n = -1;
+      for (const j of net.junctions) { if (j.edge) continue; const q = j.in.reduce((k, l) => k + this.queueAt(l), 0); if (q > n) { n = q; best = j; } }
+      return best ? { x: best.x, z: best.z, queued: n } : null;
+    },
     queueAt(link) { let n = 0; for (const v of link.vehicles) if (v.v < 0.5 && link.stopAt - v.s < 60) n++; return n; }
   };
 }
