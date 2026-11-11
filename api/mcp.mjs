@@ -3,7 +3,17 @@
  * Endpoint: /api/mcp
  * Protocol: Model Context Protocol (MCP) over Streamable HTTP
  * Monetization: x402 (Base chain micropayments) & Gumroad license keys
- * Version: 1.21.1 — FIX: check_agent_message flags only instructions aimed at
+ * Version: 1.22.0 — ADD: new free tool check_repo_trap (lib/repoTrap.mjs),
+ *   also an A2A skill and a REST endpoint (POST /api/repo-trap): a check of a
+ *   downloaded project's file listing (paths, sizes, first bytes, small text
+ *   excerpts) for the untrusted repo trap: Python stdlib-shadowing files
+ *   (struct.py next to a script), startup hooks (sitecustomize.py, .pth),
+ *   npm install hooks, executables, encoded payloads, README decoder bait,
+ *   secret-path references and persistence hints. Deterministic rules, no AI
+ *   model; PG1 never fetches, decodes or runs anything from the project and
+ *   stores nothing (verdict and reason codes only). 60/hour per caller,
+ *   always free. The other tools' names, inputs and outputs are unchanged.
+ * 1.21.1 — FIX: check_agent_message flags only instructions aimed at
  *   the reader; naming, negated and quoted lines are skipped (a clause
  *   classifier in lib/agentMessage.mjs, before each negatable rule; hidden
  *   content is not relaxed). An unlimited allowance to a specific address
@@ -139,7 +149,7 @@ import { encodePaymentRequiredHeader, encodePaymentResponseHeader, decodePayment
 import { createCdpFacilitatorClient } from '@coinbase/cdp-sdk/x402';
 import { checkFreeTierAvailable, consumeFreeTier, getRequestIdentifier, logSettlementOutcome, FREE_TIER_DAILY_LIMIT, freeTierKey, freeTierWanted, setFreeTierHeaders } from '../lib/freeTier.mjs';
 import { verifyGumroadLicense } from '../lib/paymentGate.mjs';
-import { isFeedPaid, X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX, IP_ABUSE_RATE_LIMIT_MAX, PACKAGE_CHECK_RATE_LIMIT_MAX, AGENT_MESSAGE_RATE_LIMIT_MAX, FREE_MCP_TOOLS, x402PriceUsd } from '../lib/x402Config.mjs';
+import { isFeedPaid, X402_NETWORK, X402_PRICE, X402_SCHEME, X402_VERSION, RATE_LIMIT_WINDOW_MS, DOMAIN_AGE_RATE_LIMIT_MAX, HOSTNAME_REPUTATION_RATE_LIMIT_MAX, WALLET_AGE_RATE_LIMIT_MAX, WALLET_SANCTIONS_RATE_LIMIT_MAX, IP_ABUSE_RATE_LIMIT_MAX, PACKAGE_CHECK_RATE_LIMIT_MAX, AGENT_MESSAGE_RATE_LIMIT_MAX, REPO_TRAP_RATE_LIMIT_MAX, FREE_MCP_TOOLS, x402PriceUsd } from '../lib/x402Config.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { detectIndicatorType, lookupIocContext } from '../lib/iocContext.mjs';
 import { fetchThreatTelemetry, isEpssPaidEnabled } from '../lib/sourcePolicy.mjs';
@@ -160,6 +170,7 @@ import { checkPackage, normalizePackageInput, buildPackageResult, packageCheckFa
 import { PREFLIGHT_DEF, PREFLIGHT_TOOL, runPreflight } from '../lib/preflight.mjs';
 import { checkX402Endpoint, checkAgentCard } from '../lib/agentChecks.mjs';
 import { checkAgentMessage, AGENT_MESSAGE_KINDS, AGENT_MESSAGE_MAX_BYTES } from '../lib/agentMessage.mjs';
+import { checkRepoTrap, REPO_TRAP_TOOL, REPO_TRAP_CODES, REPO_TRAP_MAX_FILES, REPO_TRAP_MAX_PATH, REPO_TRAP_MAX_TEXT_BYTES, REPO_TRAP_MAX_TOTAL_TEXT_BYTES, REPO_TRAP_MAX_MAGIC_BYTES, REPO_TRAP_MAX_NAME } from '../lib/repoTrap.mjs';
 import { signResult, verifySignedResult, publicJwks, addJwksLink, MCP_SIGNATURE_META, pg1Version } from '../lib/signing.mjs';
 import { cachedCheck } from '../lib/resultCache.mjs';
 import { HOSTING_DEF, HOSTING_TOOL, hostingAdvice } from '../lib/hosting/advisor.mjs';
@@ -259,7 +270,8 @@ const FEED_PAID_AT_START = isFeedPaid();
 // 1.18.0 (P8): preflight_check comes first in tools/list: the one call an
 // agent makes before it acts. check_x402_endpoint, check_agent_card,
 // check_agent_message (1.21.0) and verify_result are always free.
-export const EDGE_FREE_TOOLS = Object.freeze(['check_x402_endpoint', 'check_agent_card', 'check_agent_message', 'verify_result']);
+// check_repo_trap (1.22.0) is always free too.
+export const EDGE_FREE_TOOLS = Object.freeze(['check_x402_endpoint', 'check_agent_card', 'check_agent_message', 'check_repo_trap', 'verify_result']);
 
 const AGENT_MESSAGE_FINDING_CODES = ['AGENT_MESSAGE_INSTRUCTION_OVERRIDE', 'AGENT_MESSAGE_ROLE_HIJACK', 'AGENT_MESSAGE_AUTHORITY_CLAIM', 'AGENT_MESSAGE_CONCEALMENT', 'AGENT_MESSAGE_PROMPT_EXTRACTION', 'AGENT_MESSAGE_HIDDEN_TAG_CHARACTERS', 'AGENT_MESSAGE_ZERO_WIDTH', 'AGENT_MESSAGE_BIDI_CONTROL', 'AGENT_MESSAGE_HTML_COMMENT_INSTRUCTION', 'AGENT_MESSAGE_MIXED_SCRIPT', 'AGENT_MESSAGE_ENCODED_BLOB', 'AGENT_MESSAGE_DATA_URI', 'AGENT_MESSAGE_SECRET_EXFILTRATION', 'AGENT_MESSAGE_EXFILTRATION_URL', 'AGENT_MESSAGE_TEMPLATED_IMAGE_URL', 'AGENT_MESSAGE_REMOTE_SCRIPT', 'AGENT_MESSAGE_PAYMENT_REDIRECT', 'AGENT_MESSAGE_FUND_TRANSFER', 'AGENT_MESSAGE_UNLIMITED_ALLOWANCE', 'AGENT_MESSAGE_SPENDING_LIMIT', 'AGENT_MESSAGE_GUARD_BYPASS', 'AGENT_MESSAGE_TOOL_INVOCATION', 'AGENT_MESSAGE_SHELL_COMMAND', 'AGENT_MESSAGE_PACKAGE_INSTALL', 'WALLET_SANCTIONED', 'HOSTNAME_PHISHING_LISTED', 'HOSTNAME_LOOKALIKE'];
 
@@ -313,6 +325,68 @@ export const AGENT_MESSAGE_DEF = {
     required: ['verdict', 'summary', 'kind', 'source', 'sha256', 'bytes', 'findings', 'urls', 'domains', 'wallet_addresses']
   }
 };
+// check_repo_trap (1.22.0): lib/repoTrap.mjs.
+export const REPO_TRAP_DEF = {
+  name: REPO_TRAP_TOOL,
+  description: 'PG1 Sovereign Threat Intelligence: checks a downloaded project BEFORE you run anything from it, for the untrusted repo trap: a project set up to hijack the AI coding agent that opens it. The classic trap ships a suspicious binary and an encoded data file; a careful agent refuses the binary and writes its own Python decoder, but a file named like a standard-library module (struct.py) sits in the working folder, Python puts that folder first on sys.path, and the agent\'s own script imports the attacker\'s file, which starts a detached process and takes SSH keys and tokens. Send the file listing you already have: files[] of { path, size?, executable?, magic_hex? (the first bytes as hex, up to 32), text? (the start of the file, up to 16 KB; send it for README, package.json, setup.py, .npmrc and the .py files at the root) }, up to 2000 files and 256 KB of text. PG1 never fetches a URL, unpacks, decodes, imports or runs anything from the project: deterministic rules over what you sent, no AI model. Reason codes: STDLIB_SHADOW and PY_STARTUP_HOOK (sitecustomize.py, usercustomize.py, .pth) are high; NODE_INSTALL_HOOK (install-time npm scripts, an unusual registry), UNTRUSTED_BINARY (ELF, Mach-O, PE, executable bit), ENCODED_PAYLOAD, DECODER_BAIT (a README telling the reader to decode, run or import something; text that only describes the risk is not flagged), SECRET_PATH_REFERENCE (~/.ssh, cloud credentials, GITHUB_TOKEN, keychains, internal addresses) and PERSISTENCE_HINT (nohup, setsid, launchctl, cron, systemd user units, double fork) are medium. Returns verdict malicious (a shadow or startup hook together with an encoded payload or a binary, or a shadow or hook file that itself reaches for secrets or detaches), suspicious (any other finding) or no_findings, each finding with the paths involved, and plain-language advice (do not run code from the folder; if you must decode, use python3 -I in a sandbox with no secrets and no network, after deleting or renaming the shadowing file). No findings does not prove the project is harmless; never "safe". Nothing is stored: only the verdict and reason codes are logged. Always free (60/hour per caller).',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      files: {
+        type: 'array',
+        minItems: 1,
+        maxItems: REPO_TRAP_MAX_FILES,
+        description: `The project's files, up to ${REPO_TRAP_MAX_FILES}, paths relative to the project root.`,
+        items: {
+          type: 'object',
+          properties: {
+            path: { type: 'string', maxLength: REPO_TRAP_MAX_PATH, description: 'Path relative to the project root, such as "src/app.py".' },
+            size: { type: 'integer', minimum: 0, description: 'Size in bytes.' },
+            executable: { type: 'boolean', description: 'Whether the file has the executable bit.' },
+            magic_hex: { type: 'string', maxLength: REPO_TRAP_MAX_MAGIC_BYTES * 2, description: `The file's first bytes (magic number) as hex, up to ${REPO_TRAP_MAX_MAGIC_BYTES} bytes.` },
+            text: { type: 'string', maxLength: REPO_TRAP_MAX_TEXT_BYTES, description: `The start of a text file, up to ${REPO_TRAP_MAX_TEXT_BYTES} bytes of UTF-8 (${REPO_TRAP_MAX_TOTAL_TEXT_BYTES} bytes per request in all).` }
+          },
+          required: ['path'],
+          additionalProperties: false
+        }
+      },
+      name: { type: 'string', maxLength: REPO_TRAP_MAX_NAME, description: 'Optional: a label for the project, echoed back. Never stored.' }
+    },
+    required: ['files'],
+    additionalProperties: false
+  },
+  outputSchema: {
+    type: 'object',
+    properties: {
+      verdict: { type: 'string', enum: ['no_findings', 'suspicious', 'malicious'] },
+      risk: { type: 'string', enum: ['none', 'medium', 'high'] },
+      summary: { type: 'string' },
+      name: { type: 'string' },
+      files_checked: { type: 'integer' },
+      text_bytes_checked: { type: 'integer' },
+      findings: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            code: { type: 'string', enum: [...REPO_TRAP_CODES] },
+            severity: { type: 'string', enum: ['high', 'medium'] },
+            paths: { type: 'array', items: { type: 'string' }, maxItems: 20 },
+            paths_truncated: { type: 'boolean' },
+            detail: { type: ['string', 'null'] }
+          },
+          required: ['code', 'severity', 'paths']
+        }
+      },
+      advice: { type: 'array', items: { type: 'string' } },
+      not_inspected: { type: 'array', items: { type: 'string' }, description: 'Files whose text would matter (README, package.json, .npmrc, setup.py, root .py files) but was not sent.' },
+      rules_version: { type: 'string' },
+      note: { type: 'string' },
+      ...RESPONSE_META_OUTPUT_PROPERTIES
+    },
+    required: ['verdict', 'risk', 'summary', 'files_checked', 'findings', 'advice']
+  }
+};
 const EDGE_TOOLS = [
   PREFLIGHT_DEF,
   {
@@ -326,6 +400,7 @@ const EDGE_TOOLS = [
     inputSchema: { type: 'object', properties: { url: { type: 'string', maxLength: 2048, description: 'The agent\'s https URL or its agent card URL.' }, domain: { type: 'string', maxLength: 253, description: 'Or just the agent\'s domain.' } }, additionalProperties: false }
   },
   AGENT_MESSAGE_DEF,
+  REPO_TRAP_DEF,
   {
     name: 'verify_result',
     description: 'PG1 Sovereign Threat Intelligence: verifies that a result really came from PG1, unchanged. Every PG1 tool result is signed (Ed25519) over its request hash, result, sources, timestamp and PG1 version; the signature is in result._meta["pg1/signature"] (MCP), the task\'s metadata["pg1.signature"] (A2A) or "signature" (REST). Give the result object and the signature block; optionally tool and arguments to check it answers that exact request. Public keys: https://pg1-ai-agent.vercel.app/.well-known/pg1-signing-key (JWKS); you can verify offline without this tool. Always free.',
@@ -3244,7 +3319,7 @@ export function resolveTestFixture(toolName, args) {
   return outcome;
 }
 
-const STRUCTURED_CONTENT_TOOLS = new Set(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_ip_abuse', 'check_package', 'check_agent_message']);
+const STRUCTURED_CONTENT_TOOLS = new Set(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'check_ip_abuse', 'check_package', 'check_agent_message', 'check_repo_trap']);
 
 function sendMcpFixtureResponse(res, toolName, outcome, requestId, pg1RequestId) {
   if (outcome.type === 'service_unavailable') {
@@ -3703,6 +3778,7 @@ export const READ_ONLY_TOOL_RUNNERS = Object.freeze({
   check_x402_endpoint: (args, ctx) => edgeCheck('check_x402_endpoint', args, ctx),
   check_agent_card: (args, ctx) => edgeCheck('check_agent_card', args, ctx),
   check_agent_message: (args, ctx) => handleCheckAgentMessage(args, ctx),
+  check_repo_trap: (args, ctx) => handleCheckRepoTrap(args, ctx),
   verify_result: (args) => handleVerifyResult(args)
 });
 
@@ -3775,6 +3851,34 @@ export async function handleCheckAgentMessage(args, ctx = {}, deps = {}) {
   }
   enforceAgentMessageRateLimit(ctx.identifier, licensed);
   return checkAgentMessage(args, { runTool: internalRunTool, ...deps });
+}
+// check_repo_trap: its own 60/hour counter per caller. Never cached (the
+// listing may carry file text) and never stored.
+const repoTrapRateLimitState = new Map();
+function enforceRepoTrapRateLimit(identifier, licensed) {
+  if (licensed || !identifier || identifier === 'unknown') return;
+  const now = Date.now();
+  const state = repoTrapRateLimitState.get(identifier);
+  if (!state || (now - state.windowStart) >= RATE_LIMIT_WINDOW_MS) {
+    if (repoTrapRateLimitState.size > 20000) repoTrapRateLimitState.clear(); // bounded memory per instance
+    repoTrapRateLimitState.set(identifier, { count: 1, windowStart: now });
+    return;
+  }
+  if (state.count >= REPO_TRAP_RATE_LIMIT_MAX) {
+    const retryAfterMin = Math.ceil((RATE_LIMIT_WINDOW_MS - (now - state.windowStart)) / 60000);
+    throw Object.assign(new RateLimitedError(`check_repo_trap is limited to ${REPO_TRAP_RATE_LIMIT_MAX} calls/hour per caller. Retry in about ${retryAfterMin} minute(s), or use a Gumroad license key (X-API-KEY) to bypass this limit.`), { retryAfter: retryAfterMin * 60 });
+  }
+  state.count += 1;
+}
+export function resetRepoTrapRateLimit() { repoTrapRateLimitState.clear(); }
+export async function handleCheckRepoTrap(args, ctx = {}, deps = {}) {
+  let licensed = ctx.licensed === true;
+  if (!licensed && ctx.licenseKey) {
+    const check = await verifyGumroadLicense(ctx.licenseKey).catch(() => ({ valid: false }));
+    licensed = !!check.valid;
+  }
+  enforceRepoTrapRateLimit(ctx.identifier, licensed);
+  return checkRepoTrap(args, deps);
 }
 function handleVerifyResult(args) {
   const out = verifySignedResult({ result: args && args.result, signature: args && args.signature, jwks: publicJwks(), tool: args && typeof args.tool === 'string' ? args.tool : null, args: args && args.arguments });
@@ -3893,6 +3997,7 @@ export const TOOL_SOURCE_LABELS = {
   check_x402_endpoint: 'x402 endpoint',
   check_agent_card: 'agent card',
   check_agent_message: 'PG1 message rules',
+  check_repo_trap: 'PG1 repo rules',
   verify_result: 'PG1 signing keys'
 };
 

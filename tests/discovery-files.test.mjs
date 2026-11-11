@@ -50,7 +50,7 @@ test('robots.txt exists and allows all crawlers', () => {
 // with x-payment-info and a non-anonymous security requirement.
 const PAID_OPERATIONS = [];
 const FREE_FEED_OPERATIONS = [['/api/ioc', 'get'], ['/api/ioc', 'post']];
-const FREE_OPERATIONS = [['/api/health', 'get'], ...FREE_FEED_OPERATIONS];
+const FREE_OPERATIONS = [['/api/health', 'get'], ['/api/repo-trap', 'post'], ...FREE_FEED_OPERATIONS];
 
 function loadSpec() {
   return JSON.parse(fs.readFileSync(path.join(publicDir, 'openapi.json'), 'utf8'));

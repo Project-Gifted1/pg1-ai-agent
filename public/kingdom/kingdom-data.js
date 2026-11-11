@@ -26,6 +26,7 @@ export const ENEMY_COLORS = Object.freeze({ red: 0xff3d3d, eyes: 0xff6a4a, shado
 
 export const GADGET_META = Object.freeze({
   truth_lens: { name: 'Truth Lens', color: 0xffd84d },
+  repo_scanner: { name: 'Repo Trap Scanner', color: 0xf3c623 },
   sanctions_gate: { name: 'Sanctions Gate', color: 0xf5f7fa },
   phishing_net: { name: 'Phishing Net', color: 0x36d1c4 },
   supply_inspector: { name: 'Supply Inspector', color: 0x9be7ff },
@@ -250,7 +251,7 @@ export function countriesText(n) { return `Hostile traffic from ${plural(n, 'cou
 // defends: block, scan, catch, turn back, repair, stamp, light or welcome;
 // never chase or strike back. null for an event no gadget answers.
 const ACTION = {
-  truth_lens: 'scan', sanctions_gate: 'block', phishing_net: 'catch', supply_inspector: 'scan', preflight_ward: 'scan',
+  truth_lens: 'scan', repo_scanner: 'scan', sanctions_gate: 'block', phishing_net: 'catch', supply_inspector: 'scan', preflight_ward: 'scan',
   toll_bridge: 'block', seal_forge: 'stamp', passkey_vault: 'block', rate_shield: 'block', gate_wardens: 'turn_back',
   repair_crews: 'repair', beacons: 'light', allies: 'welcome'
 };
@@ -271,7 +272,7 @@ export function defenceLine(e) {
 }
 
 // The other side's caption, paired with it.
-const ENEMY_NAME = { rate_shield: 'Siege drones', truth_lens: 'Shadow courier', passkey_vault: 'Shadow at the vault', supply_inspector: 'Trojan freighter', phishing_net: 'Mimic boat', sanctions_gate: 'Listed freighter' };
+const ENEMY_NAME = { rate_shield: 'Siege drones', truth_lens: 'Shadow courier', repo_scanner: 'Trojan workspace', passkey_vault: 'Shadow at the vault', supply_inspector: 'Trojan freighter', phishing_net: 'Mimic boat', sanctions_gate: 'Listed freighter' };
 export function enemyLine(e) {
   if (!e || e.role !== 'attacker') return e && e.role === 'ally' ? `Ally${e.country ? ` from ${e.country}` : ''}${e.count > 1 ? ` ×${e.count}` : ''}` : '';
   const who = ENEMY_NAME[e.gadget] || 'Raiders';
