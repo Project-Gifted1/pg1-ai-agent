@@ -36,7 +36,9 @@ import { buildWorld, RIVER, HERO_BEARING, TOWER_TOP } from './kingdom-world.js';
 import { createActors } from './kingdom-actors.js';
 import { createLife } from './kingdom-life.js';
 import { loadBrand, BRAND_SVG_URL } from './kingdom-emblem.js';
-import { dublinSun, daylight, pickDirectorEvent, normalizeState, windowRatios, dublinHour, dayWeather, GADGET_META } from './kingdom-data.js';
+import { dublinSun, daylight, pickDirectorEvent, normalizeState, windowRatios, dublinHour, weatherLook, GADGET_META } from './kingdom-data.js';
+import { createWeatherFx } from './kingdom-weather.js';
+import { mergeStatic, simplifyInstances, createLegacyWatch } from './kingdom-legacy.js';
 
 // The hero look: golden hour, the sun low in the west behind the tower.
 export const DUSK_SUN = Object.freeze({ elevation: 0.035, azimuth: (262 * Math.PI) / 180 });
@@ -68,8 +70,47 @@ export const HOME_VIEW_PHONE = Object.freeze({ target: [0, 150, 0], dist: 570, t
 // No emblem may come nearer the camera than this in the hero shot (metres).
 export const EMBLEM_CLEARANCE = 150;
 
-export const KINGDOM_TIERS = Object.freeze(['phone', 'balanced', 'cinematic']);
-export const KINGDOM_TIER_LABEL = Object.freeze({ phone: 'Phone', balanced: 'Balanced', cinematic: 'Cinematic' });
+export const KINGDOM_TIERS = Object.freeze(['legacy', 'phone', 'balanced', 'cinematic']);
+export const KINGDOM_TIER_LABEL = Object.freeze({ legacy: 'Legacy phone', phone: 'Phone', balanced: 'Balanced', cinematic: 'Cinematic' });
+// The Legacy phone tier's budgets (an iPhone 8: A11 GPU, about 2 GB of RAM,
+// Safari on iOS 16), checked by tests/browser/kingdom-city.browser.test.mjs.
+export const LEGACY_BUDGET = Object.freeze({ drawCalls: 150, triangles: 150000, maxTexture: 1024, gpuMemoryMB: 300, targetFps: 30 });
+// Frame time that sends a tier down to Legacy when it holds this long.
+export const LEGACY_DROP = Object.freeze({ ms: 1000 / 30 * 1.6, frames: 90 });
+
+// Which tier a device starts on, before any frame is drawn. Legacy for an
+// iPhone 8-class phone: iOS 16 (the last iOS an iPhone 8 runs), an iPhone
+// with the 4.7-inch 375 x 667 screen, 2 GB of memory or less, or a slow GPU
+// benchmark (gpuMs: lib time to draw the benchmark, -1 if not run).
+export function detectLegacy({ userAgent = '', screenW = 0, screenH = 0, memory = 0, gpuMs = -1, touch = false } = {}) {
+  const ua = String(userAgent);
+  const iphone = /iPhone/.test(ua);
+  const ios = /(?:iPhone|iPad|iPod).*OS (\d+)_/.exec(ua);
+  if (ios && Number(ios[1]) <= 16) return true;
+  if (iphone && Math.min(screenW, screenH) === 375 && Math.max(screenW, screenH) === 667) return true;
+  if (touch && memory > 0 && memory <= 2) return true;
+  if (gpuMs >= 0 && gpuMs > 28) return true;
+  return false;
+}
+
+// A quick GPU benchmark: a few draws of a busy fragment shader into a small
+// target, timed with a read-back (so the GPU really finished). ms, or -1.
+export function gpuBenchmark(THREE, renderer) {
+  try {
+    const rt = new THREE.WebGLRenderTarget(256, 256);
+    const mat = new THREE.ShaderMaterial({ vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }', fragmentShader: 'void main(){ vec2 p = gl_FragCoord.xy / 256.0; float a = 0.0; for (int i = 0; i < 48; i++){ a += sin(p.x * float(i) + cos(p.y * float(i) + a)); } gl_FragColor = vec4(vec3(fract(a)), 1.0); }' });
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat); mesh.frustumCulled = false;
+    const sc = new THREE.Scene(); sc.add(mesh); const cam = new THREE.Camera();
+    const px = new Uint8Array(4);
+    renderer.setRenderTarget(rt); renderer.render(sc, cam); renderer.readRenderTargetPixels(rt, 0, 0, 1, 1, px);
+    const t0 = performance.now();
+    for (let i = 0; i < 6; i++) renderer.render(sc, cam);
+    renderer.readRenderTargetPixels(rt, 0, 0, 1, 1, px);
+    const ms = performance.now() - t0;
+    renderer.setRenderTarget(null); rt.dispose(); mat.dispose(); mesh.geometry.dispose();
+    return ms;
+  } catch (e) { return -1; }
+}
 export const KINGDOM_QUALITY_KEY = 'pg1_kingdom_quality';
 export const DIRECTOR_CUT_MS = 6500;
 
@@ -79,12 +120,17 @@ export function kingdomTierOf(viewerTier) {
   if (viewerTier === 'high') return 'balanced';
   return 'cinematic';
 }
-const VIEWER_TIER = { phone: 'low', balanced: 'high', cinematic: 'ultra' };
+const VIEWER_TIER = { legacy: 'low', phone: 'low', balanced: 'high', cinematic: 'ultra' };
 
 // What each tier turns on (shadows: the shadow map's size, 0 for none).
 export function kingdomSettings(tier, { coarse = false } = {}) {
   const v = TIER_SETTINGS[VIEWER_TIER[tier] || 'high'];
   const base = {
+    // The Legacy phone tier: no post-processing, shadows, reflections or
+    // volumetrics; baked shading; instanced everything; a short far plane in
+    // thicker haze; simple instanced rain and wet-road roughness; textures
+    // capped at 1024 px; life and weather density cut down; 30 fps.
+    legacy: { shadows: 0, post: null, water: false, sky: 'gradient', crowdCap: 80, perEvent: 8, shafts: false, rain: true, targetFps: 30, pixelRatio: 1, lifeScale: 0.22, weatherScale: 0.3, maxTexture: LEGACY_BUDGET.maxTexture, far: 2600, legacy: true },
     phone: { shadows: 0, post: null, water: false, sky: 'gradient', crowdCap: 150, perEvent: 12, shafts: false, rain: false, targetFps: 30, pixelRatio: 1.25 },
     balanced: { shadows: 1024, post: { aa: 'smaa', bloom: true, gtao: true, dof: false }, water: true, sky: 'physical', crowdCap: 400, perEvent: 30, shafts: false, rain: true, targetFps: 60, pixelRatio: 1.5 },
     cinematic: { shadows: coarse ? 1024 : 2048, post: { aa: 'smaa', bloom: true, gtao: true, dof: false }, water: true, sky: 'physical', crowdCap: 800, perEvent: 60, shafts: true, rain: true, targetFps: 60, pixelRatio: 2 }
@@ -183,7 +229,7 @@ function waterNormals(THREE) {
   return t;
 }
 
-async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: forced }) {
+async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: forced, onRebuild = null, onContextLost = null }) {
   const THREE = await import(threeUrl);
   const canvas = document.createElement('canvas');
   canvas.className = 'kingdom-canvas';
@@ -197,7 +243,14 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   let saved = null;
   try { saved = localStorage.getItem(KINGDOM_QUALITY_KEY); } catch (e) { saved = null; }
   const viewerSaved = (() => { try { return localStorage.getItem(QUALITY_KEY); } catch (e) { return null; } })();
-  let tier = forced || (KINGDOM_TIERS.includes(saved) ? saved : kingdomTierOf(pickTier({ coarse, memory: navigator.deviceMemory || 0, cores: navigator.hardwareConcurrency || 0, saved: viewerSaved })));
+  let tier = forced || (KINGDOM_TIERS.includes(saved) ? saved : null);
+  if (!tier) {
+    // An iPhone 8-class device starts on Legacy phone; the benchmark only runs when the profile alone does not decide it.
+    const profile = { userAgent: navigator.userAgent, screenW: (window.screen && window.screen.width) || 0, screenH: (window.screen && window.screen.height) || 0, memory: navigator.deviceMemory || 0, touch: !!coarse };
+    let legacy = detectLegacy(profile);
+    if (!legacy && coarse) legacy = detectLegacy({ ...profile, gpuMs: gpuBenchmark(THREE, renderer) });
+    tier = legacy ? 'legacy' : kingdomTierOf(pickTier({ coarse, memory: navigator.deviceMemory || 0, cores: navigator.hardwareConcurrency || 0, saved: viewerSaved }));
+  }
   let settings = kingdomSettings(tier, { coarse });
   container.appendChild(canvas);
   container.dataset.renderer = 'webgl';
@@ -210,7 +263,9 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.FogExp2(0x8a8aa2, 0.0009);
-  const camera = new THREE.PerspectiveCamera(42, 1, 1, 12000);
+  const camera = new THREE.PerspectiveCamera(42, 1, 1, settings.far || 12000);
+  // Legacy: a nearer far plane, hidden in thicker haze (distance culling).
+  const fogBase = settings.legacy ? 0.0011 : 0.00055;
   const ADD = '/vendor/three/addons/';
   const ReflectorMod = settings.tier === 'cinematic' ? await import(`${ADD}objects/Reflector.js`).catch(() => null) : null;
   const normals = settings.water ? waterNormals(THREE) : null;
@@ -251,17 +306,15 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     } catch (e) { /* the hemisphere light is enough */ }
   };
 
-  // Rain (Balanced and up), only in a storm.
-  let rain = null;
-  if (settings.rain) {
-    const n = settings.tier === 'cinematic' ? 6000 : 2500;
-    const p = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) { p[i * 3] = (Math.random() - 0.5) * 700; p[i * 3 + 1] = Math.random() * 300; p[i * 3 + 2] = (Math.random() - 0.5) * 700; }
-    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(p, 3));
-    rain = new THREE.Points(geo, new THREE.PointsMaterial({ color: 0xaab8c8, size: 0.8, transparent: true, opacity: 0, depthWrite: false }));
-    rain.name = 'rain';
-    scene.add(rain);
-  }
+  // The weather (decoration only): the real weather in Dublin from the feed.
+  // The threat level never changes it, and it never changes a count.
+  const wx = createWeatherFx(THREE, scene, world, settings);
+  let look = weatherLook(null);
+  // Legacy phone: static scenery merged by material, small high-poly instances as boxes.
+  // Static scenery merged by material on every tier (fewer draw calls); on
+  // Legacy phone, small high-poly instances are boxes too.
+  { const m = mergeStatic(THREE, scene, undefined, undefined, { shadows: !!settings.shadows }); container.dataset.merged = `${m.removed}->${m.added}`; }
+  if (settings.legacy) { const sv = simplifyInstances(THREE, scene); const m = mergeStatic(THREE, scene); container.dataset.legacyMerged = `${m.removed}->${m.added}`; container.dataset.legacySaved = String(sv.saved); }
 
   let post = null;
   const buildPost = async () => {
@@ -307,7 +360,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   // Real Dublin time of day by default; dusk is the hero look (and Record mode's).
   let lightMode = 'live';
   container.dataset.light = lightMode;
-  let weather = dayWeather(); let ambientAt = -Infinity;
+  let ambientAt = -Infinity;
 
   // Size and quality.
   const resize = () => {
@@ -327,6 +380,12 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   // fewer new figures are staged per event.
   async function applyTier(next, { manual = false } = {}) {
     if (!KINGDOM_TIERS.includes(next) || next === tier) return;
+    // Into or out of Legacy: the city is rebuilt (density, textures, far plane).
+    if ((next === 'legacy' || tier === 'legacy') && onRebuild) {
+      if (manual) { try { localStorage.setItem(KINGDOM_QUALITY_KEY, next); } catch (e) { /* not remembered */ } }
+      onRebuild(next, { manual });
+      return;
+    }
     tier = next; settings = kingdomSettings(tier, { coarse });
     container.dataset.tier = tier;
     renderer.shadowMap.enabled = !!settings.shadows;
@@ -344,9 +403,18 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
 
   // The loop: paused while hidden; frame listeners (the recorder) after each frame.
   const frameFns = new Set();
-  let raf = 0; let last = 0; let running = true; let t0 = performance.now(); let threat = 'calm'; let storm = 0;
+  let raf = 0; let last = 0; let running = true; let t0 = performance.now(); let threat = 'calm'; let storm = 0; let alarm = 0;
   const sunDir = new THREE.Vector3();
   let camLift = 0; let camInside = 0; let paused = false;
+  const legacyWatch = createLegacyWatch(LEGACY_DROP);
+  const lastInfo = { calls: 0, triangles: 0 };
+  // WebGL context loss (a low-memory phone can lose it): stop drawing, show
+  // the still map with the text feed, and rebuild one tier lower when the
+  // context comes back. Never a crash.
+  const onLost = (e) => { e.preventDefault(); running = false; if (raf) cancelAnimationFrame(raf); raf = 0; container.dataset.contextLost = 'yes'; if (onContextLost) onContextLost(); };
+  const onRestored = () => { container.dataset.contextLost = 'restored'; if (onRebuild) onRebuild(KINGDOM_TIERS[Math.max(0, KINGDOM_TIERS.indexOf(tier) - 1)], { restored: true }); };
+  canvas.addEventListener('webglcontextlost', onLost, false);
+  canvas.addEventListener('webglcontextrestored', onRestored, false);
   const focusPoint = new THREE.Vector3();
   const frame = (now) => {
     raf = 0;
@@ -355,34 +423,39 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     if (now - last < budget - 2) { raf = requestAnimationFrame(frame); return; }
     const dt = Math.min(0.1, last ? (now - last) / 1000 : 0.016);
     if (last) governor.sample(now - last, budget);
+    // Frames that stay slow on the lowest ordinary tier: drop to Legacy phone.
+    if (last && tier === 'phone' && !forced && governor.auto !== false && legacyWatch.sample(now - last)) { container.dataset.autoDrop = 'legacy'; applyTier('legacy'); }
     last = now;
     const t = (now - t0) / 1000;
     // Dusk (the hero look) or the live sun over Dublin.
-    const sun = lightMode === 'live' ? dublinSun(Date.now()) : DUSK_SUN;
+    // When the weather cannot be read the city shows a calm, clear evening.
+    const sun = lightMode === 'live' && !look.evening ? dublinSun(Date.now()) : DUSK_SUN;
     sunDir.set(Math.sin(sun.azimuth) * Math.cos(sun.elevation), Math.sin(sun.elevation), -Math.cos(sun.azimuth) * Math.cos(sun.elevation)).normalize();
     const light = daylight(sun.elevation);
     const dusk = Math.max(0, 1 - Math.abs(sun.elevation - 0.06) / 0.2);
-    storm += ((threat === 'storm' ? 1 : threat === 'watch' ? 0.3 : 0) - storm) * Math.min(1, dt * 0.25);
-    world.update(dt, t, { sunDir, light, storm, dusk, fogColor: scene.fog.color });
+    // The sky's greyness follows the weather; the threat level only lights
+    // PG1's own rovers (never the weather).
+    storm += (look.dark - storm) * Math.min(1, dt * 0.25);
+    alarm += ((threat === 'storm' ? 1 : threat === 'watch' ? 0.3 : 0) - alarm) * Math.min(1, dt * 0.5);
+    world.update(dt, t, { sunDir, light, storm, cover: look.cover, wind: wx.state.wind, sunny: look.sun, dusk, fogColor: scene.fog.color });
     // Blue atmospheric haze, warmer at dusk, that fades the far city.
     scene.fog.color.setRGB(0.14 + 0.32 * light * (1 - dusk) + 0.08 * dusk, 0.19 + 0.36 * light * (1 - dusk) + 0.05 * dusk, 0.36 + 0.36 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.4);
-    scene.fog.density = 0.00055 + storm * 0.0008;
+    scene.fog.density = fogBase + storm * 0.0005 + look.fog * 0.0024;
     renderer.toneMappingExposure = 0.62 + 0.3 * light * (1 - dusk);
-    if (rain) { rain.material.opacity += ((storm > 0.6 || weather === 'rain' ? 0.45 : 0) - rain.material.opacity) * Math.min(1, dt); if (rain.material.opacity > 0.01) { const a = rain.geometry.attributes.position; for (let i = 1; i < a.array.length; i += 3) { a.array[i] -= dt * 60; if (a.array[i] < 0) a.array[i] += 120; } a.needsUpdate = true; rain.position.set(controls.target.x, 0, controls.target.z); } }
+    wx.update(dt, t, look, { target: controls.target, sunDir, light, dusk });
+    world.setWet(wx.state.wet);
     if (now - envAt > 180000) { envAt = now; refreshEnv(); if (post && post.setNight) post.setNight(Math.max(dusk, 1 - light)); }
-    actors.update(dt, t, camera, { storm });
-    life.update(dt, t, { dark: Math.max(dusk, 1 - light), dusk, light });
+    actors.update(dt, t, camera, { storm: alarm });
+    life.update(dt, t, { dark: Math.max(dusk, 1 - light), dusk, light, hour: lightMode === 'dusk' ? 19.5 : dublinHour(Date.now()), wet: wx.state.wet, rain: wx.state.rain, wind: wx.state.wind, external: actors.riverBoats ? actors.riverBoats() : [] });
     // Windows by the hour in Dublin, and the day's weather (scenery), every few seconds.
     if (now - ambientAt > 5000) {
       ambientAt = now;
       const hour = lightMode === 'dusk' ? 19.5 : dublinHour(Date.now());
       world.setWindowRatios(windowRatios(hour));
-      weather = dayWeather(Date.now());
-      world.setWet(weather === 'rain');
       container.dataset.windowHour = String(Math.floor(hour));
-      container.dataset.weather = weather;
+      container.dataset.weather = look.state;
+      container.dataset.weatherSource = look.source;
     }
-    if (weather === 'mist') scene.fog.density += 0.00022;
     // Director: cut to the most important live event every few seconds.
     if (director && now - lastCut > DIRECTOR_CUT_MS) {
       lastCut = now;
@@ -413,6 +486,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     camera.lookAt(controls.target);
     if (world.obstacles.hit(camera.position.x, camera.position.y, camera.position.z, 0)) camInside++;
     if (post) post.render(false); else renderer.render(scene, camera);
+    lastInfo.calls = renderer.info.render.calls; lastInfo.triangles = renderer.info.render.triangles;
     container.dataset.attackers = String(actors.attackers);
     if ((Number(container.dataset.frames) || 0) % 5 === 0) {
       container.dataset.fired = JSON.stringify(actors.fired);
@@ -422,9 +496,9 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       container.dataset.pg1MaxR = String(Math.round(actors.pg1MaxR));
       container.dataset.commander = actors.commanderMode;
       container.dataset.camInside = String(camInside);
-      // The weather has eased to the threat level (sky, fog and clouds).
-      const stormGoal = threat === 'storm' ? 1 : threat === 'watch' ? 0.3 : 0;
-      container.dataset.weatherSettled = Math.abs(storm - stormGoal) < 0.01 && (world.cloudLag || 0) < 0.01 ? 'yes' : 'no';
+      // The sky has eased to the real weather (sky, fog and clouds).
+      container.dataset.weatherSettled = Math.abs(storm - look.dark) < 0.01 && (world.cloudLag || 0) < 0.01 ? 'yes' : 'no';
+      container.dataset.wet = wx.state.wet.toFixed(2);
     }
     container.dataset.frames = String((Number(container.dataset.frames) || 0) + 1);
     for (const fn of frameFns) { try { fn(canvas); } catch (e) { /* a listener never stops the view */ } }
@@ -472,6 +546,10 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       if (events.size > 1500) { const keep = new Set(actors.activeIds); for (const id of events.keys()) { if (events.size <= 1000) break; if (!keep.has(id)) events.delete(id); } }
     },
     setThreat(level) { threat = ['calm', 'watch', 'storm'].includes(level) ? level : 'calm'; container.dataset.threat = threat; },
+    // The real Dublin weather (the feed's weather), decoration only.
+    setWeather(w) { look = weatherLook(w); container.dataset.weather = look.state; container.dataset.weatherSource = look.source; },
+    // For the tests and Record mode's stills: hold the eased weather at its goal now.
+    settleWeather() { storm = look.dark; world.settleClouds && world.settleClouds(look); },
     setToday() { /* the legend shows the counts */ },
     // PG1's real state (the feed's state): the tower's beacon and emblems, sentinels, beacons.
     setState(raw) {
@@ -540,14 +618,50 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     setDirector, director: () => director,
     tier: () => tier,
     setTier: (t) => applyTier(t, { manual: true }),
+    // For the tests and the budget check: what the last frame cost.
+    stats() {
+      let texBytes = 0; let maxTex = 0; const seen = new Set();
+      let geoBytes = 0; const geos = new Set();
+      scene.traverse((o) => {
+        if (o.geometry && !geos.has(o.geometry)) { geos.add(o.geometry); for (const a of Object.values(o.geometry.attributes)) geoBytes += a.array.byteLength; if (o.geometry.index) geoBytes += o.geometry.index.array.byteLength; }
+        if (o.isInstancedMesh) geoBytes += o.instanceMatrix.array.byteLength + (o.instanceColor ? o.instanceColor.array.byteLength : 0);
+        const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+        for (const m of ms) for (const k of ['map', 'emissiveMap', 'normalMap', 'roughnessMap', 'envMap', 'alphaMap']) {
+          const t = m[k]; if (!t || seen.has(t) || !t.image) continue; seen.add(t);
+          const w = t.image.width || 0; const h = t.image.height || 0; maxTex = Math.max(maxTex, w, h); texBytes += w * h * 4 * (t.generateMipmaps === false ? 1 : 1.34);
+        }
+      });
+      const c = renderer.getContext(); const W = c.drawingBufferWidth; const H = c.drawingBufferHeight;
+      const fbBytes = W * H * 4 * 3 + (settings.shadows ? settings.shadows * settings.shadows * 4 : 0);
+      return { tier, calls: lastInfo.calls, triangles: lastInfo.triangles, textures: seen.size, maxTexture: maxTex, gpuMemoryMB: Math.round((texBytes + geoBytes + fbBytes) / 1048576), targetFps: settings.targetFps, pixelRatio: renderer.getPixelRatio(), life: life.counts(), weather: wx.counts() };
+    },
+    // For screenshots: the tallest towers near the centre (x, z, height, width).
+    towers: () => world.roofSpots.filter((r) => r.ring === 'near').slice(0, 12).map((r) => ({ x: Math.round(r.x), z: Math.round(r.z), h: Math.round(r.h), w: Math.round(r.w) })),
+    // For tuning: what each named object costs (renderables, triangles), largest first.
+    costs() {
+      const by = new Map();
+      scene.traverse((o) => {
+        if (!(o.isMesh || o.isPoints || o.isLine || o.isSprite)) return;
+        let v = true; for (let p = o; p; p = p.parent) if (!p.visible) { v = false; break; }
+        if (!v) return;
+        const g = o.geometry; let tri = 0;
+        if (g && o.isMesh) { const n = g.index ? g.index.count : (g.attributes.position ? g.attributes.position.count : 0); tri = n / 3 * (o.isInstancedMesh ? o.count : 1); }
+        const k = o.name || '(unnamed)'; const c = by.get(k) || { name: k, objects: 0, tris: 0 };
+        c.objects++; c.tris += Math.round(tri); by.set(k, c);
+      });
+      return [...by.values()].sort((a, b) => b.objects - a.objects || b.tris - a.tris);
+    },
+    // For the tests: lose the WebGL context on purpose (and get it back).
+    loseContext() { const ext = renderer.getContext().getExtension('WEBGL_lose_context'); if (ext) { ext.loseContext(); return ext; } return null; },
     onFrame(fn) { frameFns.add(fn); return () => frameFns.delete(fn); },
     caption: () => captionEvent,
     pause(on) { running = !on; if (on && raf) { cancelAnimationFrame(raf); raf = 0; } else start(); },
     destroy() {
       running = false; if (raf) cancelAnimationFrame(raf);
       document.removeEventListener('visibilitychange', onVis);
+      canvas.removeEventListener('webglcontextlost', onLost); canvas.removeEventListener('webglcontextrestored', onRestored);
       if (ro) ro.disconnect();
-      controls.dispose(); actors.dispose(); life.dispose();
+      controls.dispose(); actors.dispose(); life.dispose(); wx.dispose();
       if (post) post.dispose();
       if (envRT) envRT.dispose(); if (pmrem) pmrem.dispose();
       scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose()); });
@@ -556,12 +670,48 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   };
 }
 
+// The scene the page holds: the 3D city, or the still 2D map. It survives
+// a rebuild (into or out of Legacy, or after a lost WebGL context): the page
+// keeps one object, and the last state set on it is set again.
 export async function createKingdomScene(container, { reducedMotion = false, coarse = false, threeUrl = '/vendor/three/three.module.min.js', onFocus = null, onTier = null, onCaption = null, onGadget = null, tier = null } = {}) {
-  if (!reducedMotion) {
-    try {
-      const s = await create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier });
-      if (s) return s;
-    } catch (e) { /* no WebGL: the 2D map */ }
+  if (reducedMotion) return create2d(container);
+  let impl = null; let fallback = null; let rebuilding = null;
+  const memo = new Map();
+  const REPLAY = ['setThreat', 'setWeather', 'setState', 'setBillboards', 'setLight', 'setDirector', 'setToday', 'setDay', 'setPaused'];
+  const frameFns = new Set();
+  const showFallback = () => { if (!fallback) { fallback = create2d(container); container.dataset.renderer = 'webgl-lost'; for (const [k, a] of memo) if (fallback[k]) fallback[k](...a); } };
+  const build = async (t) => {
+    const s = await create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: t, onRebuild, onContextLost: showFallback });
+    if (!s) return null;
+    for (const [k, a] of memo) { try { s[k](...a); } catch (e) { /* the next poll sets it again */ } }
+    for (const fn of frameFns) s.onFrame(fn);
+    return s;
+  };
+  async function onRebuild(next, { restored = false } = {}) {
+    if (rebuilding) return rebuilding;
+    rebuilding = (async () => {
+      const old = impl; impl = null;
+      try { old.destroy(); } catch (e) { /* a lost context cannot be disposed cleanly */ }
+      const s = await build(next).catch(() => null);
+      if (s) { impl = s; if (fallback) { fallback.destroy(); fallback = null; } if (onTier) onTier(s.tier(), { manual: false, rebuilt: true, restored }); }
+      else showFallback();
+      container.dataset.rebuilds = String((Number(container.dataset.rebuilds) || 0) + 1);
+      rebuilding = null;
+    })();
+    return rebuilding;
   }
-  return create2d(container);
+  try { impl = await build(tier); } catch (e) { impl = null; try { console.warn('[kingdom] 3D failed, showing the map:', e && e.message); } catch (e2) { /* no console */ } }
+  if (!impl) return create2d(container);
+  return new Proxy({}, {
+    get(_, key) {
+      if (key === 'onFrame') return (fn) => { frameFns.add(fn); const off = impl ? impl.onFrame(fn) : () => {}; return () => { frameFns.delete(fn); off(); }; };
+      if (key === 'rebuilding') return rebuilding;
+      if (key === 'renderer') return fallback && !impl ? '2d' : 'webgl';
+      const cur = impl || fallback;
+      if (!cur) return undefined;
+      const v = cur[key];
+      if (typeof v !== 'function') return v;
+      return (...args) => { if (REPLAY.includes(key)) memo.set(key, args); return v.apply(cur, args); };
+    }
+  });
 }

@@ -80,7 +80,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
   const store = createEventStore();
   let scene = null; let open = false; let pollTimer = null; let miniTimer = null; let lastAt = 0; let gadgets = []; let opening = null;
   let recording = null; let replaying = false; let replayTimers = []; let clipUrl = null;
-  let pg1State = null; let loaded = false; let lastRec = null; let sound = null;
+  let pg1State = null; let loaded = false; let lastRec = null; let sound = null; let lastWeather = null;
   let connected = false; let fails = 0; let lastOkAt = 0;
   const liveIds = new Set(); const replayIds = new Set();
   let ticker = []; let arcs = []; let captionEvent = null; let tickTimer = null; let pip = null; let introDone = false;
@@ -237,6 +237,8 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
       scene.setThreat(level);
       scene.setToday(store.today);
       if (feed.state) scene.setState(feed.state);
+      // The real Dublin weather, for the sky only (full loads carry it).
+      if (Object.hasOwn(feed, 'weather') && scene.setWeather) { scene.setWeather(feed.weather); lastWeather = feed.weather; if (sound && sound.setWeather && feed.weather) sound.setWeather({ rain: Number(feed.weather.rain) || (/rain|drizzle/.test(feed.weather.state) ? 0.5 : 0), wind: Number(feed.weather.wind) || 0 }); }
       scene.setDay(store.day);
       // On open: replay the last few real events of the day (from the store:
       // the mini-view may have merged them already), oldest first. They are
@@ -335,7 +337,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     const mode = ($('kingdom-record-mode') || {}).value === 'replay' ? 'replay' : 'live';
     const mod = await import('./kingdom-record.js');
     const coarse = !!(globalThis.matchMedia && globalThis.matchMedia('(pointer: coarse)').matches);
-    const rec = mod.createRecording(scene, { aspect, seconds, mode, coarse, caption: () => scene.caption(), captionText: () => captionText(scene.caption()), countries: () => ({ n: store.origins.length, strip: flagStrip(store.origins) }), day: () => store.day, onTick: (t) => recStatus(`Recording ${Math.floor(t)} / ${seconds} s`), onDone: finishRecording });
+    const rec = mod.createRecording(scene, { aspect, seconds, mode, coarse, legacy: scene.tier && scene.tier() === 'legacy', caption: () => scene.caption(), captionText: () => captionText(scene.caption()), countries: () => ({ n: store.origins.length, strip: flagStrip(store.origins) }), day: () => store.day, onTick: (t) => recStatus(`Recording ${Math.floor(t)} / ${seconds} s`), onDone: finishRecording });
     if (!rec) { recStatus('This browser cannot record video.'); return; }
     scene.setDirector(true);
     const dir = $('kingdom-director'); if (dir) dir.setAttribute('aria-pressed', 'true');
@@ -414,6 +416,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     async toggleSound() {
       if (!sound) sound = (await import('./kingdom-sound.js')).createSound();
       const on = sound.toggle();
+      if (on && lastWeather && sound.setWeather) sound.setWeather({ rain: Number(lastWeather.rain) || (/rain|drizzle/.test(lastWeather.state) ? 0.5 : 0), wind: Number(lastWeather.wind) || 0 });
       const b = $('kingdom-sound'); if (b) b.setAttribute('aria-pressed', on ? 'true' : 'false');
       return on;
     },

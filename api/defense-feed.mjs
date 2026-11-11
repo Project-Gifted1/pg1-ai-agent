@@ -21,6 +21,7 @@ import { buildDefenseFeed } from '../lib/defenseFeed.mjs';
 import { buildDefenseState } from '../lib/defenseState.mjs';
 import { getSupabaseCreds } from '../lib/supabase.mjs';
 import { queryOf } from '../lib/requestQuery.mjs';
+import { cityWeather } from '../lib/cityWeather.mjs';
 
 // Whole-window reads are cached per instance for a few seconds, so several
 // open tabs do not each read 24 h of rows.
@@ -67,6 +68,9 @@ export function createDefenseFeedHandler(opts = {}) {
       if (since == null) {
         if (!stateCache || now - stateCache.at >= DEFENSE_STATE_CACHE_MS) stateCache = { at: now, state: await (opts.buildState || buildDefenseState)({ supUrl, supKey, fetchImpl, env, now }).catch(() => null) };
         body.state = stateCache.state;
+        // The real Dublin weather for the city's sky (decoration only, cached
+        // 15 minutes; lib/cityWeather.mjs). Never part of any count.
+        body.weather = await (opts.weather || cityWeather)({ fetchImpl: opts.weatherFetch || globalThis.fetch, now }).catch(() => null);
       }
       if (since == null) cache = { at: now, body };
       return res.status(200).json({ ...body, cached: false });

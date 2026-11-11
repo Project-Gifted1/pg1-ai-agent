@@ -93,7 +93,7 @@ test('bearings: from Dublin, stable', () => {
   assert.equal(countryBearing('ZW'), countryBearing('ZW'));
 });
 
-test('tiers: the viewer\'s tiers map onto Phone, Balanced and Cinematic', () => {
+test('tiers: the viewer\'s tiers map onto Phone, Balanced and Cinematic; Legacy phone below them', () => {
   assert.deepEqual(['low', 'medium', 'high', 'ultra', 'cinematic'].map(kingdomTierOf), ['phone', 'phone', 'balanced', 'cinematic', 'cinematic']);
   const phone = kingdomSettings('phone');
   assert.equal(phone.shadows, 0, 'baked shadows only');
@@ -101,7 +101,7 @@ test('tiers: the viewer\'s tiers map onto Phone, Balanced and Cinematic', () => 
   assert.equal(phone.shafts, false, 'no volumetrics');
   assert.equal(phone.targetFps, 30);
   assert.ok(kingdomSettings('cinematic').post.gtao && kingdomSettings('cinematic').shafts);
-  assert.deepEqual(KINGDOM_TIERS, ['phone', 'balanced', 'cinematic']);
+  assert.deepEqual(KINGDOM_TIERS, ['legacy', 'phone', 'balanced', 'cinematic']);
 });
 
 function files(dir) {
@@ -238,15 +238,15 @@ test('the emblem is the brand asset: same paths and colours, never redrawn', asy
   assert.ok(!/M221\.76 0L262\.5/.test(src) && !/shieldShape\(/.test(src.replace(/export function shieldShape[\s\S]*?\n}\n/, '')), 'the 3D scene builds the emblem from the brand file, not a copy');
 });
 
-test('the city\'s own life: windows follow Dublin time, weather by day, billboards only from the feed, no enemy red', async () => {
-  const { windowRatios, dublinHour, dayWeather, billboardLines, isEnemyColour, ENEMY_COLORS, PG1_COLORS } = await import('../public/kingdom/kingdom-data.js');
+test('the city\'s own life: windows follow Dublin time, the real weather (not a made-up one), billboards only from the feed, no enemy red', async () => {
+  const { windowRatios, dublinHour, weatherLook, billboardLines, isEnemyColour, ENEMY_COLORS, PG1_COLORS } = await import('../public/kingdom/kingdom-data.js');
   assert.ok(windowRatios(19).office > windowRatios(2).office, 'offices lit in the evening, dim late');
   assert.ok(windowRatios(22).home > windowRatios(22).office, 'homes later than offices');
   assert.ok(windowRatios(3).home < windowRatios(21).home);
   const h = dublinHour(Date.parse('2026-07-01T12:00:00Z'));
   assert.equal(Math.floor(h), 13, 'Dublin summer time');
   assert.equal(Math.floor(dublinHour(Date.parse('2026-12-01T12:00:00Z'))), 12);
-  assert.equal(dayWeather(Date.parse('2026-11-05T08:00:00Z')), dayWeather(Date.parse('2026-11-05T22:00:00Z')), 'one weather per Dublin day');
+  assert.equal(weatherLook(null).state, 'clear', 'no weather read: a calm clear evening, never a made-up storm');
   assert.deepEqual(billboardLines({ countries: 5, threats: 31, checks: 21 }), ['5 countries · hostile traffic, last 24 h', '31 threats turned away today', '21 checks live']);
   assert.deepEqual(billboardLines({}), ['not read countries · hostile traffic, last 24 h', 'not read threats turned away today', 'not read checks live']);
   assert.ok(!billboardLines({ countries: 1, threats: 1, checks: 1 }).some((l) => /payment/.test(l)));

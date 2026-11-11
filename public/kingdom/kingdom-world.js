@@ -42,7 +42,7 @@ export const PODIUM_H = 8;
 export const DECK_Y = PODIUM_H + 150;
 export const TOWER_TOP = PODIUM_H + SPIRE_H + 22;
 export const GATE_BEARINGS = Object.freeze({ north: 0, east: Math.PI / 2, south: Math.PI, west: Math.PI * 1.5 });
-export const STYLES = Object.freeze({ glass: 0, stone: 1, brick: 2, metal: 3 });
+export const STYLES = Object.freeze({ glass: 0, stone: 1, brick: 2, metal: 3, georgian: 4, podium: 5 });
 // The hero shot looks at the tower from this bearing (radians from +x towards
 // +z), along the river. No building stands in that sightline.
 export const HERO_BEARING = 0.16;
@@ -91,9 +91,12 @@ export function makeObstacleIndex(boxes, cell = 100) {
 // back wall sits behind the glass and slides with the view, so a window has
 // depth. Anti-aliasing: with fwidth, where a cell gets near a pixel the
 // pattern blends to its average, so it never turns to noise.
-function facadeMaterial(THREE, { reflective }) {
+function facadeMaterial(THREE, { reflective, envMap = null }) {
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: reflective ? 0.12 : 0.5, metalness: reflective ? 0.7 : 0.15 });
-  const uniforms = { uNight: { value: 0.6 }, uTime: { value: 0 }, uOffice: { value: 0.4 }, uHome: { value: 0.4 } };
+  // Without the scene's sky light (the phone tiers), a small baked sky still
+  // gives the glass something to reflect.
+  if (envMap) { m.envMap = envMap; m.envMapIntensity = 0.9; }
+  const uniforms = { uNight: { value: 0.6 }, uTime: { value: 0 }, uOffice: { value: 0.4 }, uHome: { value: 0.4 }, uShops: { value: 1 }, uSkyTop: { value: new THREE.Color(0x4a6a9a) }, uSkyHor: { value: new THREE.Color(0xc8ccd2) }, uGround: { value: new THREE.Color(0x2a2c30) } };
   m.userData.windows = uniforms;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, uniforms);
@@ -107,56 +110,122 @@ function facadeMaterial(THREE, { reflective }) {
       wp4 = modelMatrix * wp4;
       vWPos = wp4.xyz; vSeed = aSeed; vStyle = aStyle;
       vWNorm = normalize(mat3(modelMatrix) * n0);`);
-    sh.fragmentShader = 'uniform float uNight;\nuniform float uTime;\nuniform float uOffice;\nuniform float uHome;\nvarying float vSeed;\nvarying float vStyle;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nfloat wh(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }\nfloat box(vec2 f, vec2 lo, vec2 hi, vec2 aa){ vec2 a = smoothstep(lo - aa, lo + aa, f) * (1.0 - smoothstep(hi - aa, hi + aa, f)); return a.x * a.y; }\n'
+    sh.fragmentShader = 'uniform float uNight;\nuniform float uTime;\nuniform float uOffice;\nuniform float uHome;\nuniform float uShops;\nuniform vec3 uSkyTop;\nuniform vec3 uSkyHor;\nuniform vec3 uGround;\nvarying float vSeed;\nvarying float vStyle;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nfloat wh(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }\nfloat box(vec2 f, vec2 lo, vec2 hi, vec2 aa){ vec2 a = smoothstep(lo - aa, lo + aa, f) * (1.0 - smoothstep(hi - aa, hi + aa, f)); return a.x * a.y; }\n'
       + sh.fragmentShader
         .replace('#include <color_fragment>', `#include <color_fragment>
       // Seeds and styles are whole numbers: rounded, so interpolation error can never reach the hash (no speckle).
+      // Styles: 0 glass curtain wall, 1 stone, 2 brick, 3 metal, 4 Georgian brick terrace, 5 podium with shop fronts.
       float style = floor(vStyle + 0.5);
       float sd = mod(floor(vSeed + 0.5), 997.0);
-      vec3 base = style < 0.5 ? vec3(0.13, 0.2, 0.28) : style < 1.5 ? vec3(0.55, 0.52, 0.47) : style < 2.5 ? vec3(0.45, 0.25, 0.18) : vec3(0.36, 0.38, 0.42);
-      diffuseColor.rgb = base * mix(0.85, 1.12, wh(vec3(sd, 1.0, 2.0)));`)
+      bool glass = style < 0.5 || (style > 2.5 && style < 3.5);
+      bool georgian = style > 3.5 && style < 4.5;
+      bool podium = style > 4.5;
+      bool wall = abs(vWNorm.y) < 0.5;
+      bool alongZ = abs(vWNorm.x) > abs(vWNorm.z);
+      float u = alongZ ? vWPos.z : vWPos.x;
+      // The facade grid: glass 1.5 m panes on 3.8 m floors; masonry 3.2 by 3.4;
+      // Georgian bays 3.6 m with tall sashes on 3.6 m storeys.
+      float cw = glass ? 1.5 : georgian ? 3.6 : 3.2; float ch = glass ? 3.8 : georgian ? 3.6 : 3.4;
+      vec2 cell = vec2(u / cw, vWPos.y / ch);
+      vec2 f = fract(cell); vec2 id = floor(cell);
+      vec2 aa = fwidth(cell) * 0.75;
+      float tiny = smoothstep(0.25, 0.6, max(aa.x, aa.y));
+      // Glass: thin anodised mullions, a transom, a fritted spandrel band at each slab.
+      vec2 lo = glass ? vec2(0.03, 0.2) : georgian ? vec2(0.3, 0.18) : vec2(0.25, 0.22);
+      vec2 hi = glass ? vec2(0.965, 0.975) : georgian ? vec2(0.7, 0.86) : vec2(0.75, 0.8);
+      float pane = wall ? mix(box(f, lo, hi, aa), (hi.x - lo.x) * (hi.y - lo.y), tiny) : 0.0;
+      float spandrel = (wall && glass) ? mix(1.0 - box(f, vec2(-1.0, 0.17), vec2(2.0, 0.995), aa), 0.17, tiny) : 0.0;
+      float paneSeed = wh(vec3(sd, id.y, id.x));
+      // Per building: the glass tint (blue-green, grey, bronze, clear) and the frame finish.
+      float tintPick = wh(vec3(sd, 4.0, 1.0));
+      vec3 tint = tintPick < 0.35 ? vec3(0.09, 0.17, 0.2) : tintPick < 0.6 ? vec3(0.12, 0.13, 0.15) : tintPick < 0.8 ? vec3(0.16, 0.13, 0.1) : vec3(0.14, 0.19, 0.24);
+      vec3 frame = wh(vec3(sd, 6.0, 2.0)) < 0.6 ? vec3(0.1, 0.105, 0.11) : vec3(0.55, 0.57, 0.6);
+      vec3 base = style < 0.5 ? tint : style < 1.5 ? vec3(0.56, 0.53, 0.47) : style < 2.5 ? vec3(0.45, 0.25, 0.18) : style < 3.5 ? vec3(0.17, 0.19, 0.22) : georgian ? vec3(0.5, 0.29, 0.21) : vec3(0.6, 0.57, 0.52);
+      base *= mix(0.88, 1.1, wh(vec3(sd, 1.0, 2.0)));
+      if (glass) {
+        // Each pane a hair different (float glass is never perfectly uniform).
+        // Glass has little colour of its own: most of what you see is reflection (added below).
+        vec3 paneCol = base * mix(0.3, 0.42, paneSeed);
+        vec3 col = mix(frame, paneCol, pane);
+        // Spandrels: dark fritted glass over the slab, a shade off the vision glass.
+        col = mix(col, base * 0.55 + frame * 0.12, spandrel);
+        diffuseColor.rgb = col;
+      } else {
+        diffuseColor.rgb = base;
+        // Masonry: darker reveals round each window; Georgian sashes get white frames and glazing bars.
+        if (wall && georgian) {
+          float frameRing = box(f, lo - vec2(0.035, 0.03), hi + vec2(0.035, 0.03), aa) - pane;
+          float bars = (1.0 - box(fract(vec2((f.x - lo.x) / (hi.x - lo.x) * 3.0, (f.y - lo.y) / (hi.y - lo.y) * 4.0)), vec2(0.07), vec2(0.93), aa * 3.0)) * pane;
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.92, 0.91, 0.87), clamp(frameRing + bars * 0.85, 0.0, 1.0) * (1.0 - tiny));
+          // Coloured front doors with fanlights on the ground floor (Dublin's Georgian doors).
+          if (id.y < 0.5) { float door = box(f, vec2(0.36, 0.0), vec2(0.64, 0.62), aa) * step(0.5, wh(vec3(sd, id.x, 5.0)));
+            vec3 dc = wh(vec3(sd, id.x, 8.0)) < 0.33 ? vec3(0.08, 0.2, 0.12) : wh(vec3(sd, id.x, 8.0)) < 0.66 ? vec3(0.62, 0.48, 0.12) : vec3(0.1, 0.16, 0.34);
+            diffuseColor.rgb = mix(diffuseColor.rgb, dc, door); }
+          // A parapet band at the top storey's cornice line.
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.78, 0.75, 0.69), (1.0 - box(f, vec2(-1.0, 0.0), vec2(2.0, 0.95), aa)) * 0.5);
+        }
+      }`)
         .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-      roughnessFactor = style < 0.5 ? roughnessFactor : style > 2.5 ? 0.35 : 0.85;`)
+      if (glass) roughnessFactor = mix(0.42, mix(0.03, 0.09, paneSeed), pane);
+      else roughnessFactor = podium && pane > 0.5 ? 0.08 : style > 2.5 && style < 3.5 ? 0.35 : 0.85;
+      if (!wall) roughnessFactor = 0.85;`)
         .replace('#include <metalnessmap_fragment>', `#include <metalnessmap_fragment>
-      metalnessFactor = style < 0.5 ? metalnessFactor : style > 2.5 ? 0.6 : 0.0;`)
+      if (glass) metalnessFactor = mix(0.7, 0.92, pane);
+      else metalnessFactor = 0.0;
+      if (!wall) metalnessFactor = 0.0;`)
+        .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+      // Oil-canning: every pane sits at a very slightly different angle, so
+      // reflections break up pane by pane as on a real curtain wall.
+      if (glass && wall && pane > 0.5) {
+        vec3 tilt = vec3(wh(vec3(sd, id.y, id.x + 3.0)) - 0.5, wh(vec3(id.x, sd, id.y + 7.0)) - 0.5, 0.0) * 0.035 * (1.0 - tiny);
+        normal = normalize(normal + (viewMatrix * vec4(tilt, 0.0)).xyz);
+      }`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-      if (abs(vWNorm.y) < 0.5) {
-        bool alongZ = abs(vWNorm.x) > abs(vWNorm.z);
-        float u = alongZ ? vWPos.z : vWPos.x;
-        bool glass = style < 0.5 || style > 2.5;
-        float cw = glass ? 1.6 : 3.2; float ch = glass ? 3.8 : 3.4;
-        vec2 cell = vec2(u / cw, vWPos.y / ch);
-        vec2 f = fract(cell); vec2 id = floor(cell);
-        vec2 aa = fwidth(cell) * 0.75;
-        float tiny = smoothstep(0.25, 0.6, max(aa.x, aa.y));
-        // The pane (glass: mullions and a spandrel band; masonry: a punched window).
-        vec2 lo = glass ? vec2(0.06, 0.3) : vec2(0.25, 0.22);
-        vec2 hi = glass ? vec2(0.94, 0.94) : vec2(0.75, 0.8);
-        float pane = mix(box(f, lo, hi, aa), (hi.x - lo.x) * (hi.y - lo.y), tiny);
+      if (wall) {
         float bay = floor(id.x / (glass ? 3.0 : 1.0));
         float floorOn = step(0.15, wh(vec3(sd, id.y, 3.1)));
         float h = wh(vec3(sd, id.y, bay));
         float swap = step(0.992, wh(vec3(sd + bay, id.y, floor(uTime / 7.0 + h * 7.0))));
-        // Offices (glass, metal) and homes (brick, stone) light up by the hour in Dublin.
+        // Offices (glass, metal) and homes (brick, stone, Georgian) light up by the hour in Dublin.
         float ratio = glass ? uOffice : uHome;
         float lit = abs(step(h, ratio) * floorOn - swap);
         lit = mix(lit, ratio * 0.9, tiny);
-        // The interior: a back wall behind the glass that moves with the view.
+        // The interior: a back wall behind the glass that moves with the view,
+        // a ceiling light strip near the top and part-drawn blinds.
         vec3 vd = normalize(cameraPosition - vWPos);
         float tv = alongZ ? vd.z * sign(vWNorm.x) : -vd.x * sign(vWNorm.z);
         vec2 inner = f + vec2(tv, vd.y) * 0.35 / max(0.25, abs(dot(vd, vWNorm)));
         float back = box(inner, vec2(0.2, 0.25), vec2(0.8, 0.9), aa);
-        float depth = mix(0.45 + 0.55 * back, 0.75, tiny);
+        float ceiling = glass ? box(inner, vec2(-1.0, 0.86), vec2(2.0, 0.93), aa * 2.0) : 0.0;
+        float blind = step(1.0 - wh(vec3(sd, id.x, id.y + 2.0)) * 0.55, f.y) * (glass ? 1.0 : 0.6);
+        float depth = mix(0.45 + 0.55 * back + 0.8 * ceiling, 0.75, tiny);
         vec3 warm = vec3(1.0, 0.74, 0.44); vec3 cool = vec3(0.68, 0.84, 1.0);
         vec3 wc = mix(warm, cool, step(0.7, wh(vec3(bay, sd, 7.7))));
-        totalEmissiveRadiance += wc * pane * lit * depth * uNight * (0.45 + 0.55 * wh(vec3(id.y, bay, sd)));
-        // Shop fronts at street level spill warm light.
-        if (vWPos.y > 0.4 && vWPos.y < 4.4) totalEmissiveRadiance += vec3(1.0, 0.8, 0.55) * (0.35 + 0.65 * step(0.4, wh(vec3(sd, floor(u / 6.0), 9.0)))) * uNight * 0.55 * (1.0 - tiny * 0.5);
+        totalEmissiveRadiance += wc * pane * lit * depth * (1.0 - blind * 0.55) * uNight * (0.45 + 0.55 * wh(vec3(id.y, bay, sd))) * (glass ? smoothstep(0.2, 0.9, uNight) * 0.85 + 0.15 : 1.0);
+        // By day the rooms behind the glass are dim, not black.
+        if (glass) totalEmissiveRadiance += base * 0.05 * pane * back * (1.0 - uNight * 0.5);
+        // The sky in the glass: a Fresnel reflection of the sky gradient (and
+        // the ground below the horizon), per pane, along each pane's own
+        // slight tilt, so a curtain wall reads as glass from every angle.
+        if (glass) {
+          vec3 nW = normalize(vWNorm + vec3(wh(vec3(sd, id.y, id.x + 3.0)) - 0.5, 0.0, wh(vec3(id.x, sd, id.y + 7.0)) - 0.5) * 0.04 * (1.0 - tiny));
+          vec3 rf = reflect(-vd, nW);
+          vec3 skyC = rf.y > 0.0 ? mix(uSkyHor, uSkyTop, smoothstep(0.0, 0.55, rf.y)) : mix(uSkyHor * 0.55, uGround, smoothstep(0.0, 0.25, -rf.y));
+          float fres = 0.05 + 0.95 * pow(1.0 - clamp(dot(vd, nW), 0.0, 1.0), 5.0);
+          float glassAmt = (pane + spandrel * 0.6) * mix(0.32, 1.0, fres) * (1.0 - 0.75 * uNight);
+          totalEmissiveRadiance += skyC * glassAmt * mix(0.85, 1.1, paneSeed);
+        }
+        // Street level: shop fronts spill warm light while the shops are open;
+        // podiums carry a lit sign band above them (off late at night).
+        if (vWPos.y > 0.4 && vWPos.y < 4.4) totalEmissiveRadiance += vec3(1.0, 0.8, 0.55) * (0.35 + 0.65 * step(0.4, wh(vec3(sd, floor(u / 6.0), 9.0)))) * uNight * (0.15 + 0.4 * uShops) * (1.0 - tiny * 0.5);
+        if (podium && vWPos.y > 4.7 && vWPos.y < 5.9) { float sg = step(0.35, wh(vec3(sd, floor(u / 7.0), 4.0))) * box(vec2(fract(u / 7.0), (vWPos.y - 4.7) / 1.2), vec2(0.12, 0.15), vec2(0.88, 0.85), vec2(0.02));
+          vec3 sc = wh(vec3(sd, floor(u / 7.0), 6.0)) < 0.5 ? vec3(1.0, 0.86, 0.6) : vec3(0.6, 0.85, 1.0);
+          totalEmissiveRadiance += sc * sg * uShops * (0.6 + 0.9 * uNight); }
         // Glass reflects between the lit panes; masonry is darker in its reveals.
-        diffuseColor.rgb *= glass ? mix(1.0, 0.75, pane) : mix(1.0, 0.35, pane);
+        diffuseColor.rgb *= glass ? 1.0 : georgian ? mix(1.0, 0.25, pane) : mix(1.0, 0.35, pane);
       }`);
   };
-  m.customProgramCacheKey = () => `pg1-facade-${reflective ? 1 : 0}`;
+  m.customProgramCacheKey = () => `pg1-facade-v2-${reflective ? 1 : 0}`;
   return m;
 }
 
@@ -200,7 +269,8 @@ import { buildEmblem, buildHologram, brandCanvas } from './kingdom-emblem.js';
 import { billboardLines } from './kingdom-data.js';
 
 export function buildWorld(THREE, scene, settings, { waterMaterial = null, Reflector = null, brand = null } = {}) {
-  const phone = settings.tier === 'phone';
+  const legacy = !!settings.legacy;
+  const phone = settings.tier === 'phone' || legacy;
   const cinematic = settings.tier === 'cinematic';
   const reflective = !phone;
   const named = (o, name) => { o.name = name; return o; };
@@ -221,11 +291,21 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     led: new THREE.MeshBasicMaterial({ color: 0x9fe6ff }),
     white: new THREE.MeshBasicMaterial({ color: 0xf5f7fa }),
     warmLamp: new THREE.MeshBasicMaterial({ color: 0xffd9a0 }),
-    aircraft: new THREE.MeshBasicMaterial({ color: 0xffc070 }),
+    aircraft: new THREE.MeshBasicMaterial({ color: 0xff6a1a }),
     marking: new THREE.MeshBasicMaterial({ color: 0xcfcab8 }),
     barrier: new THREE.MeshBasicMaterial({ color: 0xfff1b8, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })
   };
-  const facade = facadeMaterial(THREE, { reflective });
+  // The phone tiers have no sky-light pass: a small baked sky for the glass.
+  let bakedSky = null;
+  if (!settings.post) {
+    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 128;
+    const g = cv.getContext('2d'); const gr = g.createLinearGradient(0, 0, 0, 128);
+    gr.addColorStop(0, '#2a3f6a'); gr.addColorStop(0.42, '#8fa6c8'); gr.addColorStop(0.5, '#d9c7b0'); gr.addColorStop(0.53, '#4a4c52'); gr.addColorStop(1, '#202226');
+    g.fillStyle = gr; g.fillRect(0, 0, 256, 128);
+    bakedSky = new THREE.CanvasTexture(cv); bakedSky.mapping = THREE.EquirectangularReflectionMapping; bakedSky.colorSpace = THREE.SRGBColorSpace;
+  }
+  const facade = facadeMaterial(THREE, { reflective, envMap: bakedSky });
+  const leafWind = { uTime: { value: 0 }, uWind: { value: 0 } };
   const root = named(new THREE.Group(), 'pg1-city');
   scene.add(root);
   const shadowed = (o) => { o.traverse((m) => { if (m.isMesh) { m.castShadow = !!settings.shadows; m.receiveShadow = !!settings.shadows; } }); return o; };
@@ -307,13 +387,16 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   }
   const dashes = [];
   for (let k = -5; k <= 5; k++) for (let d = -800; d <= 800; d += 12) { if (!inRiver(d)) dashes.push([k * GRID, d, 0]); const z = k * GRID - 40; if (!inRiver(z)) dashes.push([d, z, Math.PI / 2]); }
-  const dashMesh = named(new THREE.InstancedMesh(new THREE.PlaneGeometry(0.25, 4), mats.marking, dashes.length), 'lane-markings');
-  dashes.forEach(([x, z, ry], i) => set(dashMesh, i, x, 0.06, z, 1, 1, 1, ry, -Math.PI / 2));
+  // Flat geometry, then a turn about Y only (turning about X after Y stood
+  // the east-west dashes on edge).
+  const dashGeo = new THREE.PlaneGeometry(0.25, 4); dashGeo.rotateX(-Math.PI / 2);
+  const dashMesh = named(new THREE.InstancedMesh(dashGeo, mats.marking, dashes.length), 'lane-markings');
+  dashes.forEach(([x, z, ry], i) => set(dashMesh, i, x, 0.06, z, 1, 1, 1, ry));
   root.add(dashMesh);
   // --- the skyline ---
   const r = rng(7);
   const lots = [];
-  const nearN = phone ? 140 : 240; const midN = phone ? 90 : 200; const farN = phone ? 380 : 1300;
+  const nearN = legacy ? 110 : phone ? 140 : 240; const midN = legacy ? 60 : phone ? 90 : 200; const farN = legacy ? 160 : phone ? 380 : 1300;
   const offRoad = (v, w, shift = 0) => { const m = ((((v + shift) % GRID) + GRID) % GRID); return m > ROAD_W / 2 + w / 2 + 2 && m < GRID - ROAD_W / 2 - w / 2 - 2; };
   const parks = [[-240, -200, 60], [300, -360, 70], [-420, 260, 60], [480, 300, 55]];
   const inPark = (x, z, w) => parks.some(([px, pz, pr]) => Math.hypot(x - px, z - pz) < pr + w);
@@ -341,7 +424,9 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   // Low-rise blocks along the river.
   for (let x = -1400; x <= 1400; x += 28) for (const side of [-1, 1]) {
     if (r() < 0.2 || Math.abs(x) < 40) continue;
-    tryLot({ ring: 'river', x: x + (r() - 0.5) * 6, z: RIVER.z + side * (RIVER.half + 22 + r() * 10), w: 18 + r() * 6, d: 14 + r() * 6, h: 10 + r() * 12, shape: 'box', style: r() < 0.6 ? STYLES.brick : STYLES.stone });
+    // Dublin's quays: Georgian brick terraces (four storeys, parapet) and stone mid-rises.
+    const georgian = r() < 0.62;
+    tryLot({ ring: 'river', x: x + (r() - 0.5) * 3, z: RIVER.z + side * (RIVER.half + 24 + r() * 4), w: georgian ? 22 + r() * 5 : 18 + r() * 6, d: 14 + r() * 4, h: georgian ? 14.4 + (r() < 0.3 ? 3.6 : 0) : 16 + r() * 10, shape: 'box', style: georgian ? STYLES.georgian : STYLES.stone });
   }
   for (let i = 0; i < farN * 4 && lots.filter((l) => l.ring === 'far').length < farN; i++) {
     const a = r() * Math.PI * 2; const d = 600 + Math.pow(r(), 0.7) * 2400;
@@ -349,19 +434,21 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   }
   const geos = {
     box: (() => { const g = new THREE.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; })(),
-    round: (() => { const g = new THREE.CylinderGeometry(0.5, 0.5, 1, phone ? 12 : 24); g.translate(0, 0.5, 0); return g; })(),
+    round: (() => { const g = new THREE.CylinderGeometry(0.5, 0.5, 1, legacy ? 8 : phone ? 12 : 24, 1, legacy); g.translate(0, 0.5, 0); return g; })(),
     taper: (() => { const g = new THREE.CylinderGeometry(0.4, 0.62, 1, 4, 1); g.rotateY(Math.PI / 4); g.translate(0, 0.5, 0); return g; })(),
     twist: twistedBox(THREE),
     crown: wedge(THREE)
   };
   const parts = { box: [], round: [], taper: [], twist: [], crown: [] };
+  const detail = { podiums: [], lots: [] };
   const roofSpots = [];
   for (const l of lots) {
     const ry = (l.seed % 1) * 0.3;
     const add = (kind, x, y, z, w, h, d, extra = {}) => { parts[kind].push({ x, y, z, w, h, d, ry, seed: l.seed + parts[kind].length * 0.01, style: l.style, ...extra }); obstacles.push({ x, z, hw: w * 0.5 + d * 0.08, hd: d * 0.5 + w * 0.08, top: y + h }); };
     // A podium at street level under the tall ones.
     let base = 0;
-    if (l.ring === 'near' && l.h > 70) { add('box', l.x, 0, l.z, l.w * 1.35, 9, l.d * 1.35, { style: STYLES.stone }); base = 9; }
+    if (l.ring === 'near' && l.h > 70) { add('box', l.x, 0, l.z, l.w * 1.35, 9, l.d * 1.35, { style: STYLES.podium }); base = 9; detail.podiums.push({ x: l.x, z: l.z, w: l.w * 1.35, d: l.d * 1.35, ry }); }
+    if (l.ring === 'near' || l.ring === 'mid' || l.ring === 'river') detail.lots.push(l);
     const h = l.h - base;
     if (l.shape === 'setback') {
       add('box', l.x, base, l.z, l.w, h * 0.5, l.d);
@@ -404,6 +491,67 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     hp.rotation.x = -Math.PI / 2; hp.position.set(pads[0].x - pads[0].w * 0.15, pads[0].y + 0.3, pads[0].z); root.add(hp);
   }
 
+  // --- facade and roof detail, all instanced (not on Legacy phone) ---
+  if (!legacy) {
+    const dr = rng(23);
+    // A point given relative to a lot's centre, turned with the building.
+    const turn = (l, lx, lz, ry) => ({ x: l.x + lx * Math.cos(ry) + lz * Math.sin(ry), z: l.z - lx * Math.sin(ry) + lz * Math.cos(ry), ry });
+    const awnings = []; const canopies = []; const fins = []; const balconies = []; const tanks = []; const gardens = []; const rails = [];
+    for (const p of detail.podiums) {
+      // Awnings over the shop fronts on two sides, an entrance canopy in front.
+      for (const side of [-1, 1]) for (let k = -1; k <= 1; k++) awnings.push({ ...turn(p, k * p.w * 0.3, side * (p.d / 2 + 1.2), p.ry), side, w: p.w * 0.24, c: dr() });
+      canopies.push({ ...turn(p, 0, p.d / 2 + 2.6, p.ry), w: Math.min(10, p.w * 0.4) });
+    }
+    for (const l of detail.lots) {
+      const lry = (l.seed % 1) * 0.3;
+      const glassTower = l.style === STYLES.glass && l.ring === 'near' && l.shape !== 'round' && l.shape !== 'twist';
+      if (glassTower && dr() < 0.45) {
+        // Vertical fins on the street faces, every 3 m.
+        const n = Math.floor(l.w / 3);
+        for (let i = 0; i <= n; i++) for (const side of [-1, 1]) fins.push({ ...turn(l, -l.w / 2 + i * (l.w / n), side * (l.d / 2 + 0.25), lry), h: Math.min(l.h, 160) * (l.shape === 'setback' ? 0.5 : 1) });
+      }
+      if ((l.style === STYLES.brick || l.style === STYLES.stone || (l.style === STYLES.glass && l.ring === 'mid')) && l.ring !== 'river' && dr() < 0.55) {
+        // Balconies on the residential blocks: a slab and a glass rail per bay and floor.
+        const floors = Math.min(10, Math.floor(l.h / 3.4) - 1); const bays = Math.max(1, Math.floor(l.w / 6.4));
+        for (let f = 1; f <= floors; f++) for (let b = 0; b < bays; b++) if (dr() < 0.8) balconies.push({ ...turn(l, -l.w / 2 + (b + 0.5) * (l.w / bays), l.d / 2 + 0.65, lry), y: f * 3.4 });
+      }
+      if (l.ring !== 'far') {
+        if ((l.style === STYLES.brick || l.style === STYLES.stone || l.style === STYLES.georgian) && dr() < 0.45) tanks.push({ ...turn(l, (dr() - 0.5) * l.w * 0.5, (dr() - 0.5) * l.d * 0.5, lry), y: l.h });
+        if (dr() < 0.22 && l.h < 60) { gardens.push({ x: l.x, y: l.h, z: l.z, w: l.w * 0.7, d: l.d * 0.6, ry: lry }); rails.push({ x: l.x, y: l.h, z: l.z, w: l.w, d: l.d, ry: lry }); }
+      }
+    }
+    const awnMat = std(0xffffff, { roughness: 0.85 });
+    const awnGeo = new THREE.BoxGeometry(1, 0.12, 2.2); awnGeo.rotateX(0.32); awnGeo.translate(0, 4.2, 0);
+    const awn = named(new THREE.InstancedMesh(awnGeo, awnMat, Math.max(1, awnings.length)), 'shop-awnings');
+    const awnCols = [0x1c3b2f, 0x2f4a6b, 0x6b3a2a, 0x3a3f46, 0xe8dcc0];
+    awnings.forEach((a, i) => { set(awn, i, a.x, 0, a.z, a.w, 1, 1, a.ry + (a.side > 0 ? 0 : Math.PI)); awn.setColorAt(i, new THREE.Color(awnCols[Math.floor(a.c * awnCols.length)])); });
+    awn.count = awnings.length;
+    const canGeo = new THREE.BoxGeometry(1, 0.3, 3.5); canGeo.translate(0, 4.6, 0);
+    const can = named(new THREE.InstancedMesh(canGeo, mats.steel, Math.max(1, canopies.length)), 'entrance-canopies');
+    canopies.forEach((c, i) => set(can, i, c.x, 0, c.z, c.w, 1, 1, c.ry)); can.count = canopies.length;
+    const finGeo = new THREE.BoxGeometry(0.18, 1, 0.5); finGeo.translate(0, 0.5, 0);
+    const fin = named(new THREE.InstancedMesh(finGeo, mats.steel, Math.max(1, fins.length)), 'facade-fins');
+    fins.forEach((f, i) => set(fin, i, f.x, 9, f.z, 1, f.h - 9, 1, f.ry)); fin.count = fins.length;
+    const balGeo = new THREE.BoxGeometry(2.6, 0.18, 1.3);
+    const bal = named(new THREE.InstancedMesh(balGeo, mats.concrete, Math.max(1, balconies.length)), 'balconies');
+    const balRailGeo = new THREE.BoxGeometry(2.6, 1.0, 0.05); balRailGeo.translate(0, 0.55, 0.62);
+    const balRail = named(new THREE.InstancedMesh(balRailGeo, mats.glass, Math.max(1, balconies.length)), 'balcony-rails');
+    balconies.forEach((b, i) => { set(bal, i, b.x, b.y, b.z, 1, 1, 1, b.ry); set(balRail, i, b.x, b.y, b.z, 1, 1, 1, b.ry); }); bal.count = balRail.count = balconies.length;
+    const tankGeo = new THREE.CylinderGeometry(1.6, 1.6, 3, 10); tankGeo.translate(0, 1.5 + 2.2, 0);
+    const tankLegGeo = new THREE.BoxGeometry(2.6, 2.2, 2.6); tankLegGeo.translate(0, 1.1, 0);
+    const tank = named(new THREE.InstancedMesh(tankGeo, std(0x6b5a45, { roughness: 0.9 }), Math.max(1, tanks.length)), 'rooftop-water-tanks');
+    const tankLeg = named(new THREE.InstancedMesh(tankLegGeo, mats.steelDark, Math.max(1, tanks.length)), 'rooftop-water-tank-stands');
+    tanks.forEach((t, i) => { set(tank, i, t.x, t.y, t.z); set(tankLeg, i, t.x, t.y, t.z, 0.4, 1, 0.4); }); tank.count = tankLeg.count = tanks.length;
+    const gardenGeo = new THREE.BoxGeometry(1, 0.6, 1); gardenGeo.translate(0, 0.3, 0);
+    const garden = named(new THREE.InstancedMesh(gardenGeo, mats.grass, Math.max(1, gardens.length)), 'roof-gardens');
+    gardens.forEach((g, i) => set(garden, i, g.x, g.y, g.z, g.w, 1, g.d, g.ry)); garden.count = gardens.length;
+    const railGeo = new THREE.BoxGeometry(1, 1.1, 1); railGeo.translate(0, 0.55, 0);
+    const railMat = new THREE.MeshStandardMaterial({ color: 0x9fb4c4, roughness: 0.1, metalness: 0.3, transparent: true, opacity: 0.3, depthWrite: false, side: THREE.BackSide });
+    const rail = named(new THREE.InstancedMesh(railGeo, railMat, Math.max(1, rails.length)), 'roof-terrace-rails');
+    rails.forEach((g, i) => set(rail, i, g.x, g.y, g.z, g.w, 1, g.d, g.ry)); rail.count = rails.length;
+    for (const m of [awn, can, fin, bal, balRail, tank, tankLeg, garden, rail]) { m.castShadow = !!settings.shadows && m !== rail; m.receiveShadow = !!settings.shadows; root.add(m); }
+  }
+
   // --- parks and trees ---
   for (const [px, pz, pr] of parks) { const g = named(new THREE.Mesh(new THREE.CircleGeometry(pr, 32), mats.grass), 'park'); g.rotation.x = -Math.PI / 2; g.position.set(px, 0.08, pz); root.add(g); }
   const treeSpots = [];
@@ -411,6 +559,18 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     for (let i = 0; i < 24; i++) { const a = (i / 24) * Math.PI * 2; treeSpots.push([Math.cos(a) * (PLAZA_R - 6), Math.sin(a) * (PLAZA_R - 6)]); }
     for (let x = -600; x <= 600; x += 22) for (const side of [-1, 1]) if (tr() < 0.8) treeSpots.push([x, RIVER.z + side * (RIVER.half + 6)]); }
   const trunks = named(new THREE.InstancedMesh(new THREE.CylinderGeometry(0.25, 0.35, 3, 6), mats.trunk, treeSpots.length), 'tree-trunks');
+  // The crowns sway with the real wind (a vertex offset, no extra draw call).
+  mats.leaf.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, leafWind);
+    sh.vertexShader = 'uniform float uTime;\nuniform float uWind;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+      #ifdef USE_INSTANCING
+        float ph = instanceMatrix[3].x * 0.07 + instanceMatrix[3].z * 0.05;
+        float sway = (0.08 + uWind * 0.9) * (position.y + 2.2) * 0.25;
+        transformed.x += sin(uTime * (1.3 + uWind * 1.6) + ph) * sway;
+        transformed.z += cos(uTime * (1.1 + uWind * 1.4) + ph * 1.3) * sway * 0.6;
+      #endif`);
+  };
+  mats.leaf.customProgramCacheKey = () => 'pg1-leaf-wind';
   const crowns = named(new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.2, 0), mats.leaf, treeSpots.length), 'tree-crowns');
   treeSpots.forEach(([x, z], i) => { set(trunks, i, x, 1.5, z); set(crowns, i, x, 4.4, z, 1, 1.2, 1, i); });
   root.add(trunks); root.add(crowns);
@@ -550,8 +710,10 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   root.add(shadowed(toll));
   const lanterns = [];
   const lanternGeo = new THREE.CylinderGeometry(0.22, 0.22, 1.4, 10);
+  let lanternMat = null;
   for (let k = 0; k < 12; k++) for (const sx of [-8.2, 8.2]) {
-    const m = named(new THREE.Mesh(lanternGeo, new THREE.MeshStandardMaterial({ color: 0x22262c, emissive: GOLD, emissiveIntensity: 0, roughness: 0.4, metalness: 0.6 })), 'bridge-lantern');
+    // One material for every lantern (they are always lit together), so the Legacy tier can merge them.
+    const m = named(new THREE.Mesh(lanternGeo, lanternMat || (lanternMat = new THREE.MeshStandardMaterial({ color: 0x22262c, emissive: GOLD, emissiveIntensity: 0, roughness: 0.4, metalness: 0.6 }))), 'bridge-lantern');
     m.position.set(sx, 11, RIVER.z - deckLen / 2 + 8 + k * ((deckLen - 16) / 11));
     root.add(m); lanterns.push(m);
   }
@@ -607,7 +769,8 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
 
   // --- rooftop beacons (reports and approvals) on the twelve tallest towers ---
   const beacons = [];
-  for (const spot of tall.slice(0, 12)) {
+  // (Legacy phone: six, the most approvals that usually wait.)
+  for (const spot of tall.slice(0, legacy ? 6 : 12)) {
     const fire = named(new THREE.Mesh(new THREE.SphereGeometry(2.2, 12, 10), new THREE.MeshStandardMaterial({ color: 0x2a1a10, emissive: 0xffb300, emissiveIntensity: 0, roughness: 1 })), 'rooftop-beacon');
     fire.position.set(spot.x - spot.w * 0.2, spot.y + 3, spot.z + spot.w * 0.2);
     root.add(fire);
@@ -663,7 +826,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
   })();
   const fog = named(new THREE.Group(), 'fog-bank');
-  for (let k = 0; k < (phone ? 8 : 18); k++) {
+  for (let k = 0; k < (legacy ? 0 : phone ? 8 : 18); k++) {
     const s = named(new THREE.Sprite(new THREE.SpriteMaterial({ map: fogTex, color: 0x8c96aa, transparent: true, opacity: 0.3, depthWrite: false })), 'fog-puff');
     const p = at(fogBearing + (k / 18 - 0.5) * 0.5, 700 + (k % 3) * 60, 40 + (k % 4) * 14);
     s.position.set(p.x, p.y, p.z); s.scale.setScalar(140 + (k % 5) * 30);
@@ -717,6 +880,8 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   const env = { night: 0 };
   let emblemPulse = 0;
   let cloudLag = 0;
+  let wetNow = 0;
+  let cloudClock = 0;
   return {
     root, gates, portcullis, vaultDoors, beacons, lanterns, forge: { group: forge, seal: sealMat }, harbour: { bearing: Math.atan2(harbourPoint.x, -harbourPoint.z), point: harbourPoint },
     tollBarrier: barrier, toll, dome: domeUniforms, domeMesh: dome, preflight, crane, xray, deckY: DECK_Y, tip: tip.position, roofSpots,
@@ -726,8 +891,13 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     setBillboards(stats) { drawBillboards(stats); },
     // Windows follow the hour in Dublin (kingdom-data.js windowRatios).
     setWindowRatios({ office, home }) { facade.userData.windows.uOffice.value = office; facade.userData.windows.uHome.value = home; },
+    // Shop fronts and their signs: lit while the shops are open, off late at night.
+    setShopLights(v) { facade.userData.windows.uShops.value = Math.max(0, Math.min(1, Number(v) || 0)); },
     // Wet roads after rain: smoother, so they mirror the lights.
-    setWet(wet) { mats.asphalt.roughness = wet ? 0.28 : 0.95; mats.asphalt.metalness = wet ? 0.35 : 0; mats.asphalt.color.setHex(wet ? 0x1a1c20 : 0x24272c); },
+    // 0 dry .. 1 soaked: the roughness drops (no screen-space reflections needed).
+    setWet(wet) { const w = Math.max(0, Math.min(1, Number(wet) || 0)); mats.asphalt.roughness = 0.95 - 0.7 * w; mats.asphalt.metalness = 0.35 * w; mats.asphalt.color.setRGB(0.141 - 0.04 * w, 0.153 - 0.044 * w, 0.173 - 0.047 * w); wetNow = w; },
+    get wet() { return wetNow; },
+    settleClouds(look) { for (const cu of cloudLayers) { cu.uCover.value = look.cover; cu.uDark.value = look.dark; } cloudLag = 0; },
     get billboardText() { return billboards[0] ? billboards[0].text : []; },
     // A gadget fired: the emblem pulses once in gold; on a high-severity
     // event it brightens and the shield's ripple starts from it.
@@ -749,7 +919,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       beacons.forEach((b, i) => { b.approval = i < n; if (!b.until) b.goal = b.approval ? 1 : 0; });
       return n;
     },
-    update(dt, t, { sunDir, light, storm, dusk = 0, fogColor = null }) {
+    update(dt, t, { sunDir, light, storm, cover = 0.3 + storm * 0.5, wind = 0, sunny = 0.5, dusk = 0, fogColor = null }) {
       if (fogColor) gradU.uFog.value.copy(fogColor);
       env.night = 1 - light;
       const mode = this.state ? this.state.beacon : 'unknown';
@@ -761,7 +931,9 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       sun.position.copy(tmp).multiplyScalar(900); if (sun.position.y < 70) sun.position.y = 70;
       sun.target.position.set(0, 0, 0);
       const moon = 1 - light;
-      sun.intensity = 2.3 * light * (1 - storm * 0.55) + 0.25 * moon;
+      sun.intensity = 2.3 * light * (1 - storm * 0.55) * (0.85 + 0.15 * sunny) + 0.25 * moon;
+      // Crisp shadows under a clear sky, soft under cloud.
+      if (sun.shadow) sun.shadow.radius = 1.5 + 5 * (1 - sunny);
       sun.color.setRGB(1, 0.6 + 0.32 * (1 - dusk) * light, 0.36 + 0.52 * (1 - dusk) * light).lerp(cool, moon * 0.8);
       hemi.intensity = 0.2 + 0.45 * light * (1 - storm * 0.4);
       gradU.uSunDir.value.copy(tmp);
@@ -777,16 +949,22 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
         riverMat.uniforms.uHorizon.value.copy(gradU.uHorizon.value);
       }
       cloudLag = 0;
+      // Clouds drift faster in the wind; trees sway with it.
+      cloudClock += dt * (1 + wind * 5);
+      leafWind.uTime.value = t; leafWind.uWind.value += (wind - leafWind.uWind.value) * Math.min(1, dt);
       for (const cu of cloudLayers) {
-        cu.uTime.value = t;
-        cu.uCover.value += ((0.3 + storm * 0.5) - cu.uCover.value) * Math.min(1, dt * 0.3);
+        cu.uTime.value = cloudClock;
+        cu.uCover.value += (cover - cu.uCover.value) * Math.min(1, dt * 0.3);
         cu.uDark.value += (storm - cu.uDark.value) * Math.min(1, dt * 0.3);
-        cloudLag = Math.max(cloudLag, Math.abs((0.3 + storm * 0.5) - cu.uCover.value), Math.abs(storm - cu.uDark.value));
+        cloudLag = Math.max(cloudLag, Math.abs(cover - cu.uCover.value), Math.abs(storm - cu.uDark.value));
         cu.uLight.value = 0.2 + 0.8 * Math.max(light, dusk * 0.8);
         cu.uSunXZ.value.set(tmp.x, tmp.z);
         cu.uWarm.value.setRGB(1, 0.55 + 0.4 * (1 - dusk), 0.35 + 0.6 * (1 - dusk));
       }
       facade.userData.windows.uNight.value = 0.15 + 1.6 * Math.max(dusk * 0.8, moon);
+      facade.userData.windows.uSkyTop.value.copy(gradU.uTop.value).lerp(gradU.uMid.value, 0.5).multiplyScalar(1.15);
+      facade.userData.windows.uSkyHor.value.copy(gradU.uMid.value).lerp(gradU.uHorizon.value, 0.45);
+      facade.userData.windows.uGround.value.setRGB(0.1, 0.105, 0.115).multiplyScalar(0.4 + 0.6 * light);
       facade.userData.windows.uTime.value = t;
       lampMat.color.setHex(moon > 0.3 || dusk > 0.5 ? 0xffd9a0 : 0x6a6252);
       streakMat.opacity = 0.25 + 0.7 * Math.max(dusk, moon);
@@ -794,7 +972,8 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       for (let i = 0; i < streakSeeds.length; i++) { const s = streakSeeds[i]; const w = 1 + 0.35 * Math.sin(t * 2.2 + s.ph); set(streaks, i, s.x + Math.sin(t * 0.8 + s.ph) * 0.6, -3.0, RIVER.z + s.side * (RIVER.half - s.len / 2 - 1), w * 1.2, s.len, 1, 0, -Math.PI / 2); }
       streaks.instanceMatrix.needsUpdate = true;
       // Rooftop lights blink, warm (red is the enemy's).
-      mats.aircraft.color.setHex((t % 1.6) < 0.2 ? 0xffd9a0 : 0x6a5434);
+      // Obstruction lights: a red-orange beyond the enemy palette's reds.
+      mats.aircraft.color.setHex((t % 1.6) < 0.25 ? 0xff6a1a : 0x4a2410);
       domeUniforms.uTime.value = t;
       domeUniforms.uHitT.value += dt;
       dome.visible = domeUniforms.uHitT.value < 2.8 || domeUniforms.uThick.value > 0.03;

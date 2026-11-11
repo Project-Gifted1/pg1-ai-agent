@@ -77,10 +77,17 @@ export function endCardLines(day, { n = 0, now = Date.now() } = {}) {
 }
 export const END_CARD_S = 3;
 
-export function createRecording(scene, { aspect = '16:9', seconds = 30, mode = 'live', coarse = false, caption = () => null, captionText = null, countries = () => ({ n: 0, strip: '' }), day = () => null, onTick = () => {}, onDone = () => {} } = {}) {
+// What a clip records at: 720p 30 fps on the Legacy phone tier (and on any
+// phone), 1080p 30 fps otherwise.
+export function recordSpec({ coarse = false, legacy = false } = {}) {
+  return { maxEdge: legacy || coarse ? 1280 : 1920, fps: RECORD_FPS };
+}
+
+export function createRecording(scene, { aspect = '16:9', seconds = 30, mode = 'live', coarse = false, legacy = false, caption = () => null, captionText = null, countries = () => ({ n: 0, strip: '' }), day = () => null, onTick = () => {}, onDone = () => {} } = {}) {
   const mime = pickMime();
   if (!mime || !scene || !scene.canvas || typeof scene.onFrame !== 'function') return null;
-  const { w, h } = clipSize(aspect, coarse ? 1280 : 1920);
+  const spec = recordSpec({ coarse, legacy });
+  const { w, h } = clipSize(aspect, spec.maxEdge);
   const out = document.createElement('canvas'); out.width = w; out.height = h;
   const g = out.getContext('2d', { alpha: false });
   const shield = new Path2D(SHIELD); const one = new Path2D(ONE);
@@ -141,7 +148,7 @@ export function createRecording(scene, { aspect = '16:9', seconds = 30, mode = '
   };
 
   const api = {
-    mime, ext: fileExtension(mime), size: { w, h },
+    mime, ext: fileExtension(mime), size: { w, h }, fps: spec.fps,
     get recording() { return !!rec; },
     // For the tests: the words drawn on the last frame.
     get texts() { return lastTexts.slice(); },
