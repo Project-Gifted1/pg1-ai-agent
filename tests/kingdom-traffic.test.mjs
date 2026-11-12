@@ -20,12 +20,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   createTraffic, buildNetwork, roadHeight, signalFor, pedPhase, turnOf, linkPoint, inRiver,
-  RIVER_Z, RIVER_HALF, BRIDGE_X, BRIDGE_DECK_Y, CYCLE, PHASES, MIN_GAP, VEHICLE_TYPES
+  RIVER_Z, RIVER_HALF, BRIDGE_X, BRIDGE_DECK_Y, PLAZA_CLEAR, LANE_OFFSET, CYCLE, PHASES, MIN_GAP, VEHICLE_TYPES
 } from '../public/kingdom/kingdom-traffic.js';
 
 const DT = 1 / 15;
 
-test('the network: lanes both ways, on land only; only the main bridge crosses the river', () => {
+test('the network: lanes both ways, on land only; only the road bridge crosses the river; the tower plaza is traffic-free', () => {
   const net = buildNetwork();
   for (const l of net.links) {
     // Its reverse exists: every road carries traffic both ways.
@@ -41,6 +41,10 @@ test('the network: lanes both ways, on land only; only the main bridge crosses t
   assert.equal(roadHeight(BRIDGE_X + 3, RIVER_Z), BRIDGE_DECK_Y);
   assert.equal(roadHeight(BRIDGE_X + 3, RIVER_Z + 200), 0);
   assert.ok(Number.isNaN(roadHeight(320, RIVER_Z)), 'no road over the water off the bridge');
+  // The tower plaza is traffic-free: no lane point within PLAZA_CLEAR of the tower.
+  for (const l of net.links) for (let s = 0; s <= l.len; s += 2) { const p = linkPoint(l, s); assert.ok(Math.hypot(p.x, p.z) >= PLAZA_CLEAR - LANE_OFFSET, `lane through the plaza at ${p.x.toFixed(0)},${p.z.toFixed(0)}`); }
+  // Every junction has a way on (no dead end that would trap a vehicle).
+  for (const j of net.junctions) for (const l of j.in) assert.ok(j.out.some((o) => o.to !== l.from), `dead end at ${j.x},${j.z}`);
   // Dublin drives on the left: a lane heading east (+x) lies north (-z) of its centre line.
   const east = net.links.find((l) => l.dx === 1 && l.to.out.some((o) => o.dz === -1));
   assert.ok(linkPoint(east, 20).z < east.from.z);

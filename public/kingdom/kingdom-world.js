@@ -694,13 +694,31 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   }
   for (const zz of [RIVER.z - RIVER.half - 4, RIVER.z + RIVER.half + 4]) { const ab = named(new THREE.Mesh(new THREE.BoxGeometry(16, 14, 6), mats.stone), 'bridge-abutment'); ab.position.set(0, 2, zz); bridge.add(ab); }
   root.add(shadowed(bridge));
-  // A second, smaller bridge downstream (west).
+  // The road bridge downstream (west), on the x = -480 avenue: the only
+  // crossing for traffic (kingdom-traffic.js BRIDGE_X); the main bridge is
+  // the tower's pedestrian approach. Ramps climb to the deck on both banks.
+  const RB_X = -480; const RB_TOP = 7.9; const RB_RAMP = 40;
   const bridge2 = named(new THREE.Group(), 'bridge-west');
-  const d2 = named(new THREE.Mesh(new THREE.BoxGeometry(12, 1.8, deckLen), mats.concrete), 'bridge-west-deck'); d2.position.set(-560, 7, RIVER.z); bridge2.add(d2);
-  for (const zz of [RIVER.z - 18, RIVER.z + 18]) { const pier = named(new THREE.Mesh(new THREE.CylinderGeometry(2.4, 2.8, 10, 12), mats.stone), 'bridge-west-pier'); pier.position.set(-560, 1, zz); bridge2.add(pier); }
-  for (const sx of [-5.6, 5.6]) { const l = named(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, deckLen), mats.warmLamp), 'bridge-west-lights'); l.position.set(-560 + sx, 8.2, RIVER.z); bridge2.add(l); }
+  const d2 = named(new THREE.Mesh(new THREE.BoxGeometry(18, 1.8, deckLen), mats.concrete), 'bridge-west-deck'); d2.position.set(RB_X, RB_TOP - 0.9, RIVER.z); bridge2.add(d2);
+  const road2 = named(new THREE.Mesh(new THREE.PlaneGeometry(16, deckLen), mats.asphalt), 'bridge-west-road'); road2.rotation.x = -Math.PI / 2; road2.position.set(RB_X, RB_TOP + 0.02, RIVER.z); bridge2.add(road2);
+  for (const side of [-1, 1]) {
+    // A ramp: a sloped slab from the bank up to the deck, and its retaining sides.
+    const len = Math.hypot(RB_RAMP, RB_TOP); const ang = Math.atan2(RB_TOP, RB_RAMP);
+    const ramp = named(new THREE.Mesh(new THREE.BoxGeometry(16, 0.6, len), mats.asphalt), 'bridge-west-ramp');
+    ramp.position.set(RB_X, RB_TOP / 2 - 0.3, RIVER.z + side * (deckLen / 2 + RB_RAMP / 2)); ramp.rotation.x = side * ang; bridge2.add(ramp);
+    const fill = named(new THREE.Mesh(new THREE.BoxGeometry(17, RB_TOP, RB_RAMP), mats.stone), 'bridge-west-ramp-wall');
+    fill.geometry.translate(0, RB_TOP / 2, 0);
+    const pf = fill.geometry.attributes.position; for (let i = 0; i < pf.count; i++) if (pf.getY(i) > RB_TOP / 2) { const zz = pf.getZ(i) * side; pf.setY(i, Math.max(0.05, RB_TOP * (0.5 - zz / RB_RAMP))); }
+    fill.geometry.computeVertexNormals();
+    fill.position.set(RB_X, -0.4, RIVER.z + side * (deckLen / 2 + RB_RAMP / 2)); bridge2.add(fill);
+  }
+  for (const zz of [RIVER.z - 18, RIVER.z + 18]) { const pier = named(new THREE.Mesh(new THREE.CylinderGeometry(2.6, 3, 10, 12), mats.stone), 'bridge-west-pier'); pier.position.set(RB_X, 1, zz); bridge2.add(pier); }
+  for (const sx of [-8.6, 8.6]) {
+    const l = named(new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, deckLen), mats.warmLamp), 'bridge-west-lights'); l.position.set(RB_X + sx, RB_TOP - 1.1, RIVER.z); bridge2.add(l);
+    const rail = named(new THREE.Mesh(new THREE.BoxGeometry(0.15, 1.1, deckLen), mats.steel), 'bridge-west-rail'); rail.position.set(RB_X + sx, RB_TOP + 0.55, RIVER.z); bridge2.add(rail);
+  }
   root.add(shadowed(bridge2));
-  obstacles.push({ x: -560, z: RIVER.z, hw: 7, hd: deckLen / 2, top: 9 }, { x: 0, z: RIVER.z, hw: 11, hd: deckLen / 2, top: 10 + archR * 0.55 + 2 });
+  obstacles.push({ x: RB_X, z: RIVER.z, hw: 9, hd: deckLen / 2 + RB_RAMP, top: RB_TOP + 1.2 }, { x: 0, z: RIVER.z, hw: 11, hd: deckLen / 2, top: 10 + archR * 0.55 + 2 });
   // The toll gantry (x402), lanterns on the bridge.
   const gantryZ = RIVER.z + RIVER.half + 10;
   const toll = named(new THREE.Group(), 'toll-gantry');

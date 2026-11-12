@@ -10,9 +10,11 @@
 //                 16 m wide). Every road carries one lane each way; Dublin
 //                 drives on the left, so a lane's centre is LANE_OFFSET to
 //                 the left of its direction. Links run junction to junction.
-//                 North-south avenues stop at the river: only the main
-//                 bridge (x = 0) crosses, with ramps up to its deck, so no
-//                 lane is ever over water.
+//                 North-south avenues stop at the river: only the road
+//                 bridge (x = BRIDGE_X) crosses, with ramps up to its deck,
+//                 so no lane is ever over water. The PG1 Tower's plaza is
+//                 traffic-free: no lane comes within PLAZA_CLEAR of the
+//                 tower (the main bridge there is for people only).
 //   Following     each lane keeps its vehicles in order. Acceleration is the
 //                 intelligent driver model (a safe time gap, a minimum gap,
 //                 comfortable braking), and a hard rule on top: a vehicle
@@ -42,8 +44,10 @@ export const ROAD_W = 16;
 export const LANE_OFFSET = 3.2;
 export const RIVER_Z = 120;
 export const RIVER_HALF = 45;
-export const BRIDGE_X = 0;
-export const BRIDGE_DECK_Y = 10.15;
+export const BRIDGE_X = -480;
+export const BRIDGE_DECK_Y = 7.9;
+// The tower plaza (radius 52) and its security perimeter: no lane inside.
+export const PLAZA_CLEAR = 62;
 // The deck spans RIVER_Z +- 60; ramps climb to it over RAMP_LEN.
 export const BRIDGE_DECK_HALF = 60;
 export const RAMP_LEN = 40;
@@ -88,13 +92,17 @@ export function buildNetwork({ cols = 6, rowsNorth = 4, rowsSouth = 4 } = {}) {
   const jAt = new Map();
   const key = (x, z) => `${x},${z}`;
   for (const x of xs) for (const z of zs) {
+    if (Math.hypot(x, z) < PLAZA_CLEAR) continue; // the plaza is traffic-free
     const j = { id: junctions.length, x, z, edge: x === xs[0] || x === xs[xs.length - 1] || z === zs[0] || z === zs[zs.length - 1], in: [], out: [], occupants: [], offset: 0 };
     // A green wave of sorts: offsets along the grid.
     j.offset = ((Math.round(x / GRID) * 3 + Math.round((z + 40) / GRID) * 5) % CYCLE + CYCLE) % CYCLE;
     junctions.push(j); jAt.set(key(x, z), j);
   }
   const links = [];
+  // Distance from the tower (the origin) to the segment a-b.
+  const segDist = (a, b) => { const dx = b.x - a.x; const dz = b.z - a.z; const t = Math.max(0, Math.min(1, -(a.x * dx + a.z * dz) / (dx * dx + dz * dz))); return Math.hypot(a.x + dx * t, a.z + dz * t); };
   const addLink = (a, b) => {
+    if (!a || !b || segDist(a, b) < PLAZA_CLEAR) return;
     const dx = Math.sign(b.x - a.x); const dz = Math.sign(b.z - a.z);
     const axis = dx ? 'x' : 'z';
     // Left-hand traffic: the lane's centre is to the left of its direction.
