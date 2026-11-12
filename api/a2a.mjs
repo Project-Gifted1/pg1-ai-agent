@@ -13,7 +13,9 @@
  * skill has the same 60/hour anonymous limit; and (1.17.0) check_package,
  * the pre-install npm/PyPI package check, 60/hour anonymous like the other
  * free checks; and (1.21.0) check_agent_message, the pre-read check of
- * another agent's message or a skill.md, 60/hour per caller. Every tool implementation is imported
+ * another agent's message or a skill.md, 60/hour per caller; and (1.22.0)
+ * check_repo_trap, a downloaded project's file listing checked for the
+ * untrusted repo trap, 60/hour per caller. Every tool implementation is imported
  * directly from api/mcp.mjs (no duplicated logic) — names, descriptions,
  * schemas, and rate limits (check_hostname_reputation and check_wallet_age:
  * 60/hour without a license key) are unchanged from the MCP server.
@@ -147,6 +149,7 @@ const SKILL_SOURCE_LABELS = {
   check_x402_endpoint: 'x402 payment request',
   check_agent_card: 'agent card',
   check_agent_message: 'PG1 message rules',
+  check_repo_trap: 'PG1 repo rules',
   verify_result: 'PG1 signing keys',
   hosting_advisor: 'PG1 hosting dataset'
 };
@@ -154,7 +157,7 @@ const SKILL_SOURCE_LABELS = {
 // 60 s: an accepted A2A job runs in the background (waitUntil) after the reply.
 export const config = { maxDuration: 60 };
 
-export const A2A_FREE_SKILL_NAMES = Object.freeze(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'get_usage_status', 'check_ip_abuse', 'check_package', 'check_x402_endpoint', 'check_agent_card', 'check_agent_message', 'verify_result']);
+export const A2A_FREE_SKILL_NAMES = Object.freeze(['check_wallet_sanctions', 'check_domain_age', 'check_hostname_reputation', 'check_wallet_age', 'get_usage_status', 'check_ip_abuse', 'check_package', 'check_x402_endpoint', 'check_agent_card', 'check_agent_message', 'check_repo_trap', 'verify_result']);
 export const A2A_PAID_SKILL_NAMES = Object.freeze(['preflight_check', 'hosting_advisor', 'get_cve_details', 'get_cve_batch', 'get_cve_by_product', 'get_threat_actor_profile']);
 const A2A_SKILL_NAMES = [...A2A_FREE_SKILL_NAMES, ...A2A_PAID_SKILL_NAMES];
 
@@ -230,6 +233,7 @@ async function runSkill(skill, args, identifier, licenseKey, req) {
     case 'check_x402_endpoint':
     case 'check_agent_card':
     case 'check_agent_message':
+    case 'check_repo_trap':
     case 'verify_result':
       return runReadOnlyTool(skill, args, { identifier, licenseKey });
     default:

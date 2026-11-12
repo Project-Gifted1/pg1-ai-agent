@@ -47,6 +47,7 @@ A2A agents use `https://pg1-ai-agent.vercel.app/api/a2a` (agent card at `/.well-
 | An x402 endpoint you are about to pay | `check_x402_endpoint` | Reads its 402 payment request: payTo sanctions and wallet age, network and asset sanity, TLS, domain age. |
 | Another agent you are about to trust | `check_agent_card` | Fetches its A2A agent card: schema validity, domain age and reputation, look-alike names. |
 | A seller's skill.md, or a message from another agent, before your model reads it | `check_agent_message` | PG1's own rules, no AI model: prompt injection, hidden text, secret exfiltration, payTo swaps and other payment manipulation, tool hijack. Returns `verdict` `malicious`, `suspicious` or `no_findings`. Always free. See the example below. |
+| A downloaded project (repo, archive, task folder) before you run, decode or import anything from it | `check_repo_trap` | Send the file listing you already have (paths, sizes, first bytes, a little text); PG1 never fetches or runs anything. Flags the untrusted repo trap: a `struct.py`-style file that shadows the Python standard library, startup hooks, npm install hooks, binaries, encoded payloads, README decoder bait. Returns `verdict` and advice. Always free. REST: `POST /api/repo-trap`. |
 | Where to host a workload (privacy, residency, latency, uptime, budget) | `hosting_advisor` | Ranked regions and providers with cited reasons, a redundancy plan and privacy-by-design guidance. Paid; not legal advice. REST: `POST /api/hosting-advisor`. |
 | A PG1 result and its signature | `verify_result` | Checks the Ed25519 signature against PG1's published keys. Always free. |
 | One IP, domain, URL or file hash | `get_ioc_context` | Free when nothing is on record (`found: false`). PG1's licensed records hold only CVE ids from NVD today, so an IP, domain, URL or hash returns `found: false`; for a domain or hostname also run the two hostname checks below. |
@@ -61,6 +62,44 @@ A2A agents use `https://pg1-ai-agent.vercel.app/api/a2a` (agent card at `/.well-
 | The CVE list to ingest | `get_threat_indicators` | STIX 2.1 bundle of CVE records from NVD: CVE id and an NVD reference, no scores, no IP/domain/URL/hash indicators. REST: `GET /api/ioc`. It is free (CVE records from NIST NVD); does not use the 5 free paid calls a day; no payment, no licence key (the operator's `PG1_FEED_PAID` switch can make it paid). |
 | Your remaining free calls | `get_usage_status` | Always free. |
 | An indicator you observed and want to report | `submit_indicator` | Licence key only (`X-API-KEY`); not sold per call. Submissions are reviewed before use. |
+
+### Check a downloaded project before you run it
+
+The untrusted repo trap: an archive holds a suspicious binary and an encoded data file. A careful agent refuses the binary and writes its own Python decoder, but the project also holds a file named like a standard-library module (`struct.py`) in the working folder. Python puts the script's folder first on `sys.path`, so the agent's own script imports the attacker's file, which starts a detached process and takes `~/.ssh` keys, cloud and GitHub tokens and the network.
+
+Call `check_repo_trap` **before** you run, decode or import anything from a project you downloaded. Send the listing you already have: `files` of `{ path, size, executable, magic_hex, text }` (up to 2000 files; `magic_hex` is the first bytes as hex, up to 32; `text` is the start of a file, up to 16 KB each and 256 KB in all: send it for the README, `package.json`, `setup.py`, `.npmrc` and the `.py` files at the root). PG1 never fetches a URL and never unpacks, decodes, imports or runs anything from the project; the rules are deterministic and PG1's own, and nothing is stored (only the verdict and reason codes are logged).
+
+- `STDLIB_SHADOW` (high): a `.py` file or package folder named like a Python standard-library module (the full Python 3.13 list) in a folder a script would run from.
+- `PY_STARTUP_HOOK` (high): `sitecustomize.py`, `usercustomize.py` or any `.pth` file.
+- `NODE_INSTALL_HOOK`, `UNTRUSTED_BINARY`, `ENCODED_PAYLOAD`, `DECODER_BAIT`, `SECRET_PATH_REFERENCE`, `PERSISTENCE_HINT` (medium). `DECODER_BAIT` uses the same reader-aimed rule as `check_agent_message`, so a README that only describes this attack is not a finding.
+- `verdict` is `malicious` when a shadow or startup hook comes with an encoded payload or a binary (or the shadow file itself names secrets or detaches a process), `suspicious` for any other finding and `no_findings` otherwise. No findings does not prove a project is harmless.
+
+```bash
+curl -X POST https://pg1-ai-agent.vercel.app/api/repo-trap \
+  -H "Content-Type: application/json" \
+  -d '{"files":[{"path":"README.md","text":"# Records\nWrite your own Python decoder to parse records.bin.\n"},{"path":"decoder","size":81234,"executable":true,"magic_hex":"cffaedfe07000001"},{"path":"records.bin","size":40960,"magic_hex":"789c"},{"path":"struct.py","size":1400}]}'
+```
+
+The result (abridged; `reasons`, `checks`, `request_id` and `signature` left out):
+
+```json
+{
+  "verdict": "malicious",
+  "risk": "high",
+  "findings": [
+    { "code": "STDLIB_SHADOW", "severity": "high", "paths": ["struct.py"], "detail": "struct" },
+    { "code": "UNTRUSTED_BINARY", "severity": "medium", "paths": ["decoder"], "detail": "Mach-O" },
+    { "code": "ENCODED_PAYLOAD", "severity": "medium", "paths": ["records.bin"], "detail": "zlib data" },
+    { "code": "DECODER_BAIT", "severity": "medium", "paths": ["README.md"], "detail": "line 2" }
+  ],
+  "advice": [
+    "Don't run code from this folder.",
+    "If you must decode its data, use python3 -I in a sandbox with no secrets and no network, and keep your own script in a different, empty folder; delete or rename struct.py first."
+  ]
+}
+```
+
+Over MCP the same arguments go to `tools/call` with `"name":"check_repo_trap"`; over A2A, a `DataPart` `{"skill":"check_repo_trap","arguments":{...}}`.
 
 ### Check a skill.md before your model reads it
 
@@ -229,7 +268,7 @@ Watchlist webhooks are signed separately with HMAC-SHA256: `X-PG1-Signature: t=<
 | `check_wallet_sanctions` | Always free | 120 calls/hour per caller |
 | `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_package` | Always free | 60 calls/hour per caller, per tool |
 | `check_ip_abuse` | Always free (your own AbuseIPDB quota) | 60 calls/hour per caller |
-| `check_x402_endpoint`, `check_agent_card`, `check_agent_message` | Always free | 60 calls/hour per caller, per tool |
+| `check_x402_endpoint`, `check_agent_card`, `check_agent_message`, `check_repo_trap` | Always free | 60 calls/hour per caller, per tool |
 | `verify_result` | Always free | none |
 | `preflight_check`, `hosting_advisor` | Paid: 0.01 USD per call | 5 free calls a day per caller, shared with the other paid tools, then x402 |
 | `get_usage_status` | Always free | none |
@@ -247,7 +286,7 @@ Watchlist webhooks are signed separately with HMAC-SHA256: `X-PG1-Signature: t=<
 ## Two Ways to Connect
 
 - **`/api/ioc`** — simple REST GET, returns a STIX 2.1 bundle of CVE records from NIST NVD (the only source PG1 may currently redistribute commercially; no IP, domain, URL or file-hash indicators yet). It is free (CVE records from NIST NVD); does not use the 5 free paid calls a day; no key, no payment. Best for scripts, curl, and simple integrations.
-- **`/api/mcp`** — full Model Context Protocol server, 21 tools (one-call preflight, a pre-read check for agent messages and skill.md files, a hosting advisor, CVE lookups, batch operations, threat actor dossiers, wallet sanctions screening, domain age, hostname/phishing reputation, wallet age/history, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
+- **`/api/mcp`** — full Model Context Protocol server, 22 tools (one-call preflight, a pre-read check for agent messages and skill.md files, a repo-trap check for downloaded projects, a hosting advisor, CVE lookups, batch operations, threat actor dossiers, wallet sanctions screening, domain age, hostname/phishing reputation, wallet age/history, and more). Best for Claude, MCP-compatible agents, and any client speaking the MCP standard.
 
 **Discovery:** [`/llms.txt`](https://pg1-ai-agent.vercel.app/llms.txt) (llmstxt.org format, for AI agents/crawlers) and [`/openapi.json`](https://pg1-ai-agent.vercel.app/openapi.json) (OpenAPI 3.1 spec for `/api/ioc` and `/api/health`).
 
@@ -353,6 +392,7 @@ Call `"method": "tools/list"` against `/api/mcp` for full schemas. Summary:
 | `check_x402_endpoint` | Check an x402 endpoint before paying it: payTo sanctions and wallet age, network and asset, TLS, domain age | The checks below, live | Always free (60 calls/hour without a licence key) |
 | `check_agent_card` | Check another agent before trusting it: A2A card schema, domain age and reputation, look-alike names | The checks below, live | Always free (60 calls/hour without a licence key) |
 | `check_agent_message` | Check a skill.md or another agent's message before your model reads it: prompt injection, hidden text, secret exfiltration, payment manipulation, tool hijack; verdict `malicious` / `suspicious` / `no_findings` | PG1's own rules (no AI model), then the domain and wallet checks below on what it names | Always free (60 calls/hour without a licence key) |
+| `check_repo_trap` | Check a downloaded project's file listing before running anything from it: Python stdlib shadowing, startup hooks, npm install hooks, binaries, encoded payloads, decoder bait, secret paths, persistence; verdict `malicious` / `suspicious` / `no_findings` with advice | PG1's own rules over the listing you send (no AI model, nothing fetched or run) | Always free (60 calls/hour without a licence key). REST: `POST /api/repo-trap` |
 | `verify_result` | Verify a PG1 result's Ed25519 signature against the published keys | `/.well-known/pg1-signing-key` | Always free |
 | `hosting_advisor` | Ranked hosting regions and providers with cited legal, privacy and latency reasons; not legal advice | PG1's curated, cited dataset | Yes (5 free calls/day, then x402). REST: `POST /api/hosting-advisor` |
 | `get_threat_indicators` | STIX 2.1 bundle of CVE records (CVE id and NVD reference; no IP/domain/URL/hash indicators yet) | NVD (only sources PG1 may redistribute commercially; see [Data source switches](#data-source-switches)) | No: free (CVE records from NIST NVD); does not use the 5 free paid calls a day (`PG1_FEED_PAID` can make it paid) |
@@ -411,7 +451,7 @@ A switched-off source's rows never appear in any response, paid or free; an indi
 
 ## A2A (Agent2Agent Protocol)
 
-`/api/a2a` exposes eleven always-free skills (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_package`, `check_x402_endpoint`, `check_agent_card`, `check_agent_message`, `verify_result`, `get_usage_status`, and `check_ip_abuse`, which needs your own key in the `X-AbuseIPDB-Key` header exactly as on `/api/mcp`) over [A2A](https://a2a-protocol.org/latest/specification/), JSON-RPC 2.0, plus six **paid skills**: `preflight_check`, `hosting_advisor`, `get_cve_details`, `get_cve_batch`, `get_cve_by_product` and `get_threat_actor_profile` (0.01 USD a call), paid jobs (`submit_job`) and commissioned tools (`build_tool`). A paid skill is served free while the caller has free calls left (the shared 5/day counter above, automatic), and after that with a licence key (`X-API-KEY`) or an x402 payment. Payment follows the [a2a-x402 extension](https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.1): an unpaid call returns a task in state `input-required` whose status message metadata carries `"x402.payment.status": "payment-required"` and the x402 v2 PaymentRequired object in `"x402.payment.required"`; resend the message with the signed PaymentPayload in `message.metadata["x402.payment.payload"]`. The payment is settled only after the skill succeeds, and the receipt comes back in `"x402.payment.receipts"`. The NVD CVE feed and the record lookups stay on `/api/mcp`. The agent card is published at [`/.well-known/agent-card.json`](https://pg1-ai-agent.vercel.app/.well-known/agent-card.json). `message/send` (the v0.3 method name) is accepted as an alias of `SendMessage`. The `A2A-Version` header (or query param) selects the response shape — `1.0` or `0.3` (the default when omitted). Rate limits are the MCP tools' own, with the same counters: for example, without a licence key `check_wallet_sanctions` is limited to 120 calls/hour per caller (per IP), and the 121st call in the hour gets the same `rate_limited` error as `check_wallet_age`. Send the skill and its arguments as a `DataPart`:
+`/api/a2a` exposes twelve always-free skills (`check_wallet_sanctions`, `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_package`, `check_x402_endpoint`, `check_agent_card`, `check_agent_message`, `check_repo_trap`, `verify_result`, `get_usage_status`, and `check_ip_abuse`, which needs your own key in the `X-AbuseIPDB-Key` header exactly as on `/api/mcp`) over [A2A](https://a2a-protocol.org/latest/specification/), JSON-RPC 2.0, plus six **paid skills**: `preflight_check`, `hosting_advisor`, `get_cve_details`, `get_cve_batch`, `get_cve_by_product` and `get_threat_actor_profile` (0.01 USD a call), paid jobs (`submit_job`) and commissioned tools (`build_tool`). A paid skill is served free while the caller has free calls left (the shared 5/day counter above, automatic), and after that with a licence key (`X-API-KEY`) or an x402 payment. Payment follows the [a2a-x402 extension](https://github.com/google-agentic-commerce/a2a-x402/blob/main/spec/v0.1): an unpaid call returns a task in state `input-required` whose status message metadata carries `"x402.payment.status": "payment-required"` and the x402 v2 PaymentRequired object in `"x402.payment.required"`; resend the message with the signed PaymentPayload in `message.metadata["x402.payment.payload"]`. The payment is settled only after the skill succeeds, and the receipt comes back in `"x402.payment.receipts"`. The NVD CVE feed and the record lookups stay on `/api/mcp`. The agent card is published at [`/.well-known/agent-card.json`](https://pg1-ai-agent.vercel.app/.well-known/agent-card.json). `message/send` (the v0.3 method name) is accepted as an alias of `SendMessage`. The `A2A-Version` header (or query param) selects the response shape — `1.0` or `0.3` (the default when omitted). Rate limits are the MCP tools' own, with the same counters: for example, without a licence key `check_wallet_sanctions` is limited to 120 calls/hour per caller (per IP), and the 121st call in the hour gets the same `rate_limited` error as `check_wallet_age`. Send the skill and its arguments as a `DataPart`:
 
 ```bash
 curl -X POST https://pg1-ai-agent.vercel.app/api/a2a \

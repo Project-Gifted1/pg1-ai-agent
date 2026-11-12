@@ -268,7 +268,16 @@
       ]
     },
     {
-      "source": "/api/:path((?!chat$|errors$|errors/cleanup$|handoffs$|threads$|watches$|home-context$|defense-feed$|playground$|video-render$|mcp$|a2a$|preflight$|watchlists$).*)",
+      "source": "/api/repo-trap",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "POST,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Accept, x-api-key" },
+        { "key": "Access-Control-Expose-Headers", "value": "X-Request-Id, Retry-After, Link" }
+      ]
+    },
+    {
+      "source": "/api/:path((?!chat$|errors$|errors/cleanup$|handoffs$|threads$|watches$|home-context$|defense-feed$|playground$|video-render$|mcp$|a2a$|preflight$|watchlists$|repo-trap$).*)",
       "headers": [
         { "key": "Access-Control-Allow-Origin", "value": "*" },
         { "key": "Access-Control-Allow-Methods", "value": "GET,OPTIONS,PATCH,DELETE,POST,PUT" },

@@ -16,7 +16,10 @@
 //   rovers      ground units on the embankment road; their lights come up
 //               in storms and floods
 // The other side (red is theirs): scanner drones probing the skyline,
-// swarms in a flood, dark boats on the river, rogue signals (red trails).
+// swarms in a flood, dark boats on the river, rogue signals (red trails),
+// Trojan workspaces (1.22.0: a booby-trapped project crate slung under a dark
+// carrier, one per real check_repo_trap verdict; the Repo Trap Scanner seals
+// it in a gold lattice and it sinks).
 // Allies (green): lit boats and cargo ships to the pier, partner drones.
 //
 // PG1 only defends: every PG1 unit stays inside the city (CITY_R); they
@@ -153,6 +156,17 @@ export function createActors(THREE, scene, world, settings) {
   const trailMat = new THREE.MeshBasicMaterial({ color: 0xff3d3d, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false });
   const trailGeo = new THREE.CylinderGeometry(0.15, 0.9, 16, 8, 1, true); trailGeo.rotateX(Math.PI / 2); trailGeo.translate(0, 0, -8.5);
   const signals = new Crowd(THREE, root, [{ geo: new THREE.SphereGeometry(0.9, 10, 8), mat: signalMat, offset: [0, 0, 0], swing: null, flat: true }, { geo: trailGeo, mat: trailMat, offset: [0, 0, 0], swing: null, flat: true }], 24);
+  // Trojan workspaces: a dark project crate (a folder tab on its lid, red
+  // seams) slung under a dark carrier drone. Red is theirs.
+  const seamMat = new THREE.MeshBasicMaterial({ color: 0xff3d3d });
+  const workspaces = new Crowd(THREE, root, [
+    ...quadParts(THREE, M, 0xff3d3d, 0x16181c),
+    { geo: new THREE.BoxGeometry(1.6, 1.1, 1.2), mat: M(0x1b1e24, { metalness: 0.5, roughness: 0.45 }), offset: [0, -1.5, 0], swing: null },
+    { geo: new THREE.BoxGeometry(0.6, 0.14, 1.2), mat: M(0x1b1e24, { metalness: 0.5, roughness: 0.45 }), offset: [-0.45, -0.88, 0], swing: null },
+    { geo: new THREE.BoxGeometry(1.64, 0.06, 1.24), mat: seamMat, offset: [0, -1.5, 0], swing: null, flat: true },
+    { geo: new THREE.BoxGeometry(0.06, 1.14, 1.24), mat: seamMat, offset: [0.2, -1.5, 0], swing: null, flat: true },
+    { geo: new THREE.CylinderGeometry(0.03, 0.03, 0.9, 4), mat: M(0x3a3f46), offset: [0, -0.55, 0], swing: null, flat: true }
+  ], 12, { fly: 1 });
   // PG1's side.
   const SENTINEL_CAP = 64;
   const sentinelParts = quadParts(THREE, M, PG1_COLORS.cyan, 0xf5f7fa);
@@ -178,9 +192,9 @@ export function createActors(THREE, scene, world, settings) {
   const allyBoats = new Crowd(THREE, root, boatParts(0xf5f7fa, 0x2a4a68, PG1_COLORS.green), 10);
   const cargoShips = new Crowd(THREE, root, boatParts(0xe9edf1, 0x2a4a68, PG1_COLORS.green).map((p, i) => (i === 0 ? { ...p, geo: new THREE.BoxGeometry(7, 2.6, 30) } : p)), 4);
   const partners = new Crowd(THREE, root, quadParts(THREE, M, PG1_COLORS.green, 0xdff7e8), 12, { fly: 1 });
-  const crowds = [scanners, swarm, darkBoats, signals, sentinels, commander, repair, pilots, rovers, allyBoats, cargoShips, partners];
+  const crowds = [scanners, swarm, darkBoats, signals, workspaces, sentinels, commander, repair, pilots, rovers, allyBoats, cargoShips, partners];
   const PG1_UNITS = [sentinels, commander, repair, pilots, rovers];
-  const ENEMIES = [scanners, swarm, darkBoats, signals];
+  const ENEMIES = [scanners, swarm, darkBoats, signals, workspaces];
   const S = phone ? 6.5 : 5.2; // drone scale: readable at 412 px in the default view
 
   const props = [];
@@ -260,6 +274,17 @@ export function createActors(THREE, scene, world, settings) {
         if (e.reasons[0]) label(reasonLabel(e.reasons[0]), { x: lp.x, y: lp.y + 7, z: lp.z }, '#ff6a4a', 5);
         break;
       }
+      case 'repo_scanner': {
+        // The Repo Trap Scanner: a gold lattice drops over the workspace and
+        // seals it; it sinks with its reason code. PG1 only inspects.
+        const cage = new THREE.Mesh(new THREE.BoxGeometry(14, 14, 14, 3, 3, 3), new THREE.MeshBasicMaterial({ color: PG1_COLORS.gold, wireframe: true, transparent: true, opacity: 0.9 }));
+        cage.name = 'repo-scanner-lattice';
+        cage.position.set(group.cx, group.cy + 30, group.cz);
+        root.add(cage); props.push({ mesh: cage, kind: 'net', goalY: group.cy, ttl: 6 });
+        for (const a of group.agents) a.sink = 1;
+        if (e.reasons[0]) label(reasonLabel(e.reasons[0]), { x: lp.x, y: lp.y + 7, z: lp.z }, '#ff6a4a', 5);
+        break;
+      }
       case 'supply_inspector': world.xray.material.opacity = 0.6; world.crane.rotation.y = 0.5; for (const a of group.agents) a.sink = 1; break;
       case 'passkey_vault': if (e.verdict === 'LOCKOUT_ALERT') { const d = world.vaultDoors[1]; d.userData.goal = d.userData.down; d.userData.until = now + 20000; } break;
       case 'toll_bridge': world.tollBarrier.material.emissive.setHex(PG1_COLORS.amber); world.tollBarrier.material.emissiveIntensity = 1.8; world.tollBarrier.userData.until = now + 3000; break;
@@ -287,8 +312,8 @@ export function createActors(THREE, scene, world, settings) {
     }
     const fog = !event.country;
     const bearing = fog ? world.fogBearing + (Math.random() - 0.5) * 0.3 : countryBearing(event.country);
-    const kind = RIVER_GADGETS.has(event.gadget) ? 'boat' : event.gadget === 'rate_shield' ? 'swarm' : event.gadget === 'passkey_vault' ? 'signal' : 'scanner';
-    const crowd = kind === 'boat' ? darkBoats : kind === 'swarm' ? swarm : kind === 'signal' ? signals : scanners;
+    const kind = RIVER_GADGETS.has(event.gadget) ? 'boat' : event.gadget === 'rate_shield' ? 'swarm' : event.gadget === 'passkey_vault' ? 'signal' : event.gadget === 'repo_scanner' ? 'workspace' : 'scanner';
+    const crowd = kind === 'boat' ? darkBoats : kind === 'swarm' ? swarm : kind === 'signal' ? signals : kind === 'workspace' ? workspaces : scanners;
     if (!crowd.free) return;
     let gate = 'river'; let start; let target;
     if (kind === 'boat') {
@@ -303,12 +328,12 @@ export function createActors(THREE, scene, world, settings) {
       start = { ...at(bearing, 900, 90) };
       target = { x: g.mouth.x, y: g.mouth.y + (gate === 'south' ? 6 : 0), z: g.mouth.z };
     }
-    const n = Math.max(1, Math.min(delta, perEventCap, crowd.free, kind === 'boat' ? 3 : 999));
+    const n = Math.max(1, Math.min(delta, perEventCap, crowd.free, kind === 'boat' ? 3 : kind === 'workspace' ? 4 : 999));
     const group = groups.get(event.id) || { event, agents: [], gate, kind, phase: 'advance', t: 0, cx: target.x, cy: target.y, cz: target.z, start };
     group.event = event;
     for (let k = 0; k < n; k++) {
       const jx = (k % 7 - 3) * (kind === 'boat' ? 22 : 6); const jy = Math.floor(k / 7) * 5;
-      const a = crowd.add({ x: start.x + (kind === 'boat' ? jx : jx * 0.6), y: start.y + (kind === 'boat' ? 0 : jy), z: start.z + (kind === 'boat' ? 0 : jx * 0.6), tx: target.x + (kind === 'boat' ? jx * 0.4 : jx * 0.5), ty: target.y + (kind === 'boat' ? 0 : jy * 0.5), tz: target.z + (kind === 'boat' ? 0 : jx * 0.5), speed: kind === 'boat' ? 30 : kind === 'signal' ? 70 : 48, eventId: event.id, delay: k * 0.05, scale: kind === 'boat' ? 1 : kind === 'swarm' ? S * 0.6 : kind === 'signal' ? 2.4 : S });
+      const a = crowd.add({ x: start.x + (kind === 'boat' ? jx : jx * 0.6), y: start.y + (kind === 'boat' ? 0 : jy), z: start.z + (kind === 'boat' ? 0 : jx * 0.6), tx: target.x + (kind === 'boat' ? jx * 0.4 : jx * 0.5), ty: target.y + (kind === 'boat' ? 0 : jy * 0.5), tz: target.z + (kind === 'boat' ? 0 : jx * 0.5), speed: kind === 'boat' ? 30 : kind === 'signal' ? 70 : kind === 'workspace' ? 36 : 48, eventId: event.id, delay: k * 0.05, scale: kind === 'boat' ? 1 : kind === 'swarm' ? S * 0.6 : kind === 'signal' ? 2.4 : kind === 'workspace' ? S * 1.3 : S });
       if (a) group.agents.push(a);
     }
     groups.set(event.id, group);
