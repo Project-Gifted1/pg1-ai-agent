@@ -84,6 +84,12 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
   let recording = null; let replaying = false; let replayTimers = []; let clipUrl = null;
   let pg1State = null; let loaded = false; let lastRec = null; let sound = null; let lastWeather = null; let lastReplay = null;
   let connected = false; let fails = 0; let lastOkAt = 0;
+  // A poll that has started and not yet answered (less than three polls ago)
+  // still counts as connected: a page busy rendering is not a broken feed.
+  let pollSince = 0;
+  // Time the page itself was frozen (a long first render on a slow phone)
+  // never counts towards a stale feed either.
+  let lastTickAt = 0;
   const liveIds = new Set(); const replayIds = new Set();
   let ticker = []; let arcs = []; let captionEvent = null; let tickTimer = null; let pip = null; let introDone = false;
 
@@ -215,7 +221,11 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
   function tick() {
     tickTimer = null;
     if (!open) return;
-    connected = fails < PAUSED_AFTER_FAILS && Date.now() - lastOkAt < KINGDOM_POLL_MS * 3;
+    const now = Date.now();
+    const stall = lastTickAt ? now - lastTickAt - 250 : 0;
+    if (stall > 1000 && lastOkAt) lastOkAt = Math.min(now, lastOkAt + stall);
+    lastTickAt = now;
+    connected = fails < PAUSED_AFTER_FAILS && (now - lastOkAt < KINGDOM_POLL_MS * 3 || (pollSince > 0 && now - pollSince < KINGDOM_POLL_MS * 3));
     if (scene && scene.setPaused) scene.setPaused(!connected && !replaying);
     renderBadge();
     renderTicker();
@@ -297,7 +307,9 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     pollTimer = null;
     if (!open) return;
     if (!doc.hidden) {
+      pollSince = Date.now();
       const feed = await fetchFeed(lastAt ? lastAt - POLL_OVERLAP_MS : 0);
+      pollSince = 0;
       if (feed && open) { fails = 0; lastOkAt = Date.now(); apply(feed); } else if (!feed) fails++;
     }
     if (open) pollTimer = setTimeout(poll, KINGDOM_POLL_MS);
@@ -400,6 +412,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     endReplay();
     open = false;
     if (tickTimer) { clearTimeout(tickTimer); tickTimer = null; }
+    lastTickAt = 0;
     if (sound && sound.on) { sound.toggle(); const b = $('kingdom-sound'); if (b) b.setAttribute('aria-pressed', 'false'); }
     pip = null; introDone = false;
     const screen = $('kingdom-screen');
