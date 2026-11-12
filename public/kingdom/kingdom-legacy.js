@@ -15,7 +15,7 @@
 // Nothing here changes what happens in the city, only how it is drawn.
 
 // Static scenery: these named meshes never move, hide or change shape.
-export const STATIC_NAMES = Object.freeze(['road', 'bridge-hanger', 'park', 'embankment', 'embankment-railing', 'bridge-arch', 'bridge-rail', 'bridge-deck-lights', 'bridge-abutment', 'bridge-west-pier', 'bridge-west-lights', 'bridge-west-deck', 'bridge-west-road', 'bridge-west-ramp', 'bridge-west-ramp-wall', 'bridge-west-rail', 'bridge-deck', 'bridge-lane', 'ground', 'billboard-pole', 'billboard-frame', 'plaza-fountain', 'plaza-fountain-water', 'tower-edge', 'preflight-pylon', 'toll-gantry-leg', 'tram-viaduct', 'busker-case', 'tower-podium', 'bridge-lantern']);
+export const STATIC_NAMES = Object.freeze(['road', 'bridge-hanger', 'park', 'embankment', 'embankment-railing', 'bridge-arch', 'bridge-rail', 'bridge-deck-lights', 'bridge-abutment', 'bridge-west-pier', 'bridge-west-lights', 'bridge-west-deck', 'bridge-west-road', 'bridge-west-ramp', 'bridge-west-ramp-fill', 'bridge-west-rail', 'bridge-deck', 'bridge-lane', 'ground', 'billboard-pole', 'billboard-frame', 'plaza-fountain', 'plaza-fountain-water', 'tower-edge', 'preflight-pylon', 'toll-gantry-leg', 'tram-viaduct', 'busker-case', 'tower-podium', 'bridge-lantern']);
 
 function toNonIndexed(g) { return g.index ? g.toNonIndexed() : g.clone(); }
 

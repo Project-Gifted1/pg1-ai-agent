@@ -706,7 +706,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     const len = Math.hypot(RB_RAMP, RB_TOP); const ang = Math.atan2(RB_TOP, RB_RAMP);
     const ramp = named(new THREE.Mesh(new THREE.BoxGeometry(16, 0.6, len), mats.asphalt), 'bridge-west-ramp');
     ramp.position.set(RB_X, RB_TOP / 2 - 0.3, RIVER.z + side * (deckLen / 2 + RB_RAMP / 2)); ramp.rotation.x = side * ang; bridge2.add(ramp);
-    const fill = named(new THREE.Mesh(new THREE.BoxGeometry(17, RB_TOP, RB_RAMP), mats.stone), 'bridge-west-ramp-wall');
+    const fill = named(new THREE.Mesh(new THREE.BoxGeometry(17, RB_TOP, RB_RAMP), mats.stone), 'bridge-west-ramp-fill');
     fill.geometry.translate(0, RB_TOP / 2, 0);
     const pf = fill.geometry.attributes.position; for (let i = 0; i < pf.count; i++) if (pf.getY(i) > RB_TOP / 2) { const zz = pf.getZ(i) * side; pf.setY(i, Math.max(0.05, RB_TOP * (0.5 - zz / RB_RAMP))); }
     fill.geometry.computeVertexNormals();
