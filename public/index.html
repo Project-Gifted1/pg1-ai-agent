@@ -3079,7 +3079,7 @@
         <button type="button" id="kingdom-sound" aria-pressed="false" onclick="kingdomUi && kingdomUi.toggleSound()">Sound</button>
         <button type="button" id="kingdom-record-btn" aria-expanded="false" aria-controls="kingdom-record" onclick="kingdomUi && kingdomUi.toggleRecordPanel()">Record</button>
         <label class="sr-only" for="kingdom-quality">Quality</label>
-        <select id="kingdom-quality" onchange="kingdomUi && kingdomUi.setQuality(this.value)"><option value="phone">Phone</option><option value="balanced">Balanced</option><option value="cinematic">Cinematic</option><option value="still" hidden>Still</option></select>
+        <select id="kingdom-quality" onchange="kingdomUi && kingdomUi.setQuality(this.value)"><option value="legacy">Legacy phone</option><option value="phone">Phone</option><option value="balanced">Balanced</option><option value="cinematic">Cinematic</option><option value="still" hidden>Still</option></select>
       </div>
       <button type="button" class="icon-btn" aria-label="Close the Kingdom view" data-dialog-close onclick="triggerHaptic(40); closeKingdomScreen()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>

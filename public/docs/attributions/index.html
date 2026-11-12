@@ -35,6 +35,7 @@
       <li><a href="#advisory-databases">Advisory databases</a></li>
       <li><a href="#package-registries">Package registries</a></li>
       <li><a href="#what-pg1-keeps">What PG1 keeps</a></li>
+      <li><a href="#kingdom-defence-weather">Kingdom Defence: weather</a></li>
       <li><a href="#kingdom-defence-3d-assets">Kingdom Defence: 3D assets</a></li>
     </ul>
   </nav>
@@ -66,6 +67,14 @@
 <p>PG1 looks up one package per request, caches each answer (registry metadata for 1 hour, malicious-package status for 15 minutes), uses short timeouts, identifies itself in its User-Agent, and never crawls a registry in bulk.</p>
 <h2 id="what-pg1-keeps">What PG1 keeps</h2>
 <p>Nothing from a check is stored beyond the in-memory caches above. Usage telemetry records the tool name, how the call ended, its latency and a salted hash of the caller IP, never the package name or version.</p>
+<h2 id="kingdom-defence-weather">Kingdom Defence: weather</h2>
+<div class="table-wrap" tabindex="0"><table>
+<thead><tr><th scope="col">Source</th><th scope="col">Used for</th><th scope="col">Licence</th></tr></thead>
+<tbody>
+<tr><td><a href="https://open-meteo.com">Open-Meteo</a></td><td>the current weather in Dublin (weather code, cloud cover, wind, precipitation, day or night), read at most every 15 minutes and used only to draw the sky over PG1 City; never part of any check, count or result</td><td><a href="https://creativecommons.org/licenses/by/4.0/">CC-BY 4.0</a></td></tr>
+</tbody>
+</table></div>
+<p>Weather data by <a href="https://open-meteo.com">Open-Meteo.com</a>. When it cannot be read, the city shows a calm, clear sky at the real time of day.</p>
 <h2 id="kingdom-defence-3d-assets">Kingdom Defence: 3D assets</h2>
 <p>The PG1 Kingdom Defence view (the operator&#39;s live 3D view of real defence events) uses no third-party models, textures, HDR environments or sounds: the city, the figures, the drones, the water, the sky and the window lights are all generated in code in the browser. It runs on <a href="https://threejs.org">three.js</a> (MIT licence), served from this site. No third-party characters, logos or brands appear in it.</p>
   </article>
