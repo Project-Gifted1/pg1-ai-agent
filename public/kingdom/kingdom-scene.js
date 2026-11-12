@@ -518,6 +518,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       container.dataset.fired = JSON.stringify(actors.fired);
       container.dataset.shield = world.domeMesh.visible ? 'visible' : 'hidden';
       container.dataset.sentinels = String(actors.sentinels);
+      container.dataset.guards = String(actors.guards);
       container.dataset.lanterns = String(actors.lanterns);
       container.dataset.pg1MaxR = String(Math.round(actors.pg1MaxR));
       container.dataset.commander = actors.commanderMode;
