@@ -57,6 +57,13 @@ test('an interception, start to finish: detect, lock on, the gadget, the tag, th
   await page.waitForFunction(() => Number(document.getElementById('kingdom-view').dataset.guards || 0) === 10, null, { timeout: 60000 });
   assert.ok(ins.lifeCounts.aircraft >= 3 && ins.lifeCounts.airSeparation >= 50, JSON.stringify(ins.lifeCounts));
 
+  // Every director shot is recorded in the page as it happens, so a slow
+  // runner (or the screenshot below) can never make the test miss one.
+  await page.evaluate(() => {
+    const el = document.getElementById('kingdom-view'); window.__shots = [];
+    const note = () => { const s = el.dataset.shot; if (s && window.__shots[window.__shots.length - 1] !== s) window.__shots.push(s); };
+    new MutationObserver(note).observe(el, { attributes: true, attributeFilter: ['data-shot'] }); note();
+  });
   // A real malicious verdict arrives live (the fixture's own row shape).
   const h = fixtureCallerHashes();
   control.tables.pg1_defense_events.push({ created_at: new Date().toISOString(), check_name: 'check_agent_message', endpoint: '/api/mcp', verdict_code: 'malicious', reason_codes: ['AGENT_MESSAGE_PAYMENT_REDIRECT'], severity: 'high', subject_kind: 'skill_md', country_code: 'JP', caller_hash: h.c });
@@ -66,14 +73,14 @@ test('an interception, start to finish: detect, lock on, the gadget, the tag, th
   t.diagnostic(`detected after ${((Date.now() - t0) / 1000).toFixed(0)} s`);
   // Respond: the Truth Lens fires; the director's shot list runs (the gadget, then the tower).
   await page.waitForFunction(() => /truth_lens/.test(document.getElementById('kingdom-view').dataset.fired || ''), null, { timeout: 600000, polling: 250 });
-  await page.waitForFunction(() => ['gadget', 'tower'].includes(document.getElementById('kingdom-view').dataset.shot), null, { timeout: 120000, polling: 100 });
+  await page.waitForFunction(() => window.__shots.includes('gadget') || window.__shots.includes('tower'), null, { timeout: 120000, polling: 100 });
   await page.evaluate(() => window.kingdomUi.scene().pause(true)); mkdirSync(SHOTS_DIR, { recursive: true });
   await page.screenshot({ path: join(SHOTS_DIR, 'kingdom-intercept-412-test-fixture.png'), timeout: 120000 });
   await page.evaluate(() => window.kingdomUi.scene().pause(false));
-  const shots = new Set();
-  await page.waitForFunction(() => { const s = document.getElementById('kingdom-view').dataset.shot; (window.__shots ||= new Set()).add(s); return window.__shots.has('tower'); }, null, { timeout: 120000, polling: 100 });
-  shots.add('tower');
-  assert.ok(shots.has('tower'), 'the tower reaction shot');
+  await page.waitForFunction(() => window.__shots.includes('tower'), null, { timeout: 120000, polling: 250 });
+  const shots = await page.evaluate(() => window.__shots);
+  t.diagnostic(`shots: ${shots.join(' > ')}`);
+  assert.ok(shots.includes('gadget') && shots.indexOf('gadget') < shots.indexOf('tower'), 'the gadget close-up, then the tower reaction shot');
   // Resolve: the boat sinks; a marker buoy stays for the day.
   await page.waitForFunction(() => JSON.parse(document.getElementById('kingdom-view').dataset.intercepts || '{}').buoys >= 1, null, { timeout: 600000, polling: 500 });
   const after = await fx(page);
