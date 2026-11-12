@@ -62,7 +62,10 @@ export const CYCLE = 2 * (PHASES.green + PHASES.amber + PHASES.allRed + PHASES.p
 export const VEHICLE_TYPES = Object.freeze({
   car: { len: 4.5, wid: 1.9, v0: 13.5 },
   taxi: { len: 4.6, wid: 1.9, v0: 13.5 },
+  suv: { len: 4.8, wid: 2.0, v0: 13 },
+  motorbike: { len: 2.1, wid: 0.8, v0: 14 },
   van: { len: 5.8, wid: 2.1, v0: 12 },
+  lorry: { len: 9.5, wid: 2.5, v0: 11 },
   bus: { len: 12, wid: 2.5, v0: 10.5 }
 });
 export const inRiver = (z) => Math.abs(z - RIVER_Z) < RIVER_HALF;
@@ -202,7 +205,9 @@ export function createTraffic({ density = 1, seed = 11, cols = 6, rowsNorth = 4,
   // Bus stops: on some links, a third of the way along.
   if (busStops) for (const l of net.links) if (l.len > 100 && r() < 0.18) l.busStop = { s: Math.min(l.stopAt - 30, l.len * 0.45), people: 2 + Math.floor(r() * 5) };
 
-  const pickType = () => { const k = r(); return k < 0.74 ? 'car' : k < 0.84 ? 'taxi' : k < 0.94 ? 'van' : 'bus'; };
+  const pickType = () => { const k = r(); return k < 0.5 ? 'car' : k < 0.62 ? 'suv' : k < 0.72 ? 'taxi' : k < 0.77 ? 'motorbike' : k < 0.87 ? 'van' : k < 0.93 ? 'lorry' : 'bus'; };
+  // Long vehicles keep straight on wherever they can (no 10 m body swinging through a junction box).
+  const LONG = new Set(['bus', 'lorry']);
   const tailOf = (v) => v.s - v.len;
   // Free space at the start of a link for a vehicle of length len.
   const roomAtStart = (link, len) => {
@@ -230,7 +235,7 @@ export function createTraffic({ density = 1, seed = 11, cols = 6, rowsNorth = 4,
   function chooseNext(link, type) {
     // Buses keep to straight routes; nobody turns back the way they came.
     let opts = link.to.out.filter((o) => !(o.to === link.from));
-    if (type === 'bus') { const st = opts.filter((o) => turnOf(link, o) === 'straight'); if (st.length) opts = st; }
+    if (LONG.has(type)) { const st = opts.filter((o) => turnOf(link, o) === 'straight'); if (st.length) opts = st; }
     if (!opts.length) return null;
     const weights = opts.map((o) => (turnOf(link, o) === 'straight' ? 3 : 1));
     let k = r() * weights.reduce((a, b) => a + b, 0);
@@ -267,7 +272,7 @@ export function createTraffic({ density = 1, seed = 11, cols = 6, rowsNorth = 4,
       // detour), so queues round a block never lock into a cycle.
       v.blocked = (v.blocked || 0) + 1;
       if (v.blocked > 40) {
-        const alt = v.link.to.out.filter((o) => o !== v.next && o.to !== v.link.from && roomAtStart(o, v.len + 6) && (v.type !== 'bus' || turnOf(v.link, o) === 'straight'));
+        const alt = v.link.to.out.filter((o) => o !== v.next && o.to !== v.link.from && roomAtStart(o, v.len + 6) && (!LONG.has(v.type) || turnOf(v.link, o) === 'straight'));
         if (alt.length) { v.next = alt[Math.floor(r() * alt.length)]; v.blocked = 0; stats.rerouted = (stats.rerouted || 0) + 1; }
       }
       return false;

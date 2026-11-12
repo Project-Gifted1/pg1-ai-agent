@@ -63,14 +63,34 @@ export function createSound() {
       if (ctx && trafficGain) trafficGain.gain.setTargetAtTime(0.35 + wind * 0.15, ctx.currentTime, 2);
     },
     get weather() { return { ...weather }; },
-    // A real gadget fired: one soft two-note chime (at most every 1.5 s).
-    alert() {
+    // A real gadget fired: its own short cue (kingdom-sequences.js `cue`), at
+    // most one every 1.5 s. Synthesised: a lens hum, a net's whoosh, a gate's
+    // clang, a shield's thrum, a scanner's sweep, a repair's ratchet...
+    alert(cue = 'chime') {
       if (!on || !ctx) return;
       const now = ctx.currentTime; if (now - lastChime < 1.5) return; lastChime = now;
-      for (const [f, dt] of [[880, 0], [1320, 0.12]]) {
-        const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = f;
-        const g = ctx.createGain(); g.gain.setValueAtTime(0, now + dt); g.gain.linearRampToValueAtTime(0.18, now + dt + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, now + dt + 0.9);
-        o.connect(g); g.connect(master); o.start(now + dt); o.stop(now + dt + 1);
+      const tone = (f, at, dur, type = 'sine', peak = 0.16, glideTo = null) => {
+        const o = ctx.createOscillator(); o.type = type; o.frequency.setValueAtTime(f, now + at); if (glideTo) o.frequency.exponentialRampToValueAtTime(glideTo, now + at + dur);
+        const g = ctx.createGain(); g.gain.setValueAtTime(0, now + at); g.gain.linearRampToValueAtTime(peak, now + at + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, now + at + dur);
+        o.connect(g); g.connect(master); o.start(now + at); o.stop(now + at + dur + 0.05);
+      };
+      const noise = (at, dur, freq, q = 1, peak = 0.2) => {
+        const src = ctx.createBufferSource(); src.buffer = noiseBuffer('white');
+        const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(freq, now + at); bp.frequency.exponentialRampToValueAtTime(freq * 3, now + at + dur); bp.Q.value = q;
+        const g = ctx.createGain(); g.gain.setValueAtTime(0, now + at); g.gain.linearRampToValueAtTime(peak, now + at + dur * 0.3); g.gain.exponentialRampToValueAtTime(0.0001, now + at + dur);
+        src.connect(bp); bp.connect(g); g.connect(master); src.start(now + at); src.stop(now + at + dur + 0.05);
+      };
+      switch (cue) {
+        case 'lens': tone(220, 0, 1.2, 'sine', 0.12, 660); tone(880, 0.5, 0.6); break;
+        case 'net': noise(0, 0.7, 400, 0.8, 0.25); tone(330, 0.35, 0.5, 'triangle', 0.1); break;
+        case 'gate': tone(140, 0, 0.5, 'square', 0.08, 90); tone(1200, 0.02, 0.25, 'triangle', 0.08); break;
+        case 'shield': tone(70, 0, 1.0, 'sawtooth', 0.06, 55); noise(0, 0.5, 900, 2, 0.12); break;
+        case 'scanner': tone(500, 0, 0.8, 'sine', 0.1, 1500); tone(1500, 0.8, 0.15); break;
+        case 'repair': for (let k = 0; k < 4; k++) noise(k * 0.09, 0.07, 2500, 4, 0.12); break;
+        case 'vault': tone(110, 0, 0.6, 'square', 0.07, 70); break;
+        case 'toll': tone(660, 0, 0.3); tone(660, 0.35, 0.3); break;
+        case 'beacon': case 'welcome': tone(523, 0, 0.6); tone(784, 0.15, 0.7); break;
+        default: tone(880, 0, 0.9); tone(1320, 0.12, 0.9);
       }
     },
     dispose() { if (gullTimer) clearInterval(gullTimer); gullTimer = null; if (ctx) ctx.close(); ctx = null; on = false; }

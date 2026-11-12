@@ -43,11 +43,12 @@ export function coverCrop(sw, sh, w, h) {
 // The words on a clip. Exported for tests.
 // The badge, in frame for the whole clip.
 export function clipLabel(mode) {
-  return mode === 'replay' ? BADGE.replay : BADGE.live;
+  return mode === 'replay' ? BADGE.replay : mode === 'highlights' ? BADGE.highlights : BADGE.live;
 }
 export function clipCaption(e, mode) {
-  if (!e) return mode === 'replay' ? 'No defence events in the last 24 hours. The kingdom was calm.' : 'No attack right now. The kingdom is calm.';
-  return mode === 'replay' ? `${dublinTime(e.time)} · ${eventLine(e)}` : eventLine(e);
+  const past = mode === 'replay' || mode === 'highlights';
+  if (!e) return past ? 'No defence events in the last 24 hours. The kingdom was calm.' : 'No attack right now. The kingdom is calm.';
+  return past ? `${dublinTime(e.time)} · ${eventLine(e)}` : eventLine(e);
 }
 
 const SHIELD = 'M221.76 0L262.5 15.2V47.3C262.5 73.9 245.1 91.85 221.76 100C198.4 91.85 181 73.9 181 47.3V15.2Z';
