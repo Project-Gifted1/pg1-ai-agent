@@ -26,6 +26,8 @@
 
 import { at, CITY_R, RIVER, GATE_BEARINGS, PLAZA_R } from './kingdom-world.js';
 import { countryBearing, PG1_COLORS, defenceLine, reasonLabel } from './kingdom-data.js';
+import { sequenceFor, aftermathKey } from './kingdom-sequences.js';
+import { createInterceptFx } from './kingdom-fx.js';
 
 export { CITY_R };
 export function insideCity(p, r = CITY_R) { const d = Math.hypot(p.x, p.z); if (d <= r) return p; const k = r / d; return { ...p, x: p.x * k, z: p.z * k }; }
@@ -185,12 +187,25 @@ export function createActors(THREE, scene, world, settings) {
       { geo: new THREE.BoxGeometry(3.6, 0.8, 1.2), mat: M(0x22262c), offset: [0, 0.6, -1.6], swing: null }]),
     { geo: new THREE.BoxGeometry(2.4, 0.4, 0.2), mat: roverLight, offset: [0, 1.8, 2.45], swing: null, flat: true }
   ], 6);
+  // PG1's security guards at the tower: navy uniforms with gold hi-vis
+  // vests, patrolling inside the security fence; two posted at each gate.
+  const guardParts = [
+    { geo: new THREE.BoxGeometry(0.5, 0.62, 0.3), mat: M(0x1f2a44, { roughness: 0.8 }), offset: [0, 1.22, 0], swing: null },
+    { geo: new THREE.BoxGeometry(0.54, 0.4, 0.34), mat: M(PG1_COLORS.gold, { roughness: 0.6, emissive: PG1_COLORS.gold, emissiveIntensity: 0.25 }), offset: [0, 1.3, 0], swing: null },
+    ...(LEAN ? [] : [
+      { geo: new THREE.SphereGeometry(0.15, 8, 6), mat: M(0xc8a07a, { roughness: 0.8 }), offset: [0, 1.7, 0], swing: null },
+      { geo: new THREE.CylinderGeometry(0.17, 0.17, 0.08, 10), mat: M(0x14192a), offset: [0, 1.84, 0], swing: null },
+      { geo: (() => { const g = new THREE.BoxGeometry(0.16, 0.86, 0.18); g.translate(0, -0.43, 0); return g; })(), mat: M(0x14192a), offset: [-0.13, 0.9, 0], swing: 'legL' },
+      { geo: (() => { const g = new THREE.BoxGeometry(0.16, 0.86, 0.18); g.translate(0, -0.43, 0); return g; })(), mat: M(0x14192a), offset: [0.13, 0.9, 0], swing: 'legR' }
+    ])
+  ];
+  const guards = new Crowd(THREE, root, guardParts, 10);
   // Allies: lit boats and cargo ships (green), partner drones (green light).
   const allyBoats = new Crowd(THREE, root, boatParts(0xf5f7fa, 0x2a4a68, PG1_COLORS.green), 10);
   const cargoShips = new Crowd(THREE, root, boatParts(0xe9edf1, 0x2a4a68, PG1_COLORS.green).map((p, i) => (i === 0 ? { ...p, geo: new THREE.BoxGeometry(7, 2.6, 30) } : p)), 4);
   const partners = new Crowd(THREE, root, quadParts(THREE, M, PG1_COLORS.green, 0xdff7e8), 12, { fly: 1 });
-  const crowds = [scanners, swarm, darkBoats, signals, sentinels, commander, repair, pilots, rovers, allyBoats, cargoShips, partners];
-  const PG1_UNITS = [sentinels, commander, repair, pilots, rovers];
+  const crowds = [scanners, swarm, darkBoats, signals, sentinels, commander, repair, pilots, rovers, guards, allyBoats, cargoShips, partners];
+  const PG1_UNITS = [sentinels, commander, repair, pilots, rovers, guards];
   const ENEMIES = [scanners, swarm, darkBoats, signals];
   const S = phone ? 6.5 : 5.2; // drone scale: readable at 412 px in the default view
 
@@ -199,7 +214,10 @@ export function createActors(THREE, scene, world, settings) {
   const fired = {};
   let onFire = null;
   // A gadget acted on a real event: counted, the emblem pulses, the sound (if on) chimes.
-  const fire = (g, e) => { fired[g] = (fired[g] || 0) + 1; if (world.pulseEmblem) world.pulseEmblem(!!(e && e.severity === 'high')); if (onFire) { try { onFire(g, e); } catch (err) { /* never stops the view */ } } };
+  // The interception effects (kingdom-fx.js): lock-on, scan beams, tags, sparks, shockwaves, the day's traces.
+  const fx = createInterceptFx(THREE, root, settings, { dayKey: () => aftermathKey(Date.now()) });
+  const DECK_EYE = { x: 0, y: world.deckY + 6, z: 0 };
+  const fire = (g, e) => { if (e && e.severity === 'high') guardAlert = 12; fired[g] = (fired[g] || 0) + 1; if (world.pulseEmblem) world.pulseEmblem(!!(e && e.severity === 'high')); if (onFire) { try { onFire(g, e); } catch (err) { /* never stops the view */ } } };
 
   // --- ambient PG1 units ---
   const DOCK = { x: 0, y: world.deckY + 4, z: 14 };
@@ -208,6 +226,12 @@ export function createActors(THREE, scene, world, settings) {
   const bankZ = RIVER.z - RIVER.half - 7;
   for (let k = 0; k < (phone ? 4 : 6); k++) rovers.add({ x: -240 + k * 90, y: 0, z: bankZ, dir: k % 2 ? 1 : -1, speed: 6, scale: 1 });
   for (let k = 0; k < 6; k++) repair.add({ x: (k - 2.5) * 5, y: world.deckY - 6, z: -16, scale: S * 0.8, home: { x: (k - 2.5) * 5, y: world.deckY - 6, z: -16 }, target: null });
+
+  // The guards: six on patrol inside the fence, two posted at each gate.
+  const sec = world.security || { fenceR: 35, gates: [] };
+  for (let k = 0; k < 6; k++) guards.add({ patrol: true, a0: (k / 6) * Math.PI * 2, dir: k % 2 ? 1 : -1, r: sec.fenceR - 1.6, speed: 1.3, scale: 1 });
+  for (const g of sec.gates) for (const off of [-1.4, 1.4]) guards.add({ post: { x: g.x + off, z: g.z - g.side * 1.2 }, face: g.side > 0 ? 0 : Math.PI, scale: 1, speed: 0 });
+  let guardAlert = 0;
 
   // Sentinels: one per live check, in rings round the tower and over the skyline.
   function setSentinels(n) {
@@ -279,6 +303,27 @@ export function createActors(THREE, scene, world, settings) {
         break;
       default: break;
     }
+    // The interception's own beats (kingdom-sequences.js): the tag flips to
+    // what PG1 caught it by, sparks at the contact, a shockwave at the gadget.
+    const seq = group.seq;
+    if (seq) {
+      if (group.tagH) fx.retag(group.tagH, seq.tag.caught);
+      const P = settings.legacy ? 12 : seq.particles === 'many' ? 70 : 36;
+      fx.sparks(lp, e.gadget === 'rate_shield' || e.gadget === 'phishing_net' ? PG1_COLORS.cyan : PG1_COLORS.gold, P);
+      fx.shockwave({ x: group.cx, y: group.kind === 'boat' ? -2.8 : group.cy, z: group.cz }, PG1_COLORS.white, group.kind === 'boat' ? 26 : 16);
+      if (e.gadget === 'rate_shield') {
+        // The flood hits the shield: an impact where each drone of the real wave struck.
+        group.agents.slice(0, Math.min(settings.legacy ? 4 : 12, seq.wave || 1)).forEach((a, i) => {
+          group.impacts = group.impacts || []; group.impacts.push({ a, at: i * 0.18 });
+        });
+        // Sentinels form a ring at the gate (inside the city), then go back to patrol.
+        const gp = world.gates[group.gate] ? world.gates[group.gate].inside : { x: group.cx * 0.8, y: 40, z: group.cz * 0.8 };
+        let k = 0;
+        for (const sn of sentinels.agents) { if (sn.escort || k >= 6) continue; const ang = (k / 6) * Math.PI * 2; sn.escort = e.id; sn.post = insideCity({ x: gp.x + Math.cos(ang) * 14, y: (gp.y || 30) + 18 + Math.sin(ang) * 6, z: gp.z + Math.sin(ang) * 14 }); group.ring = (group.ring || []).concat(sn); k++; }
+      }
+      if (e.gadget === 'gate_wardens' || e.gadget === 'sanctions_gate' || e.gadget === 'toll_bridge') fx.shockwave({ x: group.cx, y: group.cy + 4, z: group.cz }, PG1_COLORS.gold, 10, { normal: { x: group.cx, y: 0, z: group.cz, clone() { return new THREE.Vector3(this.x, 0, this.z); } } });
+      if (e.gadget === 'supply_inspector' && world.xray) fx.scanBeam({ x: world.harbour.point.x, y: 30, z: world.harbour.point.z }, lead, 2.4);
+    }
     // Any gadget answering at the edge makes the shield ripple where the traffic hit.
     const hb = Math.atan2(group.cx, -group.cz);
     world.dome.uHit.value.set(Math.sin(hb), e.gadget === 'rate_shield' ? 0.5 : 0.25, -Math.cos(hb)); world.dome.uHitT.value = 0;
@@ -315,12 +360,13 @@ export function createActors(THREE, scene, world, settings) {
       target = { x: g.mouth.x, y: g.mouth.y + (gate === 'south' ? 6 : 0), z: g.mouth.z };
     }
     const n = Math.max(1, Math.min(delta, perEventCap, crowd.free, kind === 'boat' ? 3 : 999));
-    const group = groups.get(event.id) || { event, agents: [], gate, kind, phase: 'advance', t: 0, cx: target.x, cy: target.y, cz: target.z, start };
+    const group = groups.get(event.id) || { event, agents: [], gate, kind, phase: 'advance', t: 0, cx: target.x, cy: target.y, cz: target.z, start, detected: false };
     group.event = event;
+    group.seq = sequenceFor(event, { tier: settings.tier });
     for (let k = 0; k < n; k++) {
       const jx = (k % 7 - 3) * (kind === 'boat' ? 22 : 6); const jy = Math.floor(k / 7) * 5;
       const a = crowd.add({ x: start.x + (kind === 'boat' ? jx : jx * 0.6), y: start.y + (kind === 'boat' ? 0 : jy), z: start.z + (kind === 'boat' ? 0 : jx * 0.6), tx: target.x + (kind === 'boat' ? jx * 0.4 : jx * 0.5), ty: target.y + (kind === 'boat' ? 0 : jy * 0.5), tz: target.z + (kind === 'boat' ? 0 : jx * 0.5), speed: kind === 'boat' ? 30 : kind === 'signal' ? 70 : 48, eventId: event.id, delay: k * 0.05, scale: kind === 'boat' ? 1 : kind === 'swarm' ? S * 0.6 : kind === 'signal' ? 2.4 : S });
-      if (a) group.agents.push(a);
+      if (a) { if (kind === 'boat') a.isBoat = true; group.agents.push(a); }
     }
     groups.set(event.id, group);
     // The nearest free sentinel turns to the threat and escorts it, from inside the city.
@@ -367,6 +413,8 @@ export function createActors(THREE, scene, world, settings) {
         let n = 0;
         for (const r of repair.agents) { if (r.target || n >= 2) continue; r.target = insideCity({ x: spot.x + (n ? 8 : -8), y: spot.y + 6, z: spot.z }); r.until = now + 9000; n++; }
         defenceLabel(event, { x: spot.x, y: spot.y + 16, z: spot.z });
+        fx.aftermath('patch', { x: spot.x, y: spot.y, z: spot.z });
+        fx.sparks({ x: spot.x, y: spot.y + 4, z: spot.z }, 0xffd27a, 30);
         break;
       }
       default: return;
@@ -392,9 +440,34 @@ export function createActors(THREE, scene, world, settings) {
           else { moveTo(a, g.start, a.speed, dt); const rr = Math.hypot(a.x, a.z); if (rr > CITY_R + 150) a.fade = Math.max(0, a.fade - dt * 0.6); }
         }
       }
+      // Detect: as the threat closes in, a sentinel scans it and locks on.
+      if (g.phase === 'advance' && !g.detected && g.seq && g.seq.tag) {
+        const lead = g.agents.find((a) => a.delay <= 0) || g.agents[0];
+        const near = lead && Math.hypot(lead.x - g.cx, lead.z - g.cz) < (g.kind === 'boat' ? 260 : 170);
+        if (lead && (near || g.t > 7)) {
+          g.detected = true;
+          g.lockH = fx.lockOn(lead);
+          for (const a of g.agents.slice(1, settings.legacy ? 1 : 4)) fx.lockOn(a);
+          g.tagH = fx.tag(lead, g.seq.tag.scanning);
+          fx.scanBeam(g.escort || DECK_EYE, lead, 1.8);
+        }
+      }
       if (g.phase === 'advance' && (arrived >= Math.ceil(g.agents.length * 0.6) || g.t > 40)) { g.phase = 'hold'; g.hold = 2.4; respond(g); }
-      if (g.phase === 'hold') { g.hold -= dt; if (g.hold <= 0) g.phase = 'retreat'; }
+      // The flood's impacts on the shield, one after another.
+      if (g.impacts && g.impacts.length) {
+        for (const im of g.impacts) im.at -= dt;
+        for (const im of g.impacts.filter((x) => x.at <= 0)) { const a = im.a; const nrm = new THREE.Vector3(a.x, a.y, a.z).normalize(); fx.shockwave({ x: a.x, y: a.y, z: a.z }, PG1_COLORS.cyan, 7, { normal: nrm }); fx.sparks({ x: a.x, y: a.y, z: a.z }, PG1_COLORS.cyan, settings.legacy ? 8 : 18); }
+        g.impacts = g.impacts.filter((x) => x.at > 0);
+      }
+      if (g.phase === 'hold') { g.hold -= dt; if (g.hold <= 0) { g.phase = 'retreat'; fx.release(g.lockH); } }
       if (g.phase === 'retreat' && g.agents.every((a) => a.fade <= 0.02)) g.phase = 'gone';
+      if ((g.phase === 'gone' || g.t > 120) && g.seq && g.seq.aftermath && !g.traced) {
+        g.traced = true;
+        // What stays for the day: a marker buoy where a threat sank, a scorch ring where a flood hit.
+        if (g.seq.aftermath === 'buoy' && g.kind === 'boat') fx.aftermath('buoy', { x: g.cx, z: g.cz });
+        if (g.seq.aftermath === 'scorch') fx.aftermath('scorch', { x: g.cx, z: g.cz });
+      }
+      if (g.ring && (g.phase === 'gone' || g.t > 14)) { for (const sn of g.ring) if (sn.escort === g.event.id) { sn.escort = null; sn.post = null; } g.ring = null; }
       if (g.phase === 'gone' || g.t > 120) { const set = new Set(g.agents); for (const c of ENEMIES) c.remove((a) => set.has(a)); if (g.escort) { g.escort.escort = null; g.escort.post = null; } groups.delete(id); }
     }
     // Sentinels: patrol rings; an escort hovers inside the city facing the threat.
@@ -452,6 +525,14 @@ export function createActors(THREE, scene, world, settings) {
     for (const l of labels) { l.ttl -= dt; l.sp.position.y = l.y0 + Math.min(4, (6 - l.ttl) * 0.6); l.sp.material.opacity = Math.min(1, Math.max(0, l.ttl)); }
     for (let i = labels.length - 1; i >= 0; i--) if (labels[i].ttl <= 0) { root.remove(labels[i].sp); labels[i].sp.material.map.dispose(); labels[i].sp.material.dispose(); labels.splice(i, 1); }
     for (const c of PG1_UNITS) for (const a of c.agents) { const rr = Math.hypot(a.x, a.z); if (rr > pg1MaxR) pg1MaxR = rr; }
+    // Guards: a slow patrol round the inside of the fence; the posted ones
+    // stand at their gates and turn to face out when a serious threat is on.
+    guardAlert = Math.max(0, guardAlert - dt);
+    for (const g of guards.agents) {
+      if (g.patrol) { const ang = g.a0 + g.dir * t * (g.speed / g.r) * (guardAlert > 0 ? 1.8 : 1); g.x = Math.cos(ang) * g.r; g.z = Math.sin(ang) * g.r; g.y = 0; g.heading = Math.atan2(-Math.sin(ang) * g.dir, Math.cos(ang) * g.dir); g.speed = guardAlert > 0 ? 2.3 : 1.3; g.phase += dt * (guardAlert > 0 ? 9 : 6); }
+      else if (g.post) { g.x = g.post.x; g.z = g.post.z; g.y = 0; g.heading = guardAlert > 0 ? g.face : g.face + Math.sin(t * 0.3 + g.post.x) * 0.6; }
+    }
+    fx.update(dt, t, camera);
     for (const c of crowds) c.write(t, camTmp);
   }
 
@@ -482,6 +563,8 @@ export function createActors(THREE, scene, world, settings) {
     get pg1MaxR() { return pg1MaxR; },
     get sentinels() { return sentinels.live; },
     get lanterns() { return lanternsLit; },
+    get intercepts() { return fx.counts(); },
+    get guards() { return guards.live; },
     get attackers() { return ENEMIES.reduce((n, c) => n + c.live, 0); },
     // Every hull on the river (event boats and PG1's pilots), so the city's
     // own boats keep clear of them: { x, z, len, wid }.
@@ -491,6 +574,6 @@ export function createActors(THREE, scene, world, settings) {
       return out;
     },
     get activeIds() { return [...groups.keys(), ...allyBoats.agents.filter((b) => b.leg < b.path.length).map((b) => b.eventId), ...cargoShips.agents.filter((b) => b.leg < b.path.length).map((b) => b.eventId)]; },
-    dispose() { scene.remove(root); root.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); }); }); }
+    dispose() { fx.dispose(); scene.remove(root); root.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); }); }); }
   };
 }

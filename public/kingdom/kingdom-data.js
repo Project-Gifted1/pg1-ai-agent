@@ -169,7 +169,8 @@ export const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many
 export const BADGE = Object.freeze({
   live: '● LIVE · Real PG1 events — not a simulation',
   paused: 'Feed paused — showing last real events',
-  replay: 'Real PG1 events — time-lapsed replay, not a simulation'
+  replay: 'Real PG1 events — time-lapsed replay, not a simulation',
+  highlights: 'Real PG1 events — today\'s highlights, replayed, not a simulation'
 });
 export const FEED_HEADING = 'Last 24 hours · Real PG1 events — not a simulation';
 

@@ -20,6 +20,7 @@
 // pulses only while the feed answers; when it stops answering the badge
 // says "Feed paused — showing last real events" and nothing new plays.
 
+import { sequenceFor, pickHighlights } from './kingdom-sequences.js';
 import { createEventStore, eventLine, enemyLine, defenceLine, dublinTime, verdictText, reasonLabel, replaySchedule, normalizeState, flagOf, originTag, plural, whenLabel, captionLine, tickerLine, countriesText, BADGE, GADGET_META } from './kingdom-data.js';
 
 export const KINGDOM_POLL_MS = 5000;
@@ -40,7 +41,8 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&':
 export function feedRowHtml(e) {
   const reason = e.reasons.length ? ` · ${esc(reasonLabel(e.reasons[0]))}` : '';
   const where = e.role === 'kingdom' ? 'PG1' : e.country ? originTag(e) : (e.check === 'operator_signin' ? '—' : 'fog');
-  return `<li class="kd-row" data-role="${esc(e.role)}" data-sev="${esc(e.severity)}" data-id="${esc(e.id)}">`
+  // Each row replays its interception in the scene (tap, or Enter): tabbable, a button to screen readers.
+  return `<li class="kd-row" data-role="${esc(e.role)}" data-sev="${esc(e.severity)}" data-id="${esc(e.id)}" role="button" tabindex="0" aria-label="Replay: ${esc(eventLine(e))}">`
     + `<time datetime="${new Date(e.time).toISOString()}">${esc(dublinTime(e.time))}</time>`
     + `<span class="kd-cc" aria-label="${e.country ? `country ${esc(e.country)}` : esc(where)}">${esc(where)}</span>`
     + `<span class="kd-what"><strong>${esc((GADGET_META[e.gadget] || {}).name || e.gadget)}</strong> · ${esc(e.check)} · ${esc(verdictText(e))}${reason} · <code aria-label="${e.caller ? `caller ${esc(e.caller)}` : 'no caller identity'}">${e.caller ? esc(e.caller) : '—'}</code></span>`
@@ -80,7 +82,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
   const store = createEventStore();
   let scene = null; let open = false; let pollTimer = null; let miniTimer = null; let lastAt = 0; let gadgets = []; let opening = null;
   let recording = null; let replaying = false; let replayTimers = []; let clipUrl = null;
-  let pg1State = null; let loaded = false; let lastRec = null; let sound = null; let lastWeather = null;
+  let pg1State = null; let loaded = false; let lastRec = null; let sound = null; let lastWeather = null; let lastReplay = null;
   let connected = false; let fails = 0; let lastOkAt = 0;
   const liveIds = new Set(); const replayIds = new Set();
   let ticker = []; let arcs = []; let captionEvent = null; let tickTimer = null; let pip = null; let introDone = false;
@@ -97,7 +99,31 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     } catch (e) { return null; }
   }
 
+  // Replay one real interception from the feed: staged again in the scene,
+  // captioned as a replay with its real time (never LIVE), the director on it.
+  function replayEvent(id) {
+    const e = store.get(id);
+    if (!e || !scene || scene.renderer !== 'webgl' || recording) return false;
+    replayIds.add(e.id); liveIds.delete(e.id);
+    scene.ingest([{ event: e, delta: Math.min(Math.max(1, e.count), 8) }]);
+    if (scene.setDirector) scene.setDirector(true);
+    const dir = $('kingdom-director'); if (dir) dir.setAttribute('aria-pressed', 'true');
+    if (scene.cutTo) scene.cutTo(e.id);
+    lastReplay = e.id;
+    return true;
+  }
+  let feedWired = false;
+  function wireFeed() {
+    const feed = $('kingdom-feed');
+    if (!feed || feedWired) return;
+    feedWired = true;
+    const go = (ev) => { const row = ev.target && ev.target.closest ? ev.target.closest('.kd-row[data-id]') : null; if (row) replayEvent(row.dataset.id); };
+    feed.addEventListener('click', go);
+    feed.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(ev); } });
+  }
+
   function renderSide() {
+    wireFeed();
     const list = store.list().filter((e) => !isPayment(e));
     const feed = $('kingdom-feed');
     if (feed) feed.innerHTML = list.length ? list.slice(0, FEED_ROWS).map(feedRowHtml).join('') : '<li class="kd-empty">No defence events in the last 24 hours. The kingdom is calm.</li>';
@@ -292,7 +318,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
       if (!scene) {
         try {
           const mod = await import('./kingdom-scene.js');
-          scene = await mod.createKingdomScene(holder, { reducedMotion: reduced, coarse, onCaption: setCaption, onTier: markTier, onGadget: () => { if (sound) sound.alert(); } });
+          scene = await mod.createKingdomScene(holder, { reducedMotion: reduced, coarse, onCaption: setCaption, onTier: markTier, onGadget: (g, e) => { if (sound) { const sq = e ? sequenceFor(e) : null; sound.alert(sq ? sq.cue : 'chime'); } } });
           const ls = $('kingdom-light'); if (ls) ls.value = 'live';
           markTier(scene.tier());
         } catch (e) { scene = null; }
@@ -334,7 +360,8 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     if (!scene || scene.renderer !== 'webgl') { recStatus('Recording needs the 3D view (it is off with reduced motion).'); return; }
     const aspect = ($('kingdom-record-aspect') || {}).value || '16:9';
     const seconds = Number(($('kingdom-record-length') || {}).value) || 30;
-    const mode = ($('kingdom-record-mode') || {}).value === 'replay' ? 'replay' : 'live';
+    const modeSel = ($('kingdom-record-mode') || {}).value;
+    const mode = modeSel === 'replay' ? 'replay' : modeSel === 'highlights' ? 'highlights' : 'live';
     const mod = await import('./kingdom-record.js');
     const coarse = !!(globalThis.matchMedia && globalThis.matchMedia('(pointer: coarse)').matches);
     const rec = mod.createRecording(scene, { aspect, seconds, mode, coarse, legacy: scene.tier && scene.tier() === 'legacy', caption: () => scene.caption(), captionText: () => captionText(scene.caption()), countries: () => ({ n: store.origins.length, strip: flagStrip(store.origins) }), day: () => store.day, onTick: (t) => recStatus(`Recording ${Math.floor(t)} / ${seconds} s`), onDone: finishRecording });
@@ -344,6 +371,16 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     const lightSel = $('kingdom-light'); if (lightSel) lightSel.value = 'dusk';
     // The end card: back to the tower for the day's counts.
     setTimeout(() => { if (recording === rec && scene) { scene.setDirector(false); scene.focus(null); } }, Math.max(0, (seconds - 3.5) * 1000));
+    if (mode === 'highlights') {
+      // The day's top real interceptions (one per gadget), each given room
+      // for its whole sequence and the director's shots.
+      const top = pickHighlights(store.list(), 3, lastAt || Date.now());
+      replaying = true;
+      for (const e of top) { replayIds.add(e.id); liveIds.delete(e.id); }
+      renderBadge();
+      const gap = Math.max(6000, Math.floor((seconds * 1000 - 4000) / Math.max(1, top.length)));
+      replayTimers = top.map((e, i) => setTimeout(() => { if (scene) { scene.ingest([{ event: e, delta: Math.min(e.count, 12) }]); scene.cutTo(e.id); } }, 500 + i * gap));
+    }
     if (mode === 'replay') {
       // The day's real events, in their real order, compressed into the clip.
       const plan = replaySchedule(store.list(), seconds * 1000, { now: lastAt || Date.now() });
@@ -424,7 +461,8 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     toggleRecordPanel() { const p = $('kingdom-record'); if (p) { p.hidden = !p.hidden; const b = $('kingdom-record-btn'); if (b) b.setAttribute('aria-expanded', p.hidden ? 'false' : 'true'); } },
     isRecording: () => !!recording,
     // For the tests: the claim and the live state as shown.
-    status: () => ({ connected, fails, live: [...liveIds], replay: [...replayIds], ticker: ticker.map((e) => e.id), recTexts: lastRec ? lastRec.texts : [] }),
+    replay: (id) => replayEvent(id),
+    status: () => ({ connected, fails, lastReplay, live: [...liveIds], replay: [...replayIds], ticker: ticker.map((e) => e.id), recTexts: lastRec ? lastRec.texts : [] }),
     scene: () => scene,
     store
   };

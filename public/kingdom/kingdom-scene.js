@@ -38,6 +38,7 @@ import { createLife } from './kingdom-life.js';
 import { loadBrand, BRAND_SVG_URL } from './kingdom-emblem.js';
 import { dublinSun, daylight, pickDirectorEvent, normalizeState, windowRatios, dublinHour, weatherLook, GADGET_META } from './kingdom-data.js';
 import { createWeatherFx } from './kingdom-weather.js';
+import { sequenceFor } from './kingdom-sequences.js';
 import { mergeStatic, simplifyInstances, createLegacyWatch } from './kingdom-legacy.js';
 
 // The hero look: golden hour, the sun low in the west behind the tower.
@@ -292,7 +293,15 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     for (const grp of world.emblemMeshes) grp.traverse((m) => { if (m.isMesh && m.material && m.material.isMeshPhysicalMaterial) { m.material.envMap = envTex; m.material.needsUpdate = true; } });
   } catch (e) { /* the scene's light is enough */ }
   const actors = createActors(THREE, scene, world, settings);
-  actors.onFire = (g, e) => { if (onGadget) onGadget(g, e); };
+  // A high-severity interception gets the director's shot list
+  // (kingdom-sequences.js): the gadget acting close up, the tower's
+  // reaction, then back. Never on Legacy phone, never with the director off.
+  let shotPlan = null;
+  actors.onFire = (g, e) => {
+    if (onGadget) onGadget(g, e);
+    const seq = e ? sequenceFor(e, { tier }) : null;
+    if (director && seq && seq.shots.length && !settings.legacy) shotPlan = { t0: performance.now(), id: e.id, shots: seq.shots, pos: actors.whereIs(e.id) };
+  };
   const life = createLife(THREE, scene, world, settings);
 
   // Image-based light from the sky (Balanced and up), refreshed every few minutes.
@@ -458,8 +467,22 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       container.dataset.weather = look.state;
       container.dataset.weatherSource = look.source;
     }
+    // The shot list of a high-severity interception, while it runs.
+    let shotNow = null;
+    if (shotPlan) {
+      const el = (now - shotPlan.t0) / 1000;
+      const cur = shotPlan.shots.filter((x) => x.at <= el && x.shot !== 'wide').pop();
+      if (!director || (cur && cur.shot === 'release') || el > 8) { shotPlan = null; lastCut = now; }
+      else if (cur) {
+        shotNow = cur.shot;
+        const p = actors.whereIs(shotPlan.id) || shotPlan.pos;
+        if (cur.shot === 'gadget' && p) controls.flyTo({ target: new THREE.Vector3(p.x, p.y + 3, p.z), dist: coarse ? 95 : 75, phi: 1.12 });
+        if (cur.shot === 'tower') controls.flyTo({ target: new THREE.Vector3(0, world.emblemY || 170, 0), dist: coarse ? 260 : 210, theta: HV.theta, phi: 1.36 });
+      }
+    }
+    container.dataset.shot = shotNow || '';
     // Director: cut to the most important live event every few seconds.
-    if (director && now - lastCut > DIRECTOR_CUT_MS) {
+    if (!shotNow && director && now - lastCut > DIRECTOR_CUT_MS) {
       lastCut = now;
       const live = actors.activeIds.map((id) => events.get(id)).filter(Boolean);
       const pick = pickDirectorEvent(live, Date.now(), { exclude: live.length > 1 ? focusId : null }) || (live.length ? live[0] : null);
@@ -468,7 +491,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       // Nothing playing for a while: pull back to the aerial view.
       if (!pick && focusId && now - lastLive > 4000) focus(null);
     }
-    if (focusId) {
+    if (focusId && !shotNow) {
       const p = actors.whereIs(focusId);
       // A close-up framed from outside: the clearance below keeps it out of buildings.
       if (p) { focusPoint.set(p.x, p.y + 4, p.z); controls.flyTo({ target: focusPoint, dist: coarse ? 150 : 130, phi: 0.95 }); }
@@ -498,6 +521,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       container.dataset.lanterns = String(actors.lanterns);
       container.dataset.pg1MaxR = String(Math.round(actors.pg1MaxR));
       container.dataset.commander = actors.commanderMode;
+      container.dataset.intercepts = JSON.stringify(actors.intercepts);
       container.dataset.camInside = String(camInside);
       // The sky has eased to the real weather (sky, fog and clouds).
       container.dataset.weatherSettled = Math.abs(storm - look.dark) < 0.01 && (world.cloudLag || 0) < 0.01 ? 'yes' : 'no';
