@@ -16,6 +16,7 @@
  * Run with: node --test tests/defense-feed.test.mjs
  */
 
+import { __resetCityWeather } from '../lib/cityWeather.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -258,8 +259,8 @@ function mockRes() {
 }
 
 test('/api/defense-feed: the signed-in operator only, and polls with ?since', async () => {
-  __resetDefenseFeedCache();
-  const { fetchImpl } = fakeDb(TABLES);
+  __resetDefenseFeedCache(); __resetCityWeather();
+  const { fetchImpl, reads } = fakeDb(TABLES);
   const guest = createDefenseFeedHandler({ session: async () => ({ isOperator: false, rateLimited: false }), vault: { supUrl: 'https://db.test', supKey: 'k' }, fetchImpl, now: () => NOW, env: {} });
   const r1 = mockRes();
   await guest({ method: 'GET', headers: {}, url: '/api/defense-feed' }, r1);
@@ -276,6 +277,7 @@ test('/api/defense-feed: the signed-in operator only, and polls with ?since', as
   assert.equal(r2.headers['cache-control'], 'no-store');
   assert.ok(r2.body.events.length > 0);
   assert.equal(r2.body.poll_ms, 5000);
+  assert.ok(reads.some((r) => r.table === 'forecast'), 'the weather goes through the injected fetch, never the network');
   const r3 = mockRes();
   await op({ method: 'GET', headers: {}, url: '/api/defense-feed' }, r3);
   assert.equal(r3.body.cached, true);

@@ -37,7 +37,9 @@ function vault() {
   try { return getSupabaseCreds(); } catch (e) { return { supUrl: null, supKey: null }; }
 }
 
-// opts (tests): { env, now, fetchImpl, session, vault }
+// opts (tests): { env, now, fetchImpl, session, vault, weather, weatherFetch }
+// An injected fetchImpl also serves the weather unless weatherFetch is given,
+// so a test handler never reaches the network.
 export function createDefenseFeedHandler(opts = {}) {
   return async function handler(req, res) {
     res.setHeader('Content-Type', 'application/json');
@@ -70,7 +72,7 @@ export function createDefenseFeedHandler(opts = {}) {
         body.state = stateCache.state;
         // The real Dublin weather for the city's sky (decoration only, cached
         // 15 minutes; lib/cityWeather.mjs). Never part of any count.
-        body.weather = await (opts.weather || cityWeather)({ fetchImpl: opts.weatherFetch || globalThis.fetch, now }).catch(() => null);
+        body.weather = await (opts.weather || cityWeather)({ fetchImpl: opts.weatherFetch || fetchImpl, now }).catch(() => null);
       }
       if (since == null) cache = { at: now, body };
       return res.status(200).json({ ...body, cached: false });
