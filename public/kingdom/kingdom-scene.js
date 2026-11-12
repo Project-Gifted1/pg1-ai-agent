@@ -663,6 +663,8 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       const fbBytes = W * H * 4 * 3 + (settings.shadows ? settings.shadows * settings.shadows * 4 : 0);
       return { tier, calls: lastInfo.calls, triangles: lastInfo.triangles, textures: seen.size, maxTexture: maxTex, gpuMemoryMB: Math.round((texBytes + geoBytes + fbBytes) / 1048576), targetFps: settings.targetFps, pixelRatio: renderer.getPixelRatio(), life: life.counts(), weather: wx.counts() };
     },
+    // For screenshots: where the aircraft are now.
+    aircraft: () => life.air().aircraft.map((c) => ({ kind: c.kind, x: Math.round(c.x), y: Math.round(c.y), z: Math.round(c.z) })),
     // For screenshots: the junction with the longest queue now.
     busiestJunction: () => life.traffic.busiest(),
     // For screenshots: the tallest towers near the centre (x, z, height, width).
