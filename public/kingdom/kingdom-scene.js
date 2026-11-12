@@ -256,6 +256,8 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   container.dataset.renderer = 'webgl';
   container.dataset.tier = tier;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // Count every pass of a frame (post-processing renders several times).
+  renderer.info.autoReset = false;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 0.95;
   renderer.shadowMap.enabled = !!settings.shadows;
@@ -485,6 +487,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     if (hardY > camera.position.y) camera.position.y = hardY;
     camera.lookAt(controls.target);
     if (world.obstacles.hit(camera.position.x, camera.position.y, camera.position.z, 0)) camInside++;
+    renderer.info.reset();
     if (post) post.render(false); else renderer.render(scene, camera);
     lastInfo.calls = renderer.info.render.calls; lastInfo.triangles = renderer.info.render.triangles;
     container.dataset.attackers = String(actors.attackers);
