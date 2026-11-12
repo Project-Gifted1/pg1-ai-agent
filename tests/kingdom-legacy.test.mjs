@@ -53,7 +53,7 @@ test('Legacy settings: 30 fps, nothing heavy, textures capped, density cut', () 
   assert.equal(s.shafts, false, 'no light shafts');
   assert.equal(s.pixelRatio, 1);
   assert.equal(s.maxTexture, 1024);
-  assert.ok(s.lifeScale < kingdomSettings('phone').crowdCap / 100 && s.lifeScale <= 0.25);
+  assert.ok(s.lifeScale < kingdomSettings('phone').crowdCap / 100 && s.lifeScale <= 0.3);
   assert.ok(s.weatherScale <= 0.35, 'simple, sparse rain');
   assert.ok(s.far <= 3000, 'distance culling: a near far plane');
   assert.deepEqual({ ...LEGACY_BUDGET }, { drawCalls: 150, triangles: 150000, maxTexture: 1024, gpuMemoryMB: 300, targetFps: 30 });

@@ -72,6 +72,11 @@ export function createLife(THREE, scene, world, settings) {
   const sprayGeo = new THREE.PlaneGeometry(2.2, 3.5); sprayGeo.rotateX(-Math.PI / 2); sprayGeo.translate(0, 0.5, -1.75);
   const sprayMat = new THREE.MeshBasicMaterial({ map: softTex, color: 0xc9d3dd, transparent: true, opacity: 0, depthWrite: false });
   const spray = dyn(named(new THREE.InstancedMesh(sprayGeo, sprayMat, CAP), 'road-spray'));
+  // Wet nights: headlights throw a glossy streak on the road ahead (one draw call).
+  const glareGeo = new THREE.PlaneGeometry(2.4, 14); glareGeo.rotateX(-Math.PI / 2); glareGeo.translate(0, 0.07, 9);
+  const glareMat = new THREE.MeshBasicMaterial({ map: softTex, color: LIFE_COLOURS.head, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+  const glare = dyn(named(new THREE.InstancedMesh(glareGeo, glareMat, CAP), 'wet-road-glare'));
+  root.add(glare);
   for (let i = 0; i < CAP; i++) carBodies.setColorAt(i, new THREE.Color(carPalette[i % carPalette.length]));
   for (const m of [carBodies, carCabs, vans, buses, heads, tails, spray]) root.add(m);
   if (settings.legacy) carCabs.visible = false; // the cabin is the body's darker top on Legacy phone
@@ -309,7 +314,8 @@ export function createLife(THREE, scene, world, settings) {
       approaches.forEach(({ j, l }, i) => { const s = signalFor(j, l.axis, traffic.time); if (s !== lastSig[i]) { lastSig[i] = s; tlLights.setColorAt(i, tlColour[s]); sigDirty = true; } });
       if (sigDirty && tlLights.instanceColor) tlLights.instanceColor.needsUpdate = true;
       // Vehicles.
-      let ci = 0; let vi = 0; let bi = 0; let si = 0;
+      let ci = 0; let vi = 0; let bi = 0; let si = 0; let gi = 0;
+      const wetNight = wet > 0.3 && dark > 0.4;
       const vs = traffic.vehicles;
       for (let i = 0; i < vs.length; i++) {
         const v = vs[i];
@@ -325,8 +331,10 @@ export function createLife(THREE, scene, world, settings) {
         set(heads, i, x + fx, y + 0.8, z + fz, ry); set(tails, i, x - fx, y + 0.9, z - fz, ry);
         // Spray off the tyres on a wet road, more the faster it goes.
         if (wet > 0.3 && v.v > 4) set(spray, si++, x - fx, y, z - fz, ry, 1, 1, Math.min(1.6, v.v / 8));
+        if (wetNight) set(glare, gi++, x + fx, y, z + fz, ry);
       }
-      carBodies.count = carCabs.count = ci; vans.count = vi; buses.count = bi; heads.count = tails.count = vs.length; spray.count = si;
+      carBodies.count = carCabs.count = ci; vans.count = vi; buses.count = bi; heads.count = tails.count = vs.length; spray.count = si; glare.count = gi; glare.visible = gi > 0;
+      glareMat.opacity = wetNight ? 0.35 * Math.min(1, wet) * Math.min(1, dark) : 0; glare.instanceMatrix.needsUpdate = true;
       sprayMat.opacity = Math.max(0, wet - 0.3) * 0.5 * (0.6 + rain * 0.4);
       if (carBodies.instanceColor) carBodies.instanceColor.needsUpdate = true;
       for (const m of [carBodies, carCabs, vans, buses, heads, tails, spray]) m.instanceMatrix.needsUpdate = true;
@@ -409,7 +417,8 @@ export function createLife(THREE, scene, world, settings) {
       if (craneLight) craneLight.material.color.setHex((t % 2) < 0.25 ? LIFE_COLOURS.strobe : 0x4a4a4a);
       // Street lights come on at sunset; their pools on the (wet) road.
       lampHeadMat.color.setHex(dark > 0.35 ? LIFE_COLOURS.lamp : 0x6a6252);
-      poolMat.opacity = Math.max(0, dark - 0.25) * (0.55 + 0.35 * wet);
+      // Wet roads mirror the lamps: the pools brighten (the merged mesh shares this material).
+      poolMat.opacity = Math.max(0, dark - 0.25) * (0.55 + 0.6 * wet);
       // Shop signs: lit from opening to late evening (world.setShopLights).
       if (world.setShopLights) world.setShopLights(hour >= 7.5 && hour < 23.5 ? 1 : hour >= 23.5 || hour < 1 ? 0.25 : 0);
       // Fountains.

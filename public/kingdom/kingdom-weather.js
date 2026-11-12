@@ -50,12 +50,13 @@ export function createWeatherFx(THREE, scene, world, settings) {
   const named = (o, n) => { o.name = n; return o; };
 
   // --- rain: line segments (two vertices a streak) in a box round the target ---
-  const nRain = Math.round((settings.tier === 'cinematic' ? 9000 : settings.tier === 'balanced' ? 5000 : 2200) * scale);
+  // Line segments are cheap (one draw call): even Legacy phone keeps enough to read as rain.
+  const nRain = Math.max(1500, Math.round((settings.tier === 'cinematic' ? 9000 : settings.tier === 'balanced' ? 5000 : 2200) * scale));
   const BOX = 520; const TOP = 260;
   const rainPos = new Float32Array(nRain * 6); const rainSeed = new Float32Array(nRain * 3);
   for (let i = 0; i < nRain; i++) { rainSeed[i * 3] = (Math.random() - 0.5) * BOX; rainSeed[i * 3 + 1] = Math.random() * TOP; rainSeed[i * 3 + 2] = (Math.random() - 0.5) * BOX; }
   const rainGeo = new THREE.BufferGeometry(); rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
-  const rainMat = new THREE.LineBasicMaterial({ color: 0xb8c6d6, transparent: true, opacity: 0, depthWrite: false, fog: true });
+  const rainMat = new THREE.LineBasicMaterial({ color: 0xcad6e2, transparent: true, opacity: 0, depthWrite: false, fog: true });
   const rain = named(new THREE.LineSegments(rainGeo, rainMat), 'rain-streaks');
   rain.frustumCulled = false; rain.visible = false; root.add(rain);
 
@@ -179,6 +180,8 @@ export function createWeatherFx(THREE, scene, world, settings) {
       sunDisc.material.opacity = state.sun; sunDisc.visible = state.sun > 0.01;
       sunDisc.position.copy(sunDir).multiplyScalar(6200);
     },
+    // Jump straight to the weather's goal (tests and stills).
+    settle(look) { state.rain = look.rain; state.snow = look.snow; state.wet = Math.max(look.wet, look.rain); state.wind = look.wind; },
     counts: () => ({ rain: nRain, snow: nSnow, ripples: nRip, puddles: puddleSpots.length, stars: nStars }),
     dispose() { scene.remove(root); root.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); } }); }
   };

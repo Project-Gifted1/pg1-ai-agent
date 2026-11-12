@@ -96,7 +96,7 @@ function facadeMaterial(THREE, { reflective, envMap = null }) {
   // Without the scene's sky light (the phone tiers), a small baked sky still
   // gives the glass something to reflect.
   if (envMap) { m.envMap = envMap; m.envMapIntensity = 0.9; }
-  const uniforms = { uNight: { value: 0.6 }, uTime: { value: 0 }, uOffice: { value: 0.4 }, uHome: { value: 0.4 }, uShops: { value: 1 }, uSkyTop: { value: new THREE.Color(0x4a6a9a) }, uSkyHor: { value: new THREE.Color(0xc8ccd2) }, uGround: { value: new THREE.Color(0x2a2c30) } };
+  const uniforms = { uNight: { value: 0.6 }, uTime: { value: 0 }, uOffice: { value: 0.4 }, uHome: { value: 0.4 }, uShops: { value: 1 }, uSkyTop: { value: new THREE.Color(0x4a6a9a) }, uSkyHor: { value: new THREE.Color(0xc8ccd2) }, uGround: { value: new THREE.Color(0x2a2c30) }, uReflBoost: { value: envMap ? 2.1 : 1 } };
   m.userData.windows = uniforms;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, uniforms);
@@ -110,7 +110,7 @@ function facadeMaterial(THREE, { reflective, envMap = null }) {
       wp4 = modelMatrix * wp4;
       vWPos = wp4.xyz; vSeed = aSeed; vStyle = aStyle;
       vWNorm = normalize(mat3(modelMatrix) * n0);`);
-    sh.fragmentShader = 'uniform float uNight;\nuniform float uTime;\nuniform float uOffice;\nuniform float uHome;\nuniform float uShops;\nuniform vec3 uSkyTop;\nuniform vec3 uSkyHor;\nuniform vec3 uGround;\nvarying float vSeed;\nvarying float vStyle;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nfloat wh(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }\nfloat box(vec2 f, vec2 lo, vec2 hi, vec2 aa){ vec2 a = smoothstep(lo - aa, lo + aa, f) * (1.0 - smoothstep(hi - aa, hi + aa, f)); return a.x * a.y; }\n'
+    sh.fragmentShader = 'uniform float uNight;\nuniform float uTime;\nuniform float uOffice;\nuniform float uHome;\nuniform float uShops;\nuniform vec3 uSkyTop;\nuniform vec3 uSkyHor;\nuniform vec3 uGround;\nuniform float uReflBoost;\nvarying float vSeed;\nvarying float vStyle;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nfloat wh(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }\nfloat box(vec2 f, vec2 lo, vec2 hi, vec2 aa){ vec2 a = smoothstep(lo - aa, lo + aa, f) * (1.0 - smoothstep(hi - aa, hi + aa, f)); return a.x * a.y; }\n'
       + sh.fragmentShader
         .replace('#include <color_fragment>', `#include <color_fragment>
       // Seeds and styles are whole numbers: rounded, so interpolation error can never reach the hash (no speckle).
@@ -213,7 +213,8 @@ function facadeMaterial(THREE, { reflective, envMap = null }) {
           vec3 skyC = rf.y > 0.0 ? mix(uSkyHor, uSkyTop, smoothstep(0.0, 0.55, rf.y)) : mix(uSkyHor * 0.55, uGround, smoothstep(0.0, 0.25, -rf.y));
           float fres = 0.05 + 0.95 * pow(1.0 - clamp(dot(vd, nW), 0.0, 1.0), 5.0);
           float glassAmt = (pane + spandrel * 0.6) * mix(0.24, 1.0, fres) * (1.0 - 0.75 * uNight);
-          totalEmissiveRadiance += skyC * glassAmt * mix(0.85, 1.1, paneSeed);
+          // (Without the scene's sky light, on the phone tiers, the reflection carries more of the look.)
+          totalEmissiveRadiance += skyC * glassAmt * mix(0.85, 1.1, paneSeed) * uReflBoost;
         }
         // Street level: shop fronts spill warm light while the shops are open;
         // podiums carry a lit sign band above them (off late at night).

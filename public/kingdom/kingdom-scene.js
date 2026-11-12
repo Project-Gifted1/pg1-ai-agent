@@ -130,7 +130,7 @@ export function kingdomSettings(tier, { coarse = false } = {}) {
     // volumetrics; baked shading; instanced everything; a short far plane in
     // thicker haze; simple instanced rain and wet-road roughness; textures
     // capped at 1024 px; life and weather density cut down; 30 fps.
-    legacy: { shadows: 0, post: null, water: false, sky: 'gradient', crowdCap: 80, perEvent: 8, shafts: false, rain: true, targetFps: 30, pixelRatio: 1, lifeScale: 0.22, weatherScale: 0.3, maxTexture: LEGACY_BUDGET.maxTexture, far: 2600, legacy: true },
+    legacy: { shadows: 0, post: null, water: false, sky: 'gradient', crowdCap: 80, perEvent: 8, shafts: false, rain: true, targetFps: 30, pixelRatio: 1, lifeScale: 0.3, weatherScale: 0.3, maxTexture: LEGACY_BUDGET.maxTexture, far: 2600, legacy: true },
     phone: { shadows: 0, post: null, water: false, sky: 'gradient', crowdCap: 150, perEvent: 12, shafts: false, rain: false, targetFps: 30, pixelRatio: 1.25 },
     balanced: { shadows: 1024, post: { aa: 'smaa', bloom: true, gtao: true, dof: false }, water: true, sky: 'physical', crowdCap: 400, perEvent: 30, shafts: false, rain: true, targetFps: 60, pixelRatio: 1.5 },
     cinematic: { shadows: coarse ? 1024 : 2048, post: { aa: 'smaa', bloom: true, gtao: true, dof: false }, water: true, sky: 'physical', crowdCap: 800, perEvent: 60, shafts: true, rain: true, targetFps: 60, pixelRatio: 2 }
@@ -549,7 +549,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     // The real Dublin weather (the feed's weather), decoration only.
     setWeather(w) { look = weatherLook(w); container.dataset.weather = look.state; container.dataset.weatherSource = look.source; },
     // For the tests and Record mode's stills: hold the eased weather at its goal now.
-    settleWeather() { storm = look.dark; world.settleClouds && world.settleClouds(look); },
+    settleWeather() { storm = look.dark; world.settleClouds && world.settleClouds(look); wx.settle(look); world.setWet(wx.state.wet); },
     setToday() { /* the legend shows the counts */ },
     // PG1's real state (the feed's state): the tower's beacon and emblems, sentinels, beacons.
     setState(raw) {
