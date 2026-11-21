@@ -211,15 +211,48 @@ export function dublinHour(ms = Date.now()) {
   } catch (e) { return new Date(ms).getUTCHours(); }
 }
 
-// Some days have light rain or mist: picked by the Dublin date, so a day
-// looks the same all day. Scenery only (it is not a weather report and has
-// nothing to do with threats).
-export function dayWeather(ms = Date.now()) {
-  let key = '';
-  try { key = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Dublin' }).format(new Date(ms)); } catch (e) { key = new Date(ms).toISOString().slice(0, 10); }
-  let h = 0; for (const c of key) h = (h * 31 + c.charCodeAt(0)) >>> 0;
-  const r = (h % 1000) / 1000;
-  return r < 0.18 ? 'rain' : r < 0.36 ? 'mist' : 'clear';
+
+// --- the weather (decoration only) -------------------------------------------------------
+// The feed's `weather` is the real current weather in Dublin (lib/cityWeather.mjs,
+// Open-Meteo). It only ever changes the sky, the light, the rain and the
+// wet streets: never a count, a caption, the ticker or an attacker, and the
+// threat level never changes the weather.
+export const WEATHER_STATES = Object.freeze(['clear', 'partly_cloudy', 'overcast', 'drizzle', 'rain', 'heavy_rain', 'fog', 'snow']);
+// What the city shows when the weather cannot be read: a calm, clear sky (the light still follows real Dublin time).
+export const FALLBACK_WEATHER = Object.freeze({ state: 'clear', cloud: 0.05, wind: 0, gusts: 0, rain: 0, is_day: null, evening: true, moon_phase: 0.5, source: 'fallback' });
+const clamp01 = (v, d = 0) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(1, Number(v))) : d);
+
+export function normalizeWeather(w) {
+  if (!w || typeof w !== 'object' || !WEATHER_STATES.includes(w.state)) return FALLBACK_WEATHER;
+  return Object.freeze({
+    state: w.state, cloud: clamp01(w.cloud, 0.3), wind: clamp01(w.wind), gusts: clamp01(w.gusts), rain: clamp01(w.rain),
+    is_day: w.is_day === true ? true : w.is_day === false ? false : null, evening: w.evening === true,
+    moon_phase: clamp01(w.moon_phase, 0.5), source: w.source === 'open-meteo' ? 'open-meteo' : 'fallback'
+  });
+}
+
+// How a weather state looks: every value 0..1.
+//   cover     cloud cover of the sky layers      dark     how grey the sky and light go
+//   rain      rain streaks (density)             heavy    heavy rain (longer, faster streaks)
+//   wet       wet, mirror-like roads, ripples, umbrellas, spray
+//   fog       extra ground fog                   snow     snowflakes
+//   wind      trees and flags sway, clouds speed up
+//   sun       the sun disc and crisp shadows (clear skies)
+//   stars     stars at night (clear skies)
+export function weatherLook(raw) {
+  const w = normalizeWeather(raw);
+  const base = {
+    clear: { cover: 0.12, dark: 0, rain: 0, heavy: 0, wet: 0, fog: 0, snow: 0, sun: 1, stars: 1 },
+    partly_cloudy: { cover: 0.45, dark: 0.1, rain: 0, heavy: 0, wet: 0, fog: 0, snow: 0, sun: 0.7, stars: 0.5 },
+    overcast: { cover: 0.9, dark: 0.45, rain: 0, heavy: 0, wet: 0, fog: 0, snow: 0, sun: 0, stars: 0 },
+    drizzle: { cover: 0.85, dark: 0.45, rain: 0.25, heavy: 0, wet: 0.6, fog: 0.1, snow: 0, sun: 0, stars: 0 },
+    rain: { cover: 0.92, dark: 0.6, rain: 0.6, heavy: 0, wet: 1, fog: 0.1, snow: 0, sun: 0, stars: 0 },
+    heavy_rain: { cover: 1, dark: 0.75, rain: 1, heavy: 1, wet: 1, fog: 0.2, snow: 0, sun: 0, stars: 0 },
+    fog: { cover: 0.7, dark: 0.35, rain: 0, heavy: 0, wet: 0.2, fog: 1, snow: 0, sun: 0, stars: 0 },
+    snow: { cover: 0.95, dark: 0.4, rain: 0, heavy: 0, wet: 0.3, fog: 0.15, snow: 1, sun: 0, stars: 0 }
+  }[w.state];
+  const cover = w.source === 'open-meteo' && (w.state === 'clear' || w.state === 'partly_cloudy') ? Math.max(base.cover * 0.5, Math.min(0.7, w.cloud)) : base.cover;
+  return Object.freeze({ state: w.state, ...base, cover, wind: w.wind, gusts: w.gusts, moonPhase: w.moon_phase, evening: w.evening, source: w.source });
 }
 
 // The billboards: real PG1 numbers from the feed only; "not read" when a

@@ -122,8 +122,8 @@ export function startCommandCentreServer({ publicDir, cards = { single: [], many
 }
 
 // A signed-in phone page (dark), ready for commands.
-export async function openPhonePage(browser, origin, { width = 380, height = 844, routeReplyFont, reducedMotion = 'no-preference' } = {}) {
-  const context = await browser.newContext({ viewport: { width, height }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: 'dark', reducedMotion });
+export async function openPhonePage(browser, origin, { width = 380, height = 844, routeReplyFont, reducedMotion = 'no-preference', userAgent = undefined, deviceScaleFactor = 2 } = {}) {
+  const context = await browser.newContext({ viewport: { width, height }, screen: { width, height }, deviceScaleFactor, isMobile: true, hasTouch: true, colorScheme: 'dark', reducedMotion, ...(userAgent ? { userAgent } : {}) });
   if (routeReplyFont) await routeReplyFont(context);
   await context.addInitScript(() => { try { localStorage.setItem('pg1_theme', 'dark'); } catch (e) {} });
   const page = await context.newPage();

@@ -68,7 +68,8 @@ class Crowd {
   write(t, camPos) {
     const { m, local, q, e, v, s } = this;
     const n = this.agents.length;
-    for (const p of this.parts) p.mesh.count = n;
+    // An empty crowd costs no draw call.
+    for (const p of this.parts) { p.mesh.count = n; p.mesh.visible = n > 0; }
     for (let i = 0; i < n; i++) {
       const a = this.agents[i];
       const far = camPos ? Math.hypot(a.x - camPos.x, a.z - camPos.z) > LOD_FAR : false;
@@ -94,15 +95,17 @@ class Crowd {
 
 // A quadcopter: body, four arms, four spinning rotors, a camera pod and a
 // light (red on an attacker's siege drone, cyan on PG1's patrols).
-let glowGeo = null; let trailGeoQ = null;
+let glowGeo = null; let trailGeoQ = null; let LEAN = false;
 const GLOW_GEO = (THREE) => glowGeo || (glowGeo = new THREE.IcosahedronGeometry(1.15, 1));
 const TRAIL_GEO = (THREE) => { if (!trailGeoQ) { trailGeoQ = new THREE.CylinderGeometry(0.06, 0.45, 9, 6, 1, true); trailGeoQ.rotateX(Math.PI / 2); trailGeoQ.translate(0, 0, -5); } return trailGeoQ; };
-function quadParts(THREE, M, light, body = 0x2a2e34) {
+// lean (Legacy phone): the body and its light only (two draw calls a crowd).
+function quadParts(THREE, M, light, body = 0x2a2e34, lean = LEAN) {
   const parts = [
     { geo: new THREE.BoxGeometry(0.9, 0.28, 0.9), mat: M(body, { metalness: 0.7, roughness: 0.35 }), offset: [0, 0, 0], swing: null },
     { geo: new THREE.BoxGeometry(0.42, 0.3, 0.42), mat: M(0x15181c, { metalness: 0.5, roughness: 0.3 }), offset: [0, -0.3, 0.1], swing: null },
     { geo: new THREE.SphereGeometry(0.1, 8, 6), mat: new THREE.MeshBasicMaterial({ color: light }), offset: [0, -0.1, 0.5], swing: null, flat: true }
   ];
+  if (lean) return [parts[0], parts[2]];
   const arm = new THREE.BoxGeometry(2.2, 0.08, 0.12);
   parts.push({ geo: arm, mat: parts[0].mat, offset: [0, 0.05, 0], swing: 'yaw45' });
   parts.push({ geo: arm, mat: parts[0].mat, offset: [0, 0.05, 0], swing: 'yaw-45' });
@@ -118,8 +121,11 @@ function quadParts(THREE, M, light, body = 0x2a2e34) {
 function textSprite(THREE, text, color = '#ffffff') {
   const cv = document.createElement('canvas');
   const g = cv.getContext('2d');
-  const fs = 44; g.font = `600 ${fs}px Inter, system-ui, sans-serif`;
-  const w = Math.ceil(g.measureText(text).width) + 36;
+  // Textures stay within 1024 px (the Legacy phone cap): long labels get a smaller font.
+  let fs = 44; g.font = `600 ${fs}px Inter, system-ui, sans-serif`;
+  const wide = g.measureText(text).width + 36; if (wide > 1024) { fs = Math.floor(fs * 1024 / wide); }
+  g.font = `600 ${fs}px Inter, system-ui, sans-serif`;
+  const w = Math.min(1024, Math.ceil(g.measureText(text).width) + 36);
   cv.width = w; cv.height = 72;
   g.font = `600 ${fs}px Inter, system-ui, sans-serif`;
   g.fillStyle = 'rgba(10,10,11,0.72)';
@@ -137,7 +143,8 @@ export function createActors(THREE, scene, world, settings) {
   const root = new THREE.Group();
   root.name = 'actors';
   scene.add(root);
-  const phone = settings.tier === 'phone';
+  const phone = settings.tier === 'phone' || settings.tier === 'legacy';
+  LEAN = !!settings.legacy;
   const M = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.6, ...o });
   // The other side.
   const scanners = new Crowd(THREE, root, quadParts(THREE, M, 0xff3d3d, 0x1a1c20), Math.round(settings.crowdCap / 2), { fly: 1 });
@@ -145,7 +152,10 @@ export function createActors(THREE, scene, world, settings) {
   const wakeGeo = new THREE.PlaneGeometry(9, 30); wakeGeo.rotateX(-Math.PI / 2); wakeGeo.translate(0, 0, -21);
   const wakeTex = (() => { const cv = document.createElement('canvas'); cv.width = 64; cv.height = 128; const g = cv.getContext('2d'); for (let y = 0; y < 128; y++) { const k = 1 - y / 128; const half = 4 + (y / 128) * 26; g.fillStyle = `rgba(255,255,255,${0.5 * k})`; g.fillRect(32 - half, y, 3, 1); g.fillRect(32 + half - 3, y, 3, 1); g.fillStyle = `rgba(255,255,255,${0.12 * k})`; g.fillRect(32 - half, y, half * 2, 1); } const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const wakeMat = new THREE.MeshBasicMaterial({ map: wakeTex, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false });
-  const boatParts = (hull, cabin, light, lightName) => [
+  const boatParts = (hull, cabin, light, lightName) => LEAN ? [
+    { geo: new THREE.BoxGeometry(4.2, 1.8, 15), mat: M(hull, { metalness: 0.4, roughness: 0.4 }), offset: [0, 0.6, 0], swing: null },
+    { geo: new THREE.BoxGeometry(3.2, 1.8, 5), mat: M(cabin, { metalness: 0.7, roughness: 0.2, emissive: light, emissiveIntensity: 0.6 }), offset: [0, 2.3, -2], swing: null }
+  ] : [
     { geo: new THREE.BoxGeometry(4.2, 1.8, 15), mat: M(hull, { metalness: 0.4, roughness: 0.4 }), offset: [0, 0.6, 0], swing: null },
     { geo: wakeGeo, mat: wakeMat, offset: [0, 0.15, 0], swing: null, flat: true },
     { geo: new THREE.BoxGeometry(3.2, 1.8, 5), mat: M(cabin, { metalness: 0.7, roughness: 0.2, emissive: light, emissiveIntensity: 0.35 }), offset: [0, 2.3, -2], swing: null },
@@ -170,22 +180,23 @@ export function createActors(THREE, scene, world, settings) {
   // PG1's side.
   const SENTINEL_CAP = 64;
   const sentinelParts = quadParts(THREE, M, PG1_COLORS.cyan, 0xf5f7fa);
-  sentinelParts[3].mat = sentinelParts[4].mat = M(PG1_COLORS.gold, { metalness: 0.8, roughness: 0.3 });
+  if (sentinelParts[4]) sentinelParts[3].mat = sentinelParts[4].mat = M(PG1_COLORS.gold, { metalness: 0.8, roughness: 0.3 });
+  else sentinelParts[0].mat = M(PG1_COLORS.gold, { metalness: 0.8, roughness: 0.3 });
   // PG1's shield on its own hulls (from the brand asset), never on an enemy.
   const hullMat = world.brandTex ? new THREE.MeshBasicMaterial({ map: world.brandTex, transparent: true, depthWrite: false, side: THREE.DoubleSide }) : null;
   const hullDecal = hullMat ? (() => { const g = new THREE.PlaneGeometry(0.8, 0.8); g.rotateX(-Math.PI / 2); return { geo: g, mat: hullMat, offset: [0, 0.16, 0], swing: null, flat: true }; })() : null;
-  if (hullDecal) sentinelParts.push(hullDecal);
+  if (hullDecal && !LEAN) sentinelParts.push(hullDecal);
   const sentinels = new Crowd(THREE, root, sentinelParts, SENTINEL_CAP, { fly: 1 });
-  const commander = new Crowd(THREE, root, hullDecal ? [...quadParts(THREE, M, PG1_COLORS.gold, 0xf5f7fa), hullDecal] : quadParts(THREE, M, PG1_COLORS.gold, 0xf5f7fa), 1, { fly: 1 });
+  const commander = new Crowd(THREE, root, hullDecal && !LEAN ? [...quadParts(THREE, M, PG1_COLORS.gold, 0xf5f7fa), hullDecal] : quadParts(THREE, M, PG1_COLORS.gold, 0xf5f7fa), 1, { fly: 1 });
   const repair = new Crowd(THREE, root, quadParts(THREE, M, PG1_COLORS.amber, 0xf5f7fa), 6, { fly: 1 });
   const pilotParts = boatParts(0xf5f7fa, 0x6fd8ff, PG1_COLORS.cyan).map((p, i) => (i === 0 ? { ...p, geo: new THREE.BoxGeometry(2.6, 1.2, 8) } : p));
-  if (hullMat) { const g = new THREE.PlaneGeometry(1.6, 1.6); g.rotateY(Math.PI / 2); pilotParts.push({ geo: g, mat: hullMat, offset: [1.65, 2.3, -2], swing: null, flat: true }); }
+  if (hullMat && !LEAN) { const g = new THREE.PlaneGeometry(1.6, 1.6); g.rotateY(Math.PI / 2); pilotParts.push({ geo: g, mat: hullMat, offset: [1.65, 2.3, -2], swing: null, flat: true }); }
   const pilots = new Crowd(THREE, root, pilotParts, 3);
   const roverLight = new THREE.MeshBasicMaterial({ color: 0x6a6f75 });
   const rovers = new Crowd(THREE, root, [
     { geo: new THREE.BoxGeometry(3.2, 1.6, 4.8), mat: M(0xe9edf1, { metalness: 0.3, roughness: 0.4 }), offset: [0, 1.5, 0], swing: null },
-    { geo: new THREE.BoxGeometry(3.6, 0.8, 1.2), mat: M(0x22262c), offset: [0, 0.6, 1.6], swing: null },
-    { geo: new THREE.BoxGeometry(3.6, 0.8, 1.2), mat: M(0x22262c), offset: [0, 0.6, -1.6], swing: null },
+    ...(LEAN ? [] : [{ geo: new THREE.BoxGeometry(3.6, 0.8, 1.2), mat: M(0x22262c), offset: [0, 0.6, 1.6], swing: null },
+      { geo: new THREE.BoxGeometry(3.6, 0.8, 1.2), mat: M(0x22262c), offset: [0, 0.6, -1.6], swing: null }]),
     { geo: new THREE.BoxGeometry(2.4, 0.4, 0.2), mat: roverLight, offset: [0, 1.8, 2.45], swing: null, flat: true }
   ], 6);
   // Allies: lit boats and cargo ships (green), partner drones (green light).
@@ -497,6 +508,13 @@ export function createActors(THREE, scene, world, settings) {
     get sentinels() { return sentinels.live; },
     get lanterns() { return lanternsLit; },
     get attackers() { return ENEMIES.reduce((n, c) => n + c.live, 0); },
+    // Every hull on the river (event boats and PG1's pilots), so the city's
+    // own boats keep clear of them: { x, z, len, wid }.
+    riverBoats() {
+      const out = [];
+      for (const [c, len, wid] of [[darkBoats, 15, 4.2], [allyBoats, 15, 4.2], [cargoShips, 30, 7], [pilots, 8, 2.6]]) for (const a of c.agents) if (a.fade > 0.05 && a.y < 0) out.push({ x: a.x, z: a.z, len: len * (a.scale || 1), wid });
+      return out;
+    },
     get activeIds() { return [...groups.keys(), ...allyBoats.agents.filter((b) => b.leg < b.path.length).map((b) => b.eventId), ...cargoShips.agents.filter((b) => b.leg < b.path.length).map((b) => b.eventId)]; },
     dispose() { scene.remove(root); root.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); }); }); }
   };
