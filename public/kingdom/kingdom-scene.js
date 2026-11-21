@@ -300,7 +300,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   actors.onFire = (g, e) => {
     if (onGadget) onGadget(g, e);
     const seq = e ? sequenceFor(e, { tier }) : null;
-    if (director && seq && seq.shots.length && !settings.legacy) shotPlan = { t0: performance.now(), id: e.id, shots: seq.shots, pos: actors.whereIs(e.id) };
+    if (director && seq && seq.shots.length && !settings.legacy) shotPlan = { el: 0, id: e.id, shots: seq.shots, pos: actors.whereIs(e.id) };
   };
   const life = createLife(THREE, scene, world, settings);
 
@@ -470,7 +470,9 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     // The shot list of a high-severity interception, while it runs.
     let shotNow = null;
     if (shotPlan) {
-      const el = (now - shotPlan.t0) / 1000;
+      // Scene time, not the wall clock: a paused or hidden view, or a long
+      // frame on a slow phone, never skips a shot.
+      const el = (shotPlan.el += dt);
       const cur = shotPlan.shots.filter((x) => x.at <= el && x.shot !== 'wide').pop();
       if (!director || (cur && cur.shot === 'release') || el > 8) { shotPlan = null; lastCut = now; }
       else if (cur) {

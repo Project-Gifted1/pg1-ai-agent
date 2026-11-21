@@ -76,6 +76,9 @@ test('an interception, start to finish: detect, lock on, the gadget, the tag, th
   await page.waitForFunction(() => window.__shots.includes('gadget') || window.__shots.includes('tower'), null, { timeout: 120000, polling: 100 });
   await page.evaluate(() => window.kingdomUi.scene().pause(true)); mkdirSync(SHOTS_DIR, { recursive: true });
   await page.screenshot({ path: join(SHOTS_DIR, 'kingdom-intercept-412-test-fixture.png'), timeout: 120000 });
+  // Held paused longer than the whole shot list (8 s): the shots run on
+  // scene time, so a pause (or a slow screenshot) never skips one.
+  await page.waitForTimeout(9000);
   await page.evaluate(() => window.kingdomUi.scene().pause(false));
   await page.waitForFunction(() => window.__shots.includes('tower'), null, { timeout: 120000, polling: 250 });
   const shots = await page.evaluate(() => window.__shots);
