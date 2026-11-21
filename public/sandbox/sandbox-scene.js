@@ -1619,7 +1619,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       if (world.id !== prevId) effects.reset();
       effects.onWorld(next);
       syncOrbits();
-      syncBelt();
+      if (!offline) syncBelt(); // Showcase: no belt line across the frame
       syncWeatherIslands();
       if (firstWorld) {
         firstWorld = false;
