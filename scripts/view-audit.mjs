@@ -153,8 +153,27 @@ async function auditSandbox(browser) {
       console.log('sandbox auto', JSON.stringify(report.sandbox.auto));
       await context.close();
     }
+    async function weatherShot(tier, r) {
+      // The weather, forced for a look (after only: main has none): rain on Low, a storm on Cinematic, snow on Medium.
+    const forced = TAG === 'before' ? null : { low: 'rain', medium: 'snow', cinematic: 'storm' }[tier];
+    if (!forced) return;
+    {
+        const wx = await sandboxPage(browser, origin, tier, `?debug=1&weather=${forced}`);
+        await wx.page.evaluate((w) => openSandboxScreen(w), uni.id);
+        await wx.page.waitForFunction((t) => new RegExp(`^Step ${t} · `).test(document.getElementById('sandbox-tick').textContent), ticks[uni.id], { timeout: 120000 });
+        await sWait(wx.page, 4);
+        await wx.page.evaluate(() => { const e = sandboxState.world.entities.find((x) => x.kind === 'house'); sandboxScene.select(e.id); });
+        await sWait(wx.page, 45);
+        await sShot(wx.page, `${tier}-weather-${forced}`);
+        r.weather = await wx.page.evaluate(() => sandboxScene.stats().weather);
+        report.errors.push(...wx.errors.map((e) => `sandbox ${tier} ${forced}: ${e}`));
+        await wx.context.close();
+      }
+    }
     for (const tier of SANDBOX_TIERS) {
       const r = report.sandbox[tier] = {};
+      // AUDIT_WEATHER_ONLY=1: only the forced-weather shots.
+      if (process.env.AUDIT_WEATHER_ONLY) { await weatherShot(tier, r); continue; }
       const { page, errors, context } = await sandboxPage(browser, origin, tier);
       const open = async (id) => { await page.evaluate((w) => openSandboxScreen(w), id); await page.waitForFunction((t) => new RegExp(`^Step ${t} · `).test(document.getElementById('sandbox-tick').textContent), ticks[id], { timeout: 120000 }); await sWait(page, 4); };
       await open(uni.id);
@@ -199,20 +218,7 @@ async function auditSandbox(browser) {
       r.errors = errors;
       report.errors.push(...errors.map((e) => `sandbox ${tier}: ${e}`));
       await context.close();
-      // The weather, forced for a look (after only: main has none): rain on Low, a storm on Cinematic, snow on Medium.
-      const forced = TAG === 'before' ? null : { low: 'rain', medium: 'snow', cinematic: 'storm' }[tier];
-      if (forced) {
-        const wx = await sandboxPage(browser, origin, tier, `?debug=1&weather=${forced}`);
-        await wx.page.evaluate((w) => openSandboxScreen(w), uni.id);
-        await wx.page.waitForFunction((t) => new RegExp(`^Step ${t} · `).test(document.getElementById('sandbox-tick').textContent), ticks[uni.id], { timeout: 120000 });
-        await sWait(wx.page, 4);
-        await wx.page.evaluate(() => { const e = sandboxState.world.entities.find((x) => x.kind === 'house'); sandboxScene.select(e.id); });
-        await sWait(wx.page, 45);
-        await sShot(wx.page, `${tier}-weather-${forced}`);
-        r.weather = await wx.page.evaluate(() => sandboxScene.stats().weather);
-        report.errors.push(...wx.errors.map((e) => `sandbox ${tier} ${forced}: ${e}`));
-        await wx.context.close();
-      }
+      await weatherShot(tier, r);
       console.log('sandbox', tier, JSON.stringify(r));
     }
   } finally { await new Promise((r) => server.close(r)); __setSandboxViewerStore(null); }
@@ -272,5 +278,5 @@ try {
   if (WHICH === 'all' || WHICH === 'sandbox') await auditSandbox(browser);
   if (WHICH === 'all' || WHICH === 'city') await auditCity(browser);
 } finally { await browser.close(); }
-writeFileSync(join(OUT, `${TAG}-${WHICH}${ONLY ? `-${ONLY.join('-')}` : ''}.json`), JSON.stringify(report, null, 2));
+writeFileSync(join(OUT, `${TAG}-${WHICH}${ONLY ? `-${ONLY.join('-')}` : ''}${process.env.AUDIT_WEATHER_ONLY ? '-weather' : ''}.json`), JSON.stringify(report, null, 2));
 console.log('done', join(OUT, `${TAG}-${WHICH}.json`));

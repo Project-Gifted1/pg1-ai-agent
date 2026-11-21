@@ -1399,7 +1399,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       for (const n of ['cloud', 'rain', 'snow', 'wind', 'fog', 'dark']) W[n] += (goal[n] - W[n]) * k;
       W.lightning = !!goal.lightning; W.state = goal.state || 'clear';
       const ground = Math.max(0, (env.heightAt || flat0)(camera.position.x, camera.position.z));
-      atmos.update(step, now, { camera, weather: W, day: envState.day, space: surface ? 1 : envState.space, alt: camera.position.y - ground, heightAt: env.heightAt });
+      atmos.update(step, now, { camera, target: controls.target, weather: W, day: envState.day, space: surface ? 1 : envState.space, alt: camera.position.y - ground, heightAt: env.heightAt });
       W.flash = atmos.flash;
       if (container.dataset.weather !== W.state) container.dataset.weather = W.state;
     }

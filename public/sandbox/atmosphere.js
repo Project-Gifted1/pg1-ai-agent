@@ -26,7 +26,7 @@ const BOX = 48; const HEIGHT = 36;
 function rng(seed) { let s = seed >>> 0; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; }; }
 
 const FALL_VERT = `
-uniform vec3 uCam; uniform float uTime; uniform float uSpeed; uniform float uLen; uniform vec2 uWind; uniform float uSway;
+uniform vec3 uCam; uniform float uTime; uniform float uSpeed; uniform float uLen; uniform vec2 uWind; uniform float uSway; uniform float uPx;
 attribute vec3 aSeed; attribute float aEnd;
 varying float vFade;
 void main() {
@@ -40,8 +40,9 @@ void main() {
   p -= dir * uLen * aEnd;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   gl_Position = projectionMatrix * mv;
-  gl_PointSize = 2.5;
-  vFade = (1.0 - smoothstep(box * 0.25, box * 0.55, length(p.xz - uCam.xz))) * (0.55 + 0.45 * aEnd);
+  // Flakes: bigger near the camera, sized for the screen's pixel density.
+  gl_PointSize = uPx * clamp(2.5 + 40.0 / max(1.0, -mv.z), 2.5, 11.0) * (0.75 + aSeed.y * 0.5);
+  vFade = (1.0 - smoothstep(box * 0.25, box * 0.55, length(p.xz - uCam.xz))) * (uLen > 0.0 ? 0.55 + 0.45 * aEnd : 1.0);
 }`;
 const FALL_FRAG = `
 uniform vec3 uColor; uniform float uOpacity; varying float vFade;
@@ -67,7 +68,7 @@ function fallGeometry(THREE, n, seed, line) {
 
 function fallMaterial(THREE, frag, color) {
   return new THREE.ShaderMaterial({
-    uniforms: { uCam: { value: new THREE.Vector3() }, uTime: { value: 0 }, uSpeed: { value: 9 }, uLen: { value: 0.8 }, uWind: { value: new THREE.Vector2() }, uSway: { value: 0 }, uColor: { value: new THREE.Color(color) }, uOpacity: { value: 0 } },
+    uniforms: { uCam: { value: new THREE.Vector3() }, uTime: { value: 0 }, uSpeed: { value: 9 }, uLen: { value: 0.8 }, uWind: { value: new THREE.Vector2() }, uSway: { value: 0 }, uPx: { value: 1 }, uColor: { value: new THREE.Color(color) }, uOpacity: { value: 0 } },
     vertexShader: FALL_VERT, fragmentShader: frag, transparent: true, depthWrite: false, fog: false
   });
 }
@@ -93,6 +94,7 @@ export function createAtmosphere(THREE, scene, { tier = 'medium', coarse = false
   const snowMat = fallMaterial(THREE, SNOW_FRAG, 0xf4f6fa);
   const snow = new THREE.Points(fallGeometry(THREE, C.snow, 11, false), snowMat);
   snow.frustumCulled = false; snow.renderOrder = 5; snow.visible = false; snow.name = 'snow';
+  snow.onBeforeRender = (r) => { snowMat.uniforms.uPx.value = r.getPixelRatio(); };
   scene.add(rain); scene.add(snow);
 
   // Birds: flocks over the islands nearest the camera.
@@ -104,6 +106,7 @@ export function createAtmosphere(THREE, scene, { tier = 'medium', coarse = false
   const r = rng(29);
   const bird = Array.from({ length: nb }, (_, i) => ({ flock: Math.floor(i / C.birds), rad: 60 + r() * 70, alt: 26 + r() * 30, ph: r() * Math.PI * 2, speed: 0.1 + r() * 0.05, flap: 7 + r() * 4, size: 0.85 + r() * 0.35, bob: r() * 6 }));
   let islands = [];
+  const lookDir = new THREE.Vector3();
   const m4 = new THREE.Matrix4(); const q = new THREE.Quaternion(); const e = new THREE.Euler(); const v = new THREE.Vector3(); const sc = new THREE.Vector3();
 
   let flash = 0; let nextFlash = 0; let flicker = 0;
@@ -112,7 +115,7 @@ export function createAtmosphere(THREE, scene, { tier = 'medium', coarse = false
     // [{ x, z, y }] island centres in scene metres (the ground under the flock).
     setIslands(list) { islands = Array.isArray(list) ? list.slice() : []; },
     // o: { camera, weather, day, space, alt (camera above the ground), now }
-    update(dt, now, { camera, weather, day = 1, space = 0, alt = 0, heightAt = null } = {}) {
+    update(dt, now, { camera, weather, day = 1, space = 0, alt = 0, heightAt = null, target = null } = {}) {
       const t = now / 1000;
       const low = space < 0.05 && alt < 260;
       const W = weather || {};
@@ -122,7 +125,11 @@ export function createAtmosphere(THREE, scene, { tier = 'medium', coarse = false
         obj.visible = low && amount > 0.02;
         if (!obj.visible) continue;
         const u = m.uniforms;
-        u.uCam.value.copy(camera.position); u.uTime.value = t; u.uSpeed.value = speed; u.uLen.value = len; u.uSway.value = sway;
+        // The volume sits along the line of sight (up to 22 m out), so the
+        // rain fills what the camera looks at, not the air behind it.
+        u.uCam.value.copy(camera.position);
+        if (target) { lookDir.copy(target).sub(camera.position); const d = lookDir.length(); if (d > 0.01) u.uCam.value.addScaledVector(lookDir, Math.min(22, d * 0.5) / d); }
+        u.uTime.value = t; u.uSpeed.value = speed; u.uLen.value = len; u.uSway.value = sway;
         u.uWind.value.set(wind * 0.8, wind * 0.35);
         u.uOpacity.value = Math.min(1, amount * 1.3) * (obj === rain ? 0.5 + 0.3 * day : 0.8);
         u.uColor.value.setRGB(obj === rain ? 0.55 + 0.25 * day : 0.9, obj === rain ? 0.6 + 0.25 * day : 0.92, obj === rain ? 0.66 + 0.24 * day : 0.96);
