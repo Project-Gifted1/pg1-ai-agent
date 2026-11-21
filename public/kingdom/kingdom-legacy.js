@@ -38,7 +38,7 @@ export function mergeGeometries(THREE, geos) {
 }
 
 // Static instanced scenery that is expanded into plain geometry and merged too.
-export const STATIC_INSTANCED = Object.freeze(['street-lamp-posts', 'street-light-poles', 'street-lamps', 'street-lights', 'street-light-pools', 'tram-pillars', 'embankment-railing', 'lane-markings', 'kerbs', 'pavements', 'zebra-crossings', 'stop-lines', 'manhole-covers', 'rooftop-plant', 'rooftop-antennas', 'helipads', 'bus-shelters', 'tram-platforms', 'cafe-tables', 'cafe-parasols', 'flag-poles', 'traffic-light-poles', 'tree-trunks', 'plaza-benches', 'moored-boats-none']);
+export const STATIC_INSTANCED = Object.freeze(['street-lamp-posts', 'street-light-poles', 'street-lamps', 'street-lights', 'street-light-pools', 'tram-pillars', 'embankment-railing', 'lane-markings', 'kerbs', 'pavements', 'zebra-crossings', 'stop-lines', 'manhole-covers', 'rooftop-plant', 'rooftop-antennas', 'helipads', 'bus-shelters', 'tram-platforms', 'cafe-tables', 'cafe-parasols', 'flag-poles', 'traffic-light-poles', 'tree-trunks', 'plaza-benches', 'tower-security-fence', 'tower-security-fence-rail', 'tower-security-fence-posts', 'tower-security-gate-arms', 'tower-security-gate-posts', 'tower-guard-booths', 'tower-guard-booth-roofs', 'tower-bollards', 'tower-cctv-poles', 'tower-cctv', 'moored-boats-none']);
 
 // Two materials that draw the same (type, colours, finish, maps, blending).
 function materialKey(m) {

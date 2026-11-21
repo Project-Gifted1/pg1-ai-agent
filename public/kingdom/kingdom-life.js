@@ -3,7 +3,8 @@
 // palette (red is theirs; tail lights and stop lights here are deep amber).
 // Real events stay the only source of attackers (kingdom-actors.js).
 //
-//   traffic     cars, taxis, delivery vans and buses from kingdom-traffic.js:
+//   traffic     saloon cars, taxis, SUVs, motorbikes, delivery vans, lorries
+//               and double-deck buses (kingdom-models.js) from kingdom-traffic.js:
 //               lanes both ways (Dublin drives on the left), following
 //               distance, queues at red lights, junctions entered only on
 //               green with the exit clear, never two in the same space, never
@@ -19,8 +20,10 @@
 //               at stations
 //   river       water taxis and ferries in lanes, keeping clear of each other
 //               and of the boats real events bring; moored boats rocking
-//   sky         aircraft high on approach, birds at dusk, gulls over the
-//               river, pigeons on the rooftops
+//   sky         airliners high on approach (contrails by day), light planes,
+//               helicopters above the tower and a shuttle between rooftop
+//               helipads (kingdom-air.js, separated by altitude bands);
+//               birds at dusk, gulls over the river, pigeons on the rooftops
 //   rooftops    steam from vents, a turning radar, a construction crane
 //   street      lamp posts with warm light pools (on at sunset), pavements and
 //               kerbs, zebras and stop lines, manholes; flags on the plaza
@@ -30,7 +33,9 @@
 // Density follows the tier (settings.lifeScale): fewer of everything on
 // the phone tiers, never none.
 
-import { RIVER, PLAZA_R, inRiver } from './kingdom-world.js';
+import { RIVER, PLAZA_R, inRiver, TOWER_TOP } from './kingdom-world.js';
+import { vehicleGeometries, wheelGeometry, aircraftGeometries, LIGHT_Y, WHEELS } from './kingdom-models.js';
+import { createAirTraffic } from './kingdom-air.js';
 import { createTraffic, GRID, ROAD_W, STOP_BACK, JUNCTION_HALF, ZEBRA_IN, ZEBRA_W, signalFor, LANE_OFFSET } from './kingdom-traffic.js';
 
 export const TRAM_Z = -200;
@@ -57,15 +62,17 @@ export function createLife(THREE, scene, world, settings) {
   // --- traffic: the lane simulation, drawn ---
   const traffic = createTraffic({ density: k, cols: phone ? 4 : 6, rowsNorth: phone ? 3 : 4, rowsSouth: phone ? 3 : 4, tramZ: TRAM_Z, pedestrians: Math.max(0.35, k) });
   const CAP = traffic.target + 40;
-  const carBodyGeo = new THREE.BoxGeometry(1.9, 0.8, 4.5); carBodyGeo.translate(0, 0.55, 0);
-  const carCabGeo = new THREE.BoxGeometry(1.7, 0.6, 2.3); carCabGeo.translate(0, 1.25, -0.25);
-  const vanGeo = new THREE.BoxGeometry(2.1, 2.3, 5.8); vanGeo.translate(0, 1.3, 0);
-  const busGeo = new THREE.BoxGeometry(2.5, 3.1, 12); busGeo.translate(0, 1.7, 0);
-  const carPalette = [0x1f2a36, 0x8a9099, 0xd8dde3, 0x2f4a6b, 0x3a3f46, 0x6b5a45, 0x1c3b2f];
-  const carBodies = dyn(named(new THREE.InstancedMesh(carBodyGeo, std(0xffffff, { metalness: 0.6, roughness: 0.3 }), CAP), 'car-bodies'));
-  const carCabs = dyn(named(new THREE.InstancedMesh(carCabGeo, std(0x1a2129, { metalness: 0.8, roughness: 0.12 }), CAP), 'car-cabins'));
-  const vans = dyn(named(new THREE.InstancedMesh(vanGeo, std(LIFE_COLOURS.van, { roughness: 0.45 }), Math.max(1, Math.ceil(CAP * 0.15))), 'delivery-vans'));
-  const buses = dyn(named(new THREE.InstancedMesh(busGeo, std(LIFE_COLOURS.bus, { emissive: LIFE_COLOURS.busWin, emissiveIntensity: 0.25 }), Math.max(1, Math.ceil(CAP * 0.12))), 'buses'));
+  // One instanced mesh per vehicle type (kingdom-models.js): the paint is the
+  // instance colour, glass and trim are in the model's vertex colours.
+  const VTYPES = ['car', 'taxi', 'suv', 'motorbike', 'van', 'lorry', 'bus'];
+  const vgeo = vehicleGeometries(THREE);
+  const vmat = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, metalness: 0.45, roughness: 0.38 });
+  const vmeshes = {};
+  for (const ty of VTYPES) vmeshes[ty] = dyn(named(new THREE.InstancedMesh(vgeo[ty], vmat, CAP), ty === 'bus' ? 'buses' : ty === 'van' ? 'delivery-vans' : ty === 'car' ? 'car-bodies' : `vehicles-${ty}`));
+  const PAINT = { car: [0x1f2a36, 0x8a9099, 0xd8dde3, 0x2f4a6b, 0x3a3f46, 0x6b5a45, 0x1c3b2f, 0xe9edf1, 0x5b2a33], taxi: [LIFE_COLOURS.taxi], suv: [0x14181d, 0xd8dde3, 0x3a3f46, 0x2f4a6b, 0x4a5a3a], motorbike: [0x14181d, 0x2f6db5, 0xd8dde3], van: [0xe9edf1, 0xd8dde3, 0x2f4a6b, 0xf3c623], lorry: [0xe9edf1, 0x2f6db5, 0x3a3f46, 0x1c3b2f], bus: [LIFE_COLOURS.bus, 0xf3c623] };
+  const wheels = dyn(named(new THREE.InstancedMesh(wheelGeometry(THREE), std(0x15171a, { roughness: 0.85 }), CAP * 6), 'vehicle-wheels'));
+  if (settings.legacy) wheels.visible = false; // Legacy phone: the bodies carry the look
+  const carPalette = PAINT.car;
   const lightGeo = new THREE.BoxGeometry(1.5, 0.25, 0.1);
   const heads = dyn(named(new THREE.InstancedMesh(lightGeo, basic(LIFE_COLOURS.head), CAP), 'car-lights'));
   const tails = dyn(named(new THREE.InstancedMesh(lightGeo, basic(LIFE_COLOURS.tail), CAP), 'car-lights'));
@@ -77,9 +84,8 @@ export function createLife(THREE, scene, world, settings) {
   const glareMat = new THREE.MeshBasicMaterial({ map: softTex, color: LIFE_COLOURS.head, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
   const glare = dyn(named(new THREE.InstancedMesh(glareGeo, glareMat, CAP), 'wet-road-glare'));
   root.add(glare);
-  for (let i = 0; i < CAP; i++) carBodies.setColorAt(i, new THREE.Color(carPalette[i % carPalette.length]));
-  for (const m of [carBodies, carCabs, vans, buses, heads, tails, spray]) root.add(m);
-  if (settings.legacy) carCabs.visible = false; // the cabin is the body's darker top on Legacy phone
+  for (const ty of VTYPES) { for (let i = 0; i < CAP; i++) vmeshes[ty].setColorAt(i, new THREE.Color(PAINT[ty][i % PAINT[ty].length])); root.add(vmeshes[ty]); }
+  for (const m of [wheels, heads, tails, spray]) root.add(m);
 
   // Signals at every junction of the simulated network: one head per approach.
   const juncs = traffic.net.junctions.filter((j) => !j.edge);
@@ -135,12 +141,31 @@ export function createLife(THREE, scene, world, settings) {
   const pierX = 205; root.add(moored);
 
   // --- the sky: aircraft on approach, birds at dusk, gulls, pigeons ---
-  const planes = []; for (let i = 0; i < 3; i++) planes.push({ a: r() * Math.PI * 2, rad: 1600 + i * 500, alt: 900 + i * 220, speed: 0.012 + r() * 0.006 });
-  const planeBody = named(new THREE.InstancedMesh(new THREE.BoxGeometry(4, 3, 38), std(0xd8dde3), planes.length), 'aircraft');
-  const planeWing = named(new THREE.InstancedMesh(new THREE.BoxGeometry(34, 0.6, 5), std(0xd8dde3), planes.length), 'aircraft-wings');
+  // Aircraft (kingdom-air.js): airliners high on approach, light planes,
+  // helicopters cruising above the tower, a shuttle between rooftop pads.
+  const air = createAirTraffic({ pads: world.helipads || [], towerTop: TOWER_TOP, scale: phone ? 0.4 : 1 });
+  const ageo = aircraftGeometries(THREE);
+  const amat = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, metalness: 0.5, roughness: 0.35 });
+  const byKind = (k) => air.aircraft.filter((c) => c.kind === k || (k === 'helicopter' && c.kind === 'shuttle'));
+  const airMesh = {
+    airliner: named(new THREE.InstancedMesh(ageo.airliner, amat, Math.max(1, byKind('airliner').length)), 'aircraft'),
+    light: named(new THREE.InstancedMesh(ageo.light, amat, Math.max(1, byKind('light').length)), 'aircraft-light'),
+    helicopter: named(new THREE.InstancedMesh(ageo.helicopter, amat, Math.max(1, byKind('helicopter').length)), 'helicopters')
+  };
+  for (const [k, m] of Object.entries(airMesh)) { byKind(k).forEach((c, i) => m.setColorAt(i, new THREE.Color(k === 'airliner' ? 0xe9edf1 : k === 'light' ? 0xf5f7fa : i % 2 ? 0x1f2a44 : 0xe9edf1))); m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); root.add(m); }
+  const rotorMat = new THREE.MeshBasicMaterial({ color: 0x2b2f36, transparent: true, opacity: 0.35, depthWrite: false });
+  const rotors = dyn(named(new THREE.InstancedMesh(ageo.rotor, rotorMat, Math.max(1, byKind('helicopter').length)), 'helicopter-rotors'));
+  const contrailMat = new THREE.MeshBasicMaterial({ color: 0xf5f7fa, transparent: true, opacity: 0, depthWrite: false });
+  const contrails = dyn(named(new THREE.InstancedMesh(ageo.contrail, contrailMat, Math.max(1, byKind('airliner').length)), 'contrails'));
+  root.add(rotors); root.add(contrails);
+  if (settings.legacy) contrails.visible = false;
   const strobeMat = basic(LIFE_COLOURS.strobe, { transparent: true, opacity: 1 });
-  const strobes = named(new THREE.InstancedMesh(new THREE.SphereGeometry(2.4, 8, 6), strobeMat, planes.length), 'aircraft-strobes');
-  root.add(planeBody); root.add(planeWing); root.add(strobes);
+  const navGreen = basic(LIFE_COLOURS.nav);
+  const strobes = named(new THREE.InstancedMesh(new THREE.SphereGeometry(1.2, 6, 4), strobeMat, air.aircraft.length), 'aircraft-strobes');
+  const navs = named(new THREE.InstancedMesh(new THREE.SphereGeometry(0.6, 6, 4), navGreen, air.aircraft.length), 'aircraft-nav-lights');
+  root.add(strobes); root.add(navs);
+  if (settings.legacy) navs.visible = false; // Legacy phone: the white strobe alone
+  const planes = air.aircraft;
   const nBirds = phone ? 24 : 60;
   const birdPos = new Float32Array(nBirds * 3); const birds = [];
   for (let i = 0; i < nBirds; i++) birds.push({ a: r() * Math.PI * 2, rad: 160 + r() * 260, alt: 60 + r() * 70, speed: 0.04 + r() * 0.03, ph: r() * 6 });
@@ -296,7 +321,7 @@ export function createLife(THREE, scene, world, settings) {
   root.add(benches);
 
 
-  const colourOf = () => [LIFE_COLOURS.head, LIFE_COLOURS.tail, LIFE_COLOURS.taxi, LIFE_COLOURS.bus, LIFE_COLOURS.van, LIFE_COLOURS.stop, LIFE_COLOURS.go, LIFE_COLOURS.wait, LIFE_COLOURS.strobe, LIFE_COLOURS.nav, LIFE_COLOURS.roof, LIFE_COLOURS.tram, LIFE_COLOURS.steam, LIFE_COLOURS.lamp, LIFE_COLOURS.crane, ...LIFE_COLOURS.figure, ...LIFE_COLOURS.umbrella, LIFE_COLOURS.boat, LIFE_COLOURS.ferry, LIFE_COLOURS.cabin, LIFE_COLOURS.bike, LIFE_COLOURS.parasol, LIFE_COLOURS.gull, LIFE_COLOURS.pigeon, LIFE_COLOURS.flag, LIFE_COLOURS.dog, LIFE_COLOURS.shelter, ...carPalette];
+  const colourOf = () => [LIFE_COLOURS.head, LIFE_COLOURS.tail, LIFE_COLOURS.taxi, LIFE_COLOURS.bus, LIFE_COLOURS.van, LIFE_COLOURS.stop, LIFE_COLOURS.go, LIFE_COLOURS.wait, LIFE_COLOURS.strobe, LIFE_COLOURS.nav, LIFE_COLOURS.roof, LIFE_COLOURS.tram, LIFE_COLOURS.steam, LIFE_COLOURS.lamp, LIFE_COLOURS.crane, ...LIFE_COLOURS.figure, ...LIFE_COLOURS.umbrella, LIFE_COLOURS.boat, LIFE_COLOURS.ferry, LIFE_COLOURS.cabin, LIFE_COLOURS.bike, LIFE_COLOURS.parasol, LIFE_COLOURS.gull, LIFE_COLOURS.pigeon, LIFE_COLOURS.flag, LIFE_COLOURS.dog, LIFE_COLOURS.shelter, ...Object.values(PAINT).flat(), 0xe9edf1, 0xf5f7fa, 0x1f2a44, 0x2b2f36];
   const tlColour = { go: new THREE.Color(LIFE_COLOURS.go), wait: new THREE.Color(LIFE_COLOURS.wait), stop: new THREE.Color(LIFE_COLOURS.stop) };
   const lastSig = new Array(approaches.length).fill('');
   const tc = new THREE.Color();
@@ -306,7 +331,8 @@ export function createLife(THREE, scene, world, settings) {
     traffic,
     // For the tests: every colour the city's life uses.
     colours: colourOf,
-    counts: () => ({ vehicles: traffic.vehicles.length, people: people.length + zebraPeds.length + stopPeople.length + cafes.length * 2 + buskers.length, boats: traffic.boats.length, planes: planes.length, birds: nBirds, gulls: nGulls, cyclists: nBikes, trams: traffic.trams.length, overlaps: traffic.overlaps().length }),
+    air: () => air,
+    counts: () => ({ aircraft: air.aircraft.length, airSeparation: Math.round(air.minSeparation()), vehicles: traffic.vehicles.length, people: people.length + zebraPeds.length + stopPeople.length + cafes.length * 2 + buskers.length, boats: traffic.boats.length, planes: planes.length, birds: nBirds, gulls: nGulls, cyclists: nBikes, trams: traffic.trams.length, overlaps: traffic.overlaps().length }),
     update(dt, t, { dark = 0, dusk = 0, light = 1, hour = 19.5, wet = 0, rain = 0, wind = 0, external = [] } = {}) {
       traffic.step(Math.min(dt, 0.1), { external });
       // Signal heads.
@@ -314,30 +340,30 @@ export function createLife(THREE, scene, world, settings) {
       approaches.forEach(({ j, l }, i) => { const s = signalFor(j, l.axis, traffic.time); if (s !== lastSig[i]) { lastSig[i] = s; tlLights.setColorAt(i, tlColour[s]); sigDirty = true; } });
       if (sigDirty && tlLights.instanceColor) tlLights.instanceColor.needsUpdate = true;
       // Vehicles.
-      let ci = 0; let vi = 0; let bi = 0; let si = 0; let gi = 0;
+      let si = 0; let gi = 0; let wi = 0;
       const wetNight = wet > 0.3 && dark > 0.4;
+      const idx = Object.fromEntries(VTYPES.map((ty) => [ty, 0]));
       const vs = traffic.vehicles;
+      const cs = Math.cos; const sn = Math.sin;
       for (let i = 0; i < vs.length; i++) {
         const v = vs[i];
         const { x, y, z, heading: ry } = v;
-        if (v.type === 'bus') set(buses, bi++, x, y, z, ry);
-        else if (v.type === 'van') set(vans, vi++, x, y, z, ry);
-        else {
-          set(carBodies, ci, x, y, z, ry); set(carCabs, ci, x, y, z, ry);
-          if (v.type === 'taxi') carBodies.setColorAt(ci, tc.setHex(LIFE_COLOURS.taxi)); else carBodies.setColorAt(ci, tc.setHex(carPalette[v.id % carPalette.length]));
-          ci++;
-        }
-        const fx = Math.sin(ry) * v.len / 2; const fz = Math.cos(ry) * v.len / 2;
-        set(heads, i, x + fx, y + 0.8, z + fz, ry); set(tails, i, x - fx, y + 0.9, z - fz, ry);
+        const ty = VTYPES.includes(v.type) ? v.type : 'car';
+        const k = idx[ty]++;
+        set(vmeshes[ty], k, x, y, z, ry);
+        if (k === 0 || (v.id % 7) === 0) vmeshes[ty].setColorAt(k, tc.setHex(PAINT[ty][v.id % PAINT[ty].length]));
+        const fx = sn(ry) * v.len / 2; const fz = cs(ry) * v.len / 2; const ly = LIGHT_Y[ty] || 0.8;
+        set(heads, i, x + fx, y + ly, z + fz, ry, ty === 'motorbike' ? 0.25 : 1); set(tails, i, x - fx, y + ly + 0.1, z - fz, ry, ty === 'motorbike' ? 0.25 : 1);
+        if (!settings.legacy) for (const [wx, wz] of WHEELS[ty] || []) for (const sd of (wx ? [-1, 1] : [0])) { const lx = sd * wx; set(wheels, wi++, x + lx * cs(ry) + wz * sn(ry), y, z - lx * sn(ry) + wz * cs(ry), ry, 1, 1, 1, v.v * 3 * dt * 0); }
         // Spray off the tyres on a wet road, more the faster it goes.
         if (wet > 0.3 && v.v > 4) set(spray, si++, x - fx, y, z - fz, ry, 1, 1, Math.min(1.6, v.v / 8));
         if (wetNight) set(glare, gi++, x + fx, y, z + fz, ry);
       }
-      carBodies.count = carCabs.count = ci; vans.count = vi; buses.count = bi; heads.count = tails.count = vs.length; spray.count = si; glare.count = gi; glare.visible = gi > 0;
+      for (const ty of VTYPES) { const m = vmeshes[ty]; m.count = idx[ty]; m.visible = idx[ty] > 0; m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
+      wheels.count = wi; heads.count = tails.count = vs.length; spray.count = si; glare.count = gi; glare.visible = gi > 0;
       glareMat.opacity = wetNight ? 0.35 * Math.min(1, wet) * Math.min(1, dark) : 0; glare.instanceMatrix.needsUpdate = true;
       sprayMat.opacity = Math.max(0, wet - 0.3) * 0.5 * (0.6 + rain * 0.4);
-      if (carBodies.instanceColor) carBodies.instanceColor.needsUpdate = true;
-      for (const m of [carBodies, carCabs, vans, buses, heads, tails, spray]) m.instanceMatrix.needsUpdate = true;
+      for (const m of [wheels, heads, tails, spray]) m.instanceMatrix.needsUpdate = true;
       // The trams.
       traffic.trams.forEach((tr, n) => { for (let i = 0; i < 5; i++) set(carriages, n * 5 + i, tr.x - tr.dir * (i * 18.6 + 9), 17.4, tr.z); });
       carriages.count = traffic.trams.length * 5; carriages.instanceMatrix.needsUpdate = true;
@@ -351,8 +377,20 @@ export function createLife(THREE, scene, world, settings) {
       for (let j = 0; j < 4; j++) set(moored, j, pierX + (j % 2 ? 11 : -11), -2.9 + Math.sin(t * 0.9 + j) * 0.12, RIVER.z - RIVER.half + 10 + Math.floor(j / 2) * 18, 0, 1, 1, 1, Math.sin(t * 0.7 + j * 2) * 0.03, Math.sin(t * 0.8 + j) * 0.05);
       moored.instanceMatrix.needsUpdate = true;
       // Aircraft blinking high on approach.
-      planes.forEach((p, i) => { p.a += p.speed * dt; const x = Math.cos(p.a) * p.rad; const z = Math.sin(p.a) * p.rad; const ry = -p.a; set(planeBody, i, x, p.alt, z, ry); set(planeWing, i, x, p.alt, z, ry); set(strobes, i, x, p.alt - 2, z, ry, 1, 1, 1); });
-      planeBody.instanceMatrix.needsUpdate = true; planeWing.instanceMatrix.needsUpdate = true; strobes.instanceMatrix.needsUpdate = true;
+      air.step(Math.min(dt, 0.1));
+      const ai = { airliner: 0, light: 0, helicopter: 0 }; let ri = 0; let ci2 = 0;
+      air.aircraft.forEach((c, i) => {
+        const k = c.kind === 'shuttle' ? 'helicopter' : c.kind; const j = ai[k]++;
+        dummy.position.set(c.x, c.y, c.z); dummy.rotation.set(-(c.pitch || 0) * 0.5, c.heading || 0, c.roll || 0, 'YXZ'); dummy.scale.setScalar(1); dummy.updateMatrix(); airMesh[k].setMatrixAt(j, dummy.matrix);
+        if (k === 'helicopter') { dummy.rotation.set(0, (c.heading || 0) + c.rotor, 0, 'YXZ'); dummy.updateMatrix(); rotors.setMatrixAt(ri++, dummy.matrix); }
+        if (c.kind === 'airliner') { dummy.rotation.set(0, c.heading || 0, 0, 'YXZ'); dummy.updateMatrix(); contrails.setMatrixAt(ci2++, dummy.matrix); }
+        set(strobes, i, c.x, c.y + (k === 'helicopter' ? 3.6 : 2.2), c.z); set(navs, i, c.x + Math.cos(c.heading || 0) * (k === 'airliner' ? 17 : 2), c.y, c.z - Math.sin(c.heading || 0) * (k === 'airliner' ? 17 : 2));
+      });
+      for (const m of Object.values(airMesh)) m.instanceMatrix.needsUpdate = true;
+      rotors.count = ri; contrails.count = ci2;
+      rotors.instanceMatrix.needsUpdate = true; contrails.instanceMatrix.needsUpdate = true; strobes.instanceMatrix.needsUpdate = true; navs.instanceMatrix.needsUpdate = true;
+      // Contrails by day, high up, in clear air.
+      contrailMat.opacity = 0.35 * light * (1 - Math.min(1, wet));
       strobeMat.opacity = (t % 1.4) < 0.12 ? 1 : 0.15;
       // Birds at dusk; gulls over the river; pigeons on the roofs.
       birdPts.material.opacity = Math.min(0.8, dusk * 1.2 + light * 0.2);

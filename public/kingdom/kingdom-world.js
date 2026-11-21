@@ -657,6 +657,79 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   }
   root.add(shadowed(keep));
 
+  // --- the tower's security perimeter (a real high-security site, not a castle) ---
+  // A 1.8 m glass-and-steel security fence round the tower at FENCE_R, with
+  // two controlled entrances (north and south, on the plaza's axis): striped
+  // barrier arms, a glazed guard booth beside each, hostile-vehicle bollards
+  // outside the fence and across every road into the plaza, CCTV posts and
+  // floodlights. PG1's guards patrol inside (kingdom-actors.js).
+  const FENCE_R = 35; const GATE_HALF = 0.16; // radians each side of a gate
+  const security = named(new THREE.Group(), 'tower-security');
+  const fencePanels = []; const fencePosts = [];
+  const nSeg = 72;
+  const inGate = (a) => { const d = (x) => Math.abs(Math.atan2(Math.sin(a - x), Math.cos(a - x))); return d(Math.PI / 2) < GATE_HALF || d(-Math.PI / 2) < GATE_HALF; };
+  for (let i = 0; i < nSeg; i++) {
+    const a0 = (i / nSeg) * Math.PI * 2; const a1 = ((i + 1) / nSeg) * Math.PI * 2; const am = (a0 + a1) / 2;
+    if (!inGate(a0)) fencePosts.push(a0);
+    if (inGate(am)) continue;
+    fencePanels.push(am);
+  }
+  const segLen = 2 * FENCE_R * Math.sin(Math.PI / nSeg);
+  const panelGeo = new THREE.BoxGeometry(segLen - 0.12, 1.5, 0.06); panelGeo.translate(0, 1.05, 0);
+  const panels = named(new THREE.InstancedMesh(panelGeo, new THREE.MeshStandardMaterial({ color: 0x9fb4c4, roughness: 0.08, metalness: 0.4, transparent: true, opacity: 0.35, depthWrite: false }), fencePanels.length), 'tower-security-fence');
+  const railGeo = new THREE.BoxGeometry(segLen, 0.08, 0.1); railGeo.translate(0, 1.84, 0);
+  const rails = named(new THREE.InstancedMesh(railGeo, mats.steel, fencePanels.length), 'tower-security-fence-rail');
+  fencePanels.forEach((a, i) => { const x = Math.cos(a) * FENCE_R; const z = Math.sin(a) * FENCE_R; set(panels, i, x, 0, z, 1, 1, 1, -a + Math.PI / 2); set(rails, i, x, 0, z, 1, 1, 1, -a + Math.PI / 2); });
+  const postGeo = new THREE.BoxGeometry(0.14, 1.9, 0.14); postGeo.translate(0, 0.95, 0);
+  const posts2 = named(new THREE.InstancedMesh(postGeo, mats.steelDark, fencePosts.length), 'tower-security-fence-posts');
+  fencePosts.forEach((a, i) => set(posts2, i, Math.cos(a) * FENCE_R, 0, Math.sin(a) * FENCE_R));
+  security.add(panels, rails, posts2);
+  // The two entrances: barrier arms (white with gold bands), booths, a turnstile gap.
+  const armTex = (() => { const cv = document.createElement('canvas'); cv.width = 128; cv.height = 8; const g = cv.getContext('2d'); for (let x = 0; x < 128; x += 16) { g.fillStyle = (x / 16) % 2 ? '#f3c623' : '#f5f7fa'; g.fillRect(x, 0, 16, 8); } const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t; })();
+  const armGeo = new THREE.BoxGeometry(4.6, 0.12, 0.12); armGeo.translate(2.3, 0, 0);
+  const arms = named(new THREE.InstancedMesh(armGeo, new THREE.MeshStandardMaterial({ map: armTex, roughness: 0.5 }), 4), 'tower-security-gate-arms');
+  const armPostGeo = new THREE.BoxGeometry(0.4, 1.1, 0.4); armPostGeo.translate(0, 0.55, 0);
+  const armPosts = named(new THREE.InstancedMesh(armPostGeo, mats.steelDark, 4), 'tower-security-gate-posts');
+  const boothGeo = new THREE.BoxGeometry(2.4, 2.6, 2.4); boothGeo.translate(0, 1.3, 0);
+  const booths = named(new THREE.InstancedMesh(boothGeo, mats.glass, 2), 'tower-guard-booths');
+  const boothRoofGeo = new THREE.BoxGeometry(3, 0.25, 3); boothRoofGeo.translate(0, 2.72, 0);
+  const boothRoofs = named(new THREE.InstancedMesh(boothRoofGeo, mats.steelDark, 2), 'tower-guard-booth-roofs');
+  const secGates = [];
+  [Math.PI / 2, -Math.PI / 2].forEach((ga, gi) => {
+    const gx = Math.cos(ga) * FENCE_R; const gz = Math.sin(ga) * FENCE_R; const side = Math.sign(gz);
+    // Two arms meeting in the middle, closed: people pass through the turnstile gap by the booth.
+    set(armPosts, gi * 2, gx - 4.8, 0, gz); set(arms, gi * 2, gx - 4.8, 1.0, gz);
+    set(armPosts, gi * 2 + 1, gx + 4.8, 0, gz); set(arms, gi * 2 + 1, gx + 4.8, 1.0, gz, 1, 1, 1, Math.PI);
+    set(booths, gi, gx + 7.6, 0, gz - side * 1.6); set(boothRoofs, gi, gx + 7.6, 0, gz - side * 1.6);
+    secGates.push({ x: gx, z: gz, side, booth: { x: gx + 7.6, z: gz - side * 1.6 } });
+  });
+  security.add(arms, armPosts, booths, boothRoofs);
+  // Hostile-vehicle bollards: a ring outside the fence (gaps at the gates are
+  // bollard rows too, for people only) and rows across each road into the plaza.
+  const bollards = [];
+  for (let i = 0; i < 110; i++) { const a = (i / 110) * Math.PI * 2; bollards.push([Math.cos(a) * (FENCE_R + 2.2), Math.sin(a) * (FENCE_R + 2.2)]); }
+  for (const [x0, z0, dx, dz] of [[0, -58, 1, 0], [0, 58, 1, 0], [-56, -40, 0, 1], [56, -40, 0, 1]]) for (let k = -5; k <= 5; k++) bollards.push([x0 + dx * k * 1.5, z0 + dz * k * 1.5]);
+  const bollardGeo = new THREE.CylinderGeometry(0.16, 0.18, 1.0, 8); bollardGeo.translate(0, 0.5, 0);
+  const bollardMesh = named(new THREE.InstancedMesh(bollardGeo, mats.steel, bollards.length), 'tower-bollards');
+  bollards.forEach(([x, z], i) => set(bollardMesh, i, x, 0, z));
+  security.add(bollardMesh);
+  // CCTV posts and floodlights on the fence.
+  const camPosts = []; for (let i = 0; i < 8; i++) camPosts.push((i / 8) * Math.PI * 2 + 0.2);
+  const cctvPoleGeo = new THREE.CylinderGeometry(0.1, 0.12, 5, 6); cctvPoleGeo.translate(0, 2.5, 0);
+  const cctvPoles = named(new THREE.InstancedMesh(cctvPoleGeo, mats.steelDark, camPosts.length), 'tower-cctv-poles');
+  const cctvGeo = new THREE.BoxGeometry(0.35, 0.3, 0.7); cctvGeo.translate(0, 5.05, 0.25);
+  const cctv = named(new THREE.InstancedMesh(cctvGeo, mats.white, camPosts.length), 'tower-cctv');
+  const ledGeo = new THREE.SphereGeometry(0.07, 6, 4); ledGeo.translate(0, 5.05, 0.62);
+  const cctvLeds = named(new THREE.InstancedMesh(ledGeo, mats.led, camPosts.length), 'tower-cctv-leds');
+  camPosts.forEach((a, i) => { const x = Math.cos(a) * (FENCE_R - 0.6); const z = Math.sin(a) * (FENCE_R - 0.6); const ry = Math.atan2(x, z); set(cctvPoles, i, x, 0, z); set(cctv, i, x, 0, z, 1, 1, 1, ry); set(cctvLeds, i, x, 0, z, 1, 1, 1, ry); });
+  const floodMat = new THREE.MeshBasicMaterial({ color: 0x5a6068 });
+  const floodGeo = new THREE.BoxGeometry(0.5, 0.18, 0.3); floodGeo.translate(0, 1.95, 0);
+  const floods = named(new THREE.InstancedMesh(floodGeo, floodMat, Math.ceil(fencePosts.length / 4)), 'tower-floodlights');
+  fencePosts.filter((_, i) => i % 4 === 0).forEach((a, i) => set(floods, i, Math.cos(a) * FENCE_R, 0, Math.sin(a) * FENCE_R, 1, 1, 1, -a + Math.PI / 2));
+  security.add(cctvPoles, cctv, cctvLeds, floods);
+  root.add(shadowed(security));
+  for (const g of secGates) obstacles.push({ x: g.booth.x, z: g.booth.z, hw: 1.6, hd: 1.6, top: 3 });
+
   // --- the plaza: the Seal Forge and the Preflight Array ---
   const forge = named(new THREE.Group(), 'seal-forge');
   forge.add(named(new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.5, 2, 16), mats.steelDark), 'seal-forge-base'));
@@ -904,7 +977,8 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   return {
     root, gates, portcullis, vaultDoors, beacons, lanterns, forge: { group: forge, seal: sealMat }, harbour: { bearing: Math.atan2(harbourPoint.x, -harbourPoint.z), point: harbourPoint },
     tollBarrier: barrier, toll, dome: domeUniforms, domeMesh: dome, preflight, crane, xray, deckY: DECK_Y, tip: tip.position, roofSpots,
-    fogBearing, keep, sun, hemi, sky, windows: facade.userData.windows, env, buildingCount: lots.length,
+    helipads: pads.map((t) => ({ x: t.x - t.w * 0.15, y: t.y + 0.3, z: t.z })),
+    fogBearing, keep, sun, hemi, sky, security: { fenceR: FENCE_R, gates: secGates }, windows: facade.userData.windows, env, buildingCount: lots.length,
     obstacles: makeObstacleIndex(obstacles), mirror, brandTex, emblemY,
     emblemMeshes: emblems3d.map((e) => e.group),
     setBillboards(stats) { drawBillboards(stats); },
@@ -987,6 +1061,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       facade.userData.windows.uGround.value.setRGB(0.1, 0.105, 0.115).multiplyScalar(0.4 + 0.6 * light);
       facade.userData.windows.uTime.value = t;
       lampMat.color.setHex(moon > 0.3 || dusk > 0.5 ? 0xffd9a0 : 0x6a6252);
+      floodMat.color.setHex(moon > 0.3 || dusk > 0.5 ? 0xeaf4ff : 0x5a6068);
       streakMat.opacity = 0.25 + 0.7 * Math.max(dusk, moon);
       // Streaks shimmer with the ripples.
       for (let i = 0; i < streakSeeds.length; i++) { const s = streakSeeds[i]; const w = 1 + 0.35 * Math.sin(t * 2.2 + s.ph); set(streaks, i, s.x + Math.sin(t * 0.8 + s.ph) * 0.6, -3.0, RIVER.z + s.side * (RIVER.half - s.len / 2 - 1), w * 1.2, s.len, 1, 0, -Math.PI / 2); }
