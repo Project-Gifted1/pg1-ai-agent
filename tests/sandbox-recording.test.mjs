@@ -67,7 +67,9 @@ test('keys move the camera whenever the Sandbox is open, not only with the canva
 
 test('recording: no tier changes (they rebuild the view), the render scale adapts, panels every 10 s, a glide not a jump', () => {
   const scene = read('public/sandbox/sandbox-scene.js');
-  assert.match(scene, /onTierChange: \(t\) => \{ if \(auto && !recordingOn\) switchTo\(t, \{ manual: false \}\); \}/);
+  assert.match(scene, /onTierChange: \(t\) => \{ if \(auto && !recordingOn\) \{ tierSource = 'governor'; switchTo\(t, \{ manual: false \}\); \} \}/);
+  // The load-time probe never changes the tier while recording either.
+  assert.match(scene, /if \(auto && !recordingOn && pick !== current\) switchTo\(pick, \{ manual: false \}\);/);
   assert.match(scene, /inner\.governor\.setAuto\(auto && !recordingOn\)/);
   assert.match(scene, /const scaling = \(\) => tier === 'cinematic' \|\| recording \|\| coarse;/);
   assert.match(scene, /const lock = now < glideUntil \? 1\.4 : 9;/, 'a new target is glided to');

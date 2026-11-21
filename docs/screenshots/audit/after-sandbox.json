@@ -1,0 +1,640 @@
+{
+  "tag": "after",
+  "at": "2026-11-21T04:56:15.608Z",
+  "renderer": "SwiftShader (software)",
+  "viewport": {
+    "width": 360,
+    "height": 800
+  },
+  "sandbox": {
+    "auto": {
+      "tierSource": "probe",
+      "tier": "low",
+      "probeMs": "147",
+      "probePick": "low",
+      "renderScale": "0.65",
+      "errors": []
+    },
+    "low": {
+      "tierShown": "low",
+      "overview": {
+        "msPerFrame": 106,
+        "fps": 9.5,
+        "glDrawCalls": 41,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "low",
+        "calls": 41,
+        "triangles": 597974,
+        "geometries": 29,
+        "textures": 1,
+        "pixelRatio": 0.9750000000000001,
+        "targetFps": 30,
+        "probeMs": null
+      },
+      "space": {
+        "msPerFrame": 33,
+        "fps": 30.2,
+        "glDrawCalls": 41,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "low",
+        "calls": 41,
+        "triangles": 156422,
+        "geometries": 64,
+        "textures": 9,
+        "pixelRatio": 0.9750000000000001,
+        "targetFps": 30,
+        "probeMs": null
+      },
+      "planet": {
+        "msPerFrame": 41,
+        "fps": 24.6,
+        "glDrawCalls": 33,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "low",
+        "calls": 33,
+        "triangles": 132612,
+        "geometries": 65,
+        "textures": 9,
+        "pixelRatio": 0.9750000000000001,
+        "targetFps": 30,
+        "probeMs": null
+      },
+      "ground": {
+        "msPerFrame": 70,
+        "fps": 14.3,
+        "glDrawCalls": 31,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 7,
+          "flash": 0
+        },
+        "tier": "low",
+        "calls": 31,
+        "triangles": 589926,
+        "geometries": 72,
+        "textures": 9,
+        "pixelRatio": 0.9750000000000001,
+        "targetFps": 30,
+        "probeMs": null
+      },
+      "night": {
+        "msPerFrame": 83,
+        "fps": 12,
+        "glDrawCalls": 32,
+        "weather": {
+          "state": "overcast",
+          "rain": 0,
+          "dark": 0.32
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "low",
+        "calls": 32,
+        "triangles": 588296,
+        "geometries": 144,
+        "textures": 9,
+        "pixelRatio": 0.9750000000000001,
+        "targetFps": 30,
+        "probeMs": null
+      },
+      "beninOverview": {
+        "msPerFrame": 89,
+        "fps": 11.3,
+        "glDrawCalls": 41,
+        "weather": {
+          "state": "storm",
+          "rain": 0.93,
+          "dark": 0.79
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "low",
+        "calls": 42,
+        "triangles": 415912,
+        "geometries": 119,
+        "textures": 9,
+        "pixelRatio": 0.9750000000000001,
+        "targetFps": 30,
+        "probeMs": null
+      },
+      "ui": {
+        "overflowX": false
+      },
+      "errors": [],
+      "weather": {
+        "state": "rain",
+        "rain": 0.68,
+        "dark": 0.58
+      }
+    },
+    "medium": {
+      "tierShown": "medium",
+      "overview": {
+        "msPerFrame": 221,
+        "fps": 4.5,
+        "glDrawCalls": 69,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "medium",
+        "calls": 69,
+        "triangles": 1220663,
+        "geometries": 60,
+        "textures": 34,
+        "pixelRatio": 0.8125,
+        "targetFps": 60,
+        "probeMs": null
+      },
+      "space": {
+        "msPerFrame": 111,
+        "fps": 9,
+        "glDrawCalls": 64,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "medium",
+        "calls": 65,
+        "triangles": 437343,
+        "geometries": 95,
+        "textures": 42,
+        "pixelRatio": 0.8125,
+        "targetFps": 60,
+        "probeMs": null
+      },
+      "planet": {
+        "msPerFrame": 79,
+        "fps": 12.7,
+        "glDrawCalls": 50,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "medium",
+        "calls": 50,
+        "triangles": 131669,
+        "geometries": 96,
+        "textures": 42,
+        "pixelRatio": 0.8125,
+        "targetFps": 60,
+        "probeMs": null
+      },
+      "ground": {
+        "msPerFrame": 194,
+        "fps": 5.2,
+        "glDrawCalls": 63,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 18,
+          "flash": 0
+        },
+        "tier": "medium",
+        "calls": 63,
+        "triangles": 1226513,
+        "geometries": 110,
+        "textures": 42,
+        "pixelRatio": 0.8125,
+        "targetFps": 60,
+        "probeMs": null
+      },
+      "night": {
+        "msPerFrame": 219,
+        "fps": 4.6,
+        "glDrawCalls": 58,
+        "weather": {
+          "state": "overcast",
+          "rain": 0,
+          "dark": 0.34
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "medium",
+        "calls": 58,
+        "triangles": 1236033,
+        "geometries": 202,
+        "textures": 43,
+        "pixelRatio": 0.8125,
+        "targetFps": 60,
+        "probeMs": null
+      },
+      "beninOverview": {
+        "msPerFrame": 143,
+        "fps": 7,
+        "glDrawCalls": 52,
+        "weather": {
+          "state": "storm",
+          "rain": 0.96,
+          "dark": 0.8
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "medium",
+        "calls": 53,
+        "triangles": 522201,
+        "geometries": 166,
+        "textures": 42,
+        "pixelRatio": 0.8125,
+        "targetFps": 60,
+        "probeMs": null
+      },
+      "ui": {
+        "overflowX": false
+      },
+      "errors": [],
+      "weather": {
+        "state": "snow",
+        "rain": 0,
+        "dark": 0.3
+      }
+    },
+    "high": {
+      "tierShown": "high",
+      "overview": {
+        "msPerFrame": 510,
+        "fps": 2,
+        "glDrawCalls": 104,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "high",
+        "calls": 104,
+        "triangles": 2465253,
+        "geometries": 70,
+        "textures": 39,
+        "pixelRatio": 1.1375,
+        "targetFps": 60,
+        "probeMs": null
+      },
+      "space": {
+        "msPerFrame": 275,
+        "fps": 3.6,
+        "glDrawCalls": 90,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "high",
+        "calls": 92,
+        "triangles": 1049183,
+        "geometries": 106,
+        "textures": 47,
+        "pixelRatio": 1.1375,
+        "targetFps": 60,
+        "probeMs": null
+      },
+      "planet": {
+        "msPerFrame": 211,
+        "fps": 4.8,
+        "glDrawCalls": 64,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "high",
+        "calls": 64,
+        "triangles": 259205,
+        "geometries": 107,
+        "textures": 47,
+        "pixelRatio": 1.1375,
+        "targetFps": 60,
+        "probeMs": null
+      },
+      "ground": {
+        "msPerFrame": 447,
+        "fps": 2.2,
+        "glDrawCalls": 140,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 33,
+          "flash": 0
+        },
+        "tier": "high",
+        "calls": 140,
+        "triangles": 2561845,
+        "geometries": 124,
+        "textures": 47,
+        "pixelRatio": 1.1375,
+        "targetFps": 60,
+        "probeMs": null
+      },
+      "night": {
+        "msPerFrame": 465,
+        "fps": 2.2,
+        "glDrawCalls": 94,
+        "weather": {
+          "state": "overcast",
+          "rain": 0,
+          "dark": 0.33
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "high",
+        "calls": 94,
+        "triangles": 2472589,
+        "geometries": 222,
+        "textures": 48,
+        "pixelRatio": 1.1375,
+        "targetFps": 60,
+        "probeMs": null
+      },
+      "beninOverview": {
+        "msPerFrame": 358,
+        "fps": 2.8,
+        "glDrawCalls": 106,
+        "weather": {
+          "state": "storm",
+          "rain": 0.96,
+          "dark": 0.8
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "high",
+        "calls": 104,
+        "triangles": 1121733,
+        "geometries": 186,
+        "textures": 47,
+        "pixelRatio": 1.1375,
+        "targetFps": 60,
+        "probeMs": null
+      },
+      "ui": {
+        "overflowX": false
+      },
+      "errors": []
+    },
+    "cinematic": {
+      "tierShown": "cinematic",
+      "overview": {
+        "msPerFrame": 202,
+        "fps": 5,
+        "glDrawCalls": 59,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "cinematic",
+        "calls": 59,
+        "triangles": 1227817,
+        "geometries": 69,
+        "textures": 34,
+        "pixelRatio": 0.75,
+        "targetFps": 30,
+        "probeMs": null
+      },
+      "space": {
+        "msPerFrame": 103,
+        "fps": 9.7,
+        "glDrawCalls": 66,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "cinematic",
+        "calls": 66,
+        "triangles": 441411,
+        "geometries": 105,
+        "textures": 42,
+        "pixelRatio": 0.75,
+        "targetFps": 30,
+        "probeMs": null
+      },
+      "planet": {
+        "msPerFrame": 61,
+        "fps": 16.4,
+        "glDrawCalls": 50,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "cinematic",
+        "calls": 50,
+        "triangles": 131597,
+        "geometries": 106,
+        "textures": 42,
+        "pixelRatio": 0.75,
+        "targetFps": 30,
+        "probeMs": null
+      },
+      "ground": {
+        "msPerFrame": 224,
+        "fps": 4.5,
+        "glDrawCalls": 69,
+        "weather": {
+          "state": "clear",
+          "rain": 0,
+          "dark": 0
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 36,
+          "flash": 0
+        },
+        "tier": "cinematic",
+        "calls": 69,
+        "triangles": 1240889,
+        "geometries": 124,
+        "textures": 42,
+        "pixelRatio": 0.75,
+        "targetFps": 30,
+        "probeMs": null
+      },
+      "night": {
+        "msPerFrame": 191,
+        "fps": 5.2,
+        "glDrawCalls": 55,
+        "weather": {
+          "state": "overcast",
+          "rain": 0,
+          "dark": 0.33
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "cinematic",
+        "calls": 55,
+        "triangles": 1247485,
+        "geometries": 221,
+        "textures": 43,
+        "pixelRatio": 0.75,
+        "targetFps": 30,
+        "probeMs": null
+      },
+      "beninOverview": {
+        "msPerFrame": 148,
+        "fps": 6.7,
+        "glDrawCalls": 58,
+        "weather": {
+          "state": "storm",
+          "rain": 0.96,
+          "dark": 0.8
+        },
+        "atmosphere": {
+          "rain": 0,
+          "snow": 0,
+          "birds": 0,
+          "flash": 0
+        },
+        "tier": "cinematic",
+        "calls": 65,
+        "triangles": 539109,
+        "geometries": 186,
+        "textures": 42,
+        "pixelRatio": 0.75,
+        "targetFps": 30,
+        "probeMs": null
+      },
+      "ui": {
+        "overflowX": false
+      },
+      "errors": [],
+      "weather": {
+        "state": "storm",
+        "rain": 0.99,
+        "dark": 0.81
+      }
+    }
+  },
+  "city": {},
+  "errors": []
+}

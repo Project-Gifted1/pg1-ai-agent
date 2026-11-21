@@ -396,6 +396,9 @@ test('migration: a unique timestamp after every other, safe to run twice, servic
   // The store against the real tables.
   const fetchImpl = pgRest(d, { base: SUP });
   const store = createSandboxStore({ supUrl: SUP, supKey: 'k', fetchImpl });
+  // PG1's first universe (its oldest world) comes first: it is never deleted.
+  const first = await createWorld(store, pg1Principal(), { name: 'First universe', spec: SPEC });
+  await d.query("update pg1_worlds set created_at = now() - interval '1 day' where id = $1", [first.id]);
   const v = await createWorld(store, pg1Principal(), { name: 'Db world', spec: SPEC });
   await stepWorldFor(store, pg1Principal(), { world_id: v.id, steps: 5 });
   const o = await observeWorld(store, pg1Principal(), { world_id: v.id });
@@ -426,4 +429,6 @@ test('migration: a unique timestamp after every other, safe to run twice, servic
   assert.equal(forged.chain.broken_at, 1);
   await deleteWorldFor(store, pg1Principal(), { world_id: v.id });
   assert.ok((await d.query('select count(*)::int as n from pg1_world_blackbox where world_id = $1', [v.id])).rows[0].n > 0, 'the black box outlives the world');
+  await assert.rejects(deleteWorldFor(store, pg1Principal(), { world_id: first.id }), (e) => e.code === 'first_universe');
+  assert.ok(await store.getWorld(first.id), 'the first universe is kept');
 });

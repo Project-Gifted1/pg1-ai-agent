@@ -16,6 +16,8 @@ export const TIER_LABEL = Object.freeze({ low: 'Low', medium: 'Medium', high: 'H
 
 // What each tier turns on:
 //   pixelRatio, cascades, shadowMapSize   resolution and cascaded shadows
+//             (Low draws at 1.5x on a sharp phone screen, with multisampling;
+//             on a phone the render scale lowers it while frames run slow)
 //   gtao, bloom, aa                       post-processing (post.js)
 //   water, sky, textures, grass, forest   the world's surfaces (environment.js)
 //   streets   detailed streets: markings, kerbs, pavements, crossings, lamps
@@ -31,7 +33,7 @@ export const TIER_LABEL = Object.freeze({ low: 'Low', medium: 'Medium', high: 'H
 //   foliage   grass tufts and flowers round the camera (foliage.js), and
 //             foliageRadius, how far out they grow (metres)
 export const TIER_SETTINGS = Object.freeze({
-  low: Object.freeze({ pixelRatio: 1, cascades: 0, shadowMapSize: 0, gtao: false, bloom: false, aa: 'none', water: false, sky: 'gradient', textures: false, grass: 0.35, forest: 0.4, targetFps: 30, streets: false, coast: false, ibl: false, lod: 30, reflect: 'sky', dof: false, ease: 5, foliage: 0, foliageRadius: 60 }),
+  low: Object.freeze({ pixelRatio: 1.5, cascades: 0, shadowMapSize: 0, gtao: false, bloom: false, aa: 'none', water: false, sky: 'gradient', textures: false, grass: 0.35, forest: 0.4, targetFps: 30, streets: false, coast: false, ibl: false, lod: 30, reflect: 'sky', dof: false, ease: 5, foliage: 0, foliageRadius: 60 }),
   medium: Object.freeze({ pixelRatio: 1.25, cascades: 2, shadowMapSize: 1024, gtao: false, bloom: true, aa: 'smaa', water: false, sky: 'physical', textures: true, grass: 0.7, forest: 0.7, targetFps: 60, streets: true, coast: true, ibl: true, lod: 45, reflect: 'sky', dof: false, ease: 5, foliage: 12000, foliageRadius: 45 }),
   high: Object.freeze({ pixelRatio: 1.75, cascades: 3, shadowMapSize: 2048, gtao: true, bloom: true, aa: 'smaa', water: true, sky: 'physical', textures: true, grass: 1, forest: 1, targetFps: 60, streets: true, coast: true, ibl: true, lod: 70, reflect: 'sky', dof: false, ease: 5, foliage: 30000, foliageRadius: 60 }),
   ultra: Object.freeze({ pixelRatio: 2, cascades: 4, shadowMapSize: 4096, gtao: true, bloom: true, aa: 'taa', water: true, sky: 'physical', textures: true, grass: 1.4, forest: 1.2, targetFps: 60, streets: true, coast: true, ibl: true, lod: 100, reflect: 'sky', dof: false, ease: 5, foliage: 60000, foliageRadius: 75 }),
@@ -84,8 +86,24 @@ export function createGovernor({ tier = 'high', budgetMs = 1000 / 60, window = 1
 // the shadow map is at most PHONE_SHADOW_MAP (4096) and the foliage scales
 // with what the device has (fewer cores or less memory, fewer tufts).
 export const PHONE_SHADOW_MAP = 4096;
-export function deviceSettings(settings, { coarse = false, memory = 0, cores = 0 } = {}) {
+// Ultra and Cinematic on a phone (a Galaxy A07 class GPU, a 30 fps
+// budget): the same look, made for the phone. Kept: depth of field on what
+// the camera follows (Cinematic), bloom, soft cascaded shadows, ambient
+// occlusion, the physical sky, the water shader, image-based light, the
+// detailed streets and coasts. Changed: SMAA instead of temporal
+// accumulation (four scene renders a still frame), the water's sky
+// reflection instead of a planar mirror (the whole scene drawn twice),
+// ambient occlusion at half resolution with 8 samples, two 2048 shadow
+// cascades, 1.5x pixels at most (the render scale lowers them while frames
+// run slow), less grass and forest, a shorter full-detail distance, and
+// depth of field reading the scene's own depth (post.js shareDepth).
+export const PHONE_CINEMATIC = Object.freeze({ shareDepth: true, pixelRatio: 1.5, cascades: 2, shadowMapSize: 2048, aa: 'smaa', reflect: 'sky', gtaoScale: 0.5, gtaoSamples: 8, grass: 0.9, forest: 0.9, lod: 70, foliage: 20000, foliageRadius: 50, targetFps: 30 });
+export function deviceSettings(settings, { coarse = false, memory = 0, cores = 0, tier = null } = {}) {
   const s = { ...settings };
+  if (coarse && (tier === 'cinematic' || tier === 'ultra')) Object.assign(s, PHONE_CINEMATIC, { dof: settings.dof });
+  // 4 GB or less (the Galaxy A07): no ambient occlusion. Its normal and depth
+  // pass draws the whole scene again, a cost the render scale cannot lower.
+  if (coarse && (tier === 'cinematic' || tier === 'ultra') && memory && memory <= 4) s.gtao = false;
   if (coarse && s.shadowMapSize > PHONE_SHADOW_MAP) s.shadowMapSize = PHONE_SHADOW_MAP;
   let k = coarse ? 0.6 : 1;
   if (memory && memory <= 4) k *= 0.6;
