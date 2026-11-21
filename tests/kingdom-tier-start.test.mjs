@@ -59,3 +59,12 @@ test('the operator\'s override, a tier kept by hand, the kept probe', () => {
   assert.deepEqual(chooseKingdomStart({ ...DESKTOP, cached: 'high' }), { tier: 'balanced', source: 'probe (kept)', probe: false, held: false });
   assert.deepEqual(chooseKingdomStart({ ...A07, forced: 'cinematic' }), { tier: 'cinematic', source: 'caller', probe: false, held: true });
 });
+
+test('mid-rebuild, what the page sets is kept for the new scene, never an error', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../public/kingdom/kingdom-scene.js', import.meta.url), 'utf8');
+  assert.match(src, /if \(!cur\) return REPLAY\.includes\(key\) \? \(\.\.\.args\) => \{ memo\.set\(key, args\); \} : undefined;/);
+  // Everything the page calls on each feed update is in REPLAY.
+  const replay = /const REPLAY = \[([^\]]+)\]/.exec(src)[1];
+  for (const k of ['setThreat', 'setWeather', 'setState', 'setToday', 'setPaused']) assert.ok(replay.includes(`'${k}'`), k);
+});

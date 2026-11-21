@@ -777,7 +777,11 @@ export async function createKingdomScene(container, { reducedMotion = false, coa
       if (key === 'rebuilding') return rebuilding;
       if (key === 'renderer') return fallback && !impl ? '2d' : 'webgl';
       const cur = impl || fallback;
-      if (!cur) return undefined;
+      // Mid-rebuild (a quality change, a restored context) there is no scene
+      // for a moment: what the page sets then (the threat, the weather, the
+      // light...) is kept and played onto the new scene when it is built,
+      // never a "not a function" error when a feed update lands in that gap.
+      if (!cur) return REPLAY.includes(key) ? (...args) => { memo.set(key, args); } : undefined;
       const v = cur[key];
       if (typeof v !== 'function') return v;
       return (...args) => { if (REPLAY.includes(key)) memo.set(key, args); return v.apply(cur, args); };
