@@ -1,0 +1,234 @@
+{
+  "tag": "after",
+  "at": "2026-11-21T03:42:17.614Z",
+  "renderer": "SwiftShader (software)",
+  "viewport": {
+    "width": 360,
+    "height": 800
+  },
+  "sandbox": {},
+  "city": {
+    "auto": {
+      "day": {
+        "tierSource": "probe",
+        "probeMs": "25.3",
+        "probePick": "legacy",
+        "firstFrameMs": 4907,
+        "tierShown": "legacy",
+        "msPerFrame": 39,
+        "fps": 25.4,
+        "glDrawCalls": 64,
+        "calls": 65,
+        "triangles": 126996,
+        "gpuMemoryMB": 13,
+        "vehicles": 202,
+        "people": 593,
+        "overlaps": 0,
+        "overflowX": false,
+        "errors": [
+          "http 404: /api/home-context"
+        ]
+      },
+      "night": {
+        "tierSource": "probe",
+        "probeMs": "74.3",
+        "probePick": "legacy",
+        "firstFrameMs": 3798,
+        "tierShown": "legacy",
+        "msPerFrame": 34,
+        "fps": 29.5,
+        "glDrawCalls": 65,
+        "calls": 66,
+        "triangles": 126344,
+        "gpuMemoryMB": 13,
+        "vehicles": 202,
+        "people": 593,
+        "overlaps": 0,
+        "overflowX": false,
+        "errors": [
+          "http 404: /api/home-context"
+        ]
+      }
+    },
+    "legacy": {
+      "day": {
+        "tierSource": "manual",
+        "probeMs": null,
+        "probePick": null,
+        "firstFrameMs": 4729,
+        "tierShown": "legacy",
+        "msPerFrame": 35,
+        "fps": 28.6,
+        "glDrawCalls": 64,
+        "calls": 65,
+        "triangles": 126996,
+        "gpuMemoryMB": 13,
+        "vehicles": 202,
+        "people": 593,
+        "overlaps": 0,
+        "overflowX": false,
+        "errors": [
+          "http 404: /api/home-context"
+        ]
+      },
+      "night": {
+        "tierSource": "manual",
+        "probeMs": null,
+        "probePick": null,
+        "firstFrameMs": 4187,
+        "tierShown": "legacy",
+        "msPerFrame": 39,
+        "fps": 25.5,
+        "glDrawCalls": 64,
+        "calls": 65,
+        "triangles": 126216,
+        "gpuMemoryMB": 13,
+        "vehicles": 202,
+        "people": 593,
+        "overlaps": 0,
+        "overflowX": false,
+        "errors": [
+          "http 404: /api/home-context"
+        ]
+      }
+    },
+    "phone": {
+      "day": {
+        "tierSource": "manual",
+        "probeMs": null,
+        "probePick": null,
+        "firstFrameMs": 4665,
+        "tierShown": "phone",
+        "msPerFrame": 93,
+        "fps": 10.7,
+        "glDrawCalls": 133,
+        "calls": 134,
+        "triangles": 259708,
+        "gpuMemoryMB": 15,
+        "vehicles": 236,
+        "people": 655,
+        "overlaps": 0,
+        "overflowX": false,
+        "errors": [
+          "http 404: /api/home-context"
+        ]
+      },
+      "night": {
+        "tierSource": "manual",
+        "probeMs": null,
+        "probePick": null,
+        "firstFrameMs": 4935,
+        "tierShown": "phone",
+        "msPerFrame": 91,
+        "fps": 11,
+        "glDrawCalls": 135,
+        "calls": 136,
+        "triangles": 259888,
+        "gpuMemoryMB": 15,
+        "vehicles": 236,
+        "people": 655,
+        "overlaps": 0,
+        "overflowX": false,
+        "errors": [
+          "http 404: /api/home-context"
+        ]
+      }
+    },
+    "balanced": {
+      "day": {
+        "tierSource": "manual",
+        "probeMs": null,
+        "probePick": null,
+        "firstFrameMs": 9578,
+        "tierShown": "balanced",
+        "msPerFrame": 655,
+        "fps": 1.5,
+        "glDrawCalls": 401,
+        "calls": 402,
+        "triangles": 1829881,
+        "gpuMemoryMB": 28,
+        "vehicles": 1234,
+        "people": 2290,
+        "overlaps": 0,
+        "overflowX": false,
+        "errors": [
+          "http 404: /api/home-context"
+        ]
+      },
+      "night": {
+        "tierSource": "manual",
+        "probeMs": null,
+        "probePick": null,
+        "firstFrameMs": 9136,
+        "tierShown": "balanced",
+        "msPerFrame": 808,
+        "fps": 1.2,
+        "glDrawCalls": 404,
+        "calls": 403,
+        "triangles": 1830476,
+        "gpuMemoryMB": 28,
+        "vehicles": 1236,
+        "people": 2290,
+        "overlaps": 0,
+        "overflowX": false,
+        "errors": [
+          "http 404: /api/home-context"
+        ]
+      }
+    },
+    "cinematic": {
+      "day": {
+        "tierSource": "manual",
+        "probeMs": null,
+        "probePick": null,
+        "firstFrameMs": 7932,
+        "tierShown": "cinematic",
+        "msPerFrame": 253,
+        "fps": 4,
+        "glDrawCalls": 232,
+        "calls": 230,
+        "triangles": 776371,
+        "gpuMemoryMB": 24,
+        "vehicles": 701,
+        "people": 1391,
+        "overlaps": 0,
+        "overflowX": false,
+        "errors": [
+          "http 404: /api/home-context"
+        ]
+      },
+      "night": {
+        "tierSource": "manual",
+        "probeMs": null,
+        "probePick": null,
+        "firstFrameMs": 7689,
+        "tierShown": "cinematic",
+        "msPerFrame": 256,
+        "fps": 3.9,
+        "glDrawCalls": 235,
+        "calls": 233,
+        "triangles": 776966,
+        "gpuMemoryMB": 24,
+        "vehicles": 703,
+        "people": 1391,
+        "overlaps": 0,
+        "overflowX": false,
+        "errors": [
+          "http 404: /api/home-context"
+        ]
+      }
+    }
+  },
+  "errors": [
+    "city auto day: http 404: /api/home-context",
+    "city auto night: http 404: /api/home-context",
+    "city legacy day: http 404: /api/home-context",
+    "city legacy night: http 404: /api/home-context",
+    "city phone day: http 404: /api/home-context",
+    "city phone night: http 404: /api/home-context",
+    "city balanced day: http 404: /api/home-context",
+    "city balanced night: http 404: /api/home-context",
+    "city cinematic day: http 404: /api/home-context",
+    "city cinematic night: http 404: /api/home-context"
+  ]
+}
