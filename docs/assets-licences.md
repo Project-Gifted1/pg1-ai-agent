@@ -25,7 +25,7 @@ Poly Haven's licence: every asset is CC0, https://polyhaven.com/license.
 
 | File | Size | Source | Licence |
 | --- | --- | --- | --- |
-| `canoe.glb` | 0.8 MB | PG1, authored in code (`scripts/build-showcase-models.mjs`): a carved dugout canoe with three paddlers in wrappers and leaf-bladed paddles, wood grain drawn in code | PG1 original, CC0 1.0 |
+| `canoe.glb` | 1.3 MB | PG1, authored in code (`scripts/build-showcase-models.mjs`): a carved dugout canoe with three paddlers in wrappers with leaf-bladed paddles, and cargo (a basket of fish, salt cakes, a coiled net), wood grain drawn in code | PG1 original, CC0 1.0 |
 | `car.glb` | 0.09 MB | PG1, authored in code (same script): a saloon car body, glass and wheels | PG1 original, CC0 1.0 |
 
 Not added: a European ship. The only CC0 ship found (Poly Haven "Dutch Ship
