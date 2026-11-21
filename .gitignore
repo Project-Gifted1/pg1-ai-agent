@@ -29,3 +29,4 @@ out/
 *.tmp
 cache/voices/
 cache/voice-generation-logs.jsonl
+showcase-out/

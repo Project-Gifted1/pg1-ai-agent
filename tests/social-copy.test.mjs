@@ -1,0 +1,65 @@
+/**
+ * PG1's November 2026 post (scripts/social-build.mjs, docs/social/2026-11/):
+ * the words follow the house rules (white label: PG1, PG1 Studio, PG1 Sound
+ * only; the Project-Gifted1™ mark and no © line; no uptime or outage talk;
+ * never "safe"; no figures but version numbers), the cut runs 20 to 30
+ * seconds, and the committed files have the sizes the post needs.
+ * Run with: node --test tests/social-copy.test.mjs
+ */
+
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { HIGHLIGHTS, COVER, CUT, MARK, cutSeconds } from '../scripts/social-build.mjs';
+import { SHOTS } from '../lib/showcase/shots.mjs';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const DIR = join(ROOT, 'docs', 'social', '2026-11');
+const BUILD = readFileSync(join(ROOT, 'scripts', 'social-build.mjs'), 'utf8');
+const words = [...HIGHLIGHTS.flatMap((h) => [h.tag, h.title, h.line]), COVER.title, COVER.line, ...CUT.map((c) => c[3] || ''), ...SHOTS.map((s) => s.title)].join('\n');
+
+test('white label, the mark, and the house rules on every word of the post', () => {
+  const providers = /elevenlabs|google|gemini|veo\b|lyria|replicate|kling|cartesia|flux|openrouter|openai|anthropic|claude/i;
+  assert.doesNotMatch(words, providers);
+  assert.doesNotMatch(BUILD.replace(/^\/\/.*$/gm, ''), providers, 'nor anywhere in the build script');
+  assert.doesNotMatch(words, /\bsafe\b|\bsafely\b|\bsafety\b/i, 'a clean result is "no findings"');
+  assert.doesNotMatch(words, /uptime|downtime|outage|incident/i);
+  assert.doesNotMatch(words + BUILD, /©|copyright/i);
+  assert.doesNotMatch(words, /\(c\)/i);
+  assert.equal(MARK, 'Project-Gifted1™');
+  assert.doesNotMatch(words, /Project-Gifted1(?!™)/, 'the mark always carries ™');
+});
+
+test('no figures but version numbers (and the names that carry digits)', () => {
+  const stripped = words.replace(/\bv?\d+\.\d+(?:\.\d+)?\b/g, '').replace(/\bPG1\b|Gifted1|Ed25519|c\. 1610|November 2026|\bA2A\b|\b3D\b/g, '');
+  assert.doesNotMatch(stripped, /\d/, stripped.match(/.*\d.*/) && stripped.match(/.*\d.*/)[0]);
+  // The features and their versions, as shipped.
+  const byId = Object.fromEntries(HIGHLIGHTS.map((h) => [h.id, h]));
+  assert.match(byId['check-repo-trap'].tag, /v1\.22\.0/);
+  assert.match(byId['check-agent-message'].tag, /v1\.21\b/);
+  assert.match(byId['a2a-1-0'].title, /A2A 1\.0 conformance/);
+  assert.deepEqual(HIGHLIGHTS.map((h) => h.title), ['check_repo_trap', 'check_agent_message', 'A2A 1.0 conformance', 'PG1 City', 'PG1 Universe', 'Passkey sign-in + signed results']);
+});
+
+test('the cut: every shot and every highlight, 20 to 30 seconds', () => {
+  const s = cutSeconds();
+  assert.ok(s >= 20 && s <= 30, `${s} s`);
+  assert.deepEqual([...new Set(CUT.filter((c) => c[0] === 'shot').map((c) => c[1]))].sort(), SHOTS.map((x) => x.id).sort());
+  assert.deepEqual(CUT.filter((c) => c[0] === 'card').map((c) => c[1]).sort(), HIGHLIGHTS.map((h) => h.id).sort());
+});
+
+const png = (f) => { const b = readFileSync(f); assert.equal(b.toString('hex', 0, 8), '89504e470d0a1a0a'); return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) }; };
+test('the committed files: six 1080 x 1350 cards, a 1200 x 675 cover, highlights.mp4', { skip: !existsSync(join(DIR, 'highlights.mp4')) && 'not built yet' }, () => {
+  for (const h of HIGHLIGHTS) assert.deepEqual(png(join(DIR, h.file)), { w: 1080, h: 1350 }, h.file);
+  assert.deepEqual(png(join(DIR, COVER.file)), { w: 1200, h: 675 });
+  const mp4 = readFileSync(join(DIR, 'highlights.mp4'));
+  assert.equal(mp4.toString('latin1', 4, 8), 'ftyp');
+  assert.ok(statSync(join(DIR, 'highlights.mp4')).size > 200000);
+  // 1080 x 1920 in its track header (tkhd width and height, 16.16 fixed point).
+  const i = mp4.indexOf('tkhd');
+  assert.ok(i > 0);
+  const v = mp4[i + 4]; const off = i + 4 + (v === 1 ? 88 : 76);
+  assert.deepEqual([mp4.readUInt32BE(off) >>> 16, mp4.readUInt32BE(off + 4) >>> 16], [1080, 1920]);
+});

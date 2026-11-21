@@ -821,7 +821,8 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     billboards.push({ cv, tex, text: [] });
   }
   const drawBillboards = (stats) => {
-    const lines = billboardLines(stats || {});
+    // Showcase renders (brandOnly): the mark and title only, no figures.
+    const lines = stats && stats.brandOnly ? [] : billboardLines(stats || {});
     for (const b of billboards) {
       const g = b.cv.getContext('2d');
       g.fillStyle = '#05080d'; g.fillRect(0, 0, 512, 256);

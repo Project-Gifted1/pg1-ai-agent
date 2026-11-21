@@ -28,7 +28,7 @@
 // prefers-reduced-motion, or no WebGL: a still 2D map of the kingdom with
 // today's count by each gadget; the text feed beside it carries the events.
 
-import { TIER_SETTINGS, pickTier, createGovernor, createRenderScale, QUALITY_KEY } from '../sandbox/quality.js';
+import { TIER_SETTINGS, pickTier, createGovernor, createRenderScale, QUALITY_KEY, SHOWCASE, SHOWCASE_SETTINGS } from '../sandbox/quality.js';
 import { createPost } from '../sandbox/post.js';
 import { createControls } from '../sandbox/controls.js';
 import { createWaterMaterial } from '../sandbox/water.js';
@@ -159,6 +159,19 @@ export function kingdomSettings(tier, { coarse = false, memory = 0 } = {}) {
   return Object.freeze({ tier, ...base, ease: v ? v.ease : 5 });
 }
 
+// SHOWCASE (scripts/showcase-render.mjs): the offline profile, on a computer
+// only, never chosen by the probe, the governor or Auto (it is not one of
+// KINGDOM_TIERS). Cinematic's city with the viewer's Showcase post-processing
+// (quality.js SHOWCASE_SETTINGS: 32 occlusion samples, TAA settled per
+// frame, depth of field), 4096 shadows, the planar river mirror, the full
+// crowds, and no render scale: each frame takes as long as it needs.
+export function kingdomShowcaseSettings({ coarse = false } = {}) {
+  if (coarse) return null;
+  const c = kingdomSettings('cinematic', { coarse: false });
+  const S = SHOWCASE_SETTINGS;
+  return Object.freeze({ ...c, shadows: S.shadowMapSize, post: Object.freeze({ aa: 'taa', taaSamples: S.taaSamples, settle: true, bloom: true, gtao: true, gtaoSamples: S.gtaoSamples, gtaoScale: 1, dof: true }), targetFps: S.targetFps, pixelRatio: S.pixelRatio, renderScale: false, profile: SHOWCASE, ease: S.ease });
+}
+
 // Height fog: the scene's exponential fog, thicker low down (blue hour),
 // only for materials that define PG1_HEIGHT_FOG (the city's), so other
 // three.js views on the page are untouched.
@@ -250,7 +263,7 @@ function waterNormals(THREE) {
   return t;
 }
 
-async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: forcedTier, auto: rebuiltAuto = false, onRebuild = null, onContextLost = null }) {
+async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: forcedTier, auto: rebuiltAuto = false, onRebuild = null, onContextLost = null, showcase = false }) {
   const THREE = await import(threeUrl);
   const canvas = document.createElement('canvas');
   canvas.className = 'kingdom-canvas';
@@ -264,10 +277,14 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   const begin = rebuiltAuto && forcedTier
     ? { tier: forcedTier, source: 'auto', probe: !(probeStore && readProbeCache(probeStore, KINGDOM_PROBE_KEY)), held: false }
     : chooseKingdomStart({ forced: forcedTier, search: location.search, saved, cached: probeStore ? readProbeCache(probeStore, KINGDOM_PROBE_KEY) : null, profile, coarse, memory });
+  // Showcase: asked for by name, never on a phone; it holds its tier.
+  const offline = showcase ? kingdomShowcaseSettings({ coarse }) : null;
+  if (offline) { begin.tier = 'cinematic'; begin.source = SHOWCASE; begin.probe = false; begin.held = true; }
   let tier = begin.tier;
   const forced = begin.held;
   container.dataset.tierSource = begin.source;
-  let settings = kingdomSettings(tier, { coarse, memory });
+  let settings = offline || kingdomSettings(tier, { coarse, memory });
+  if (offline) container.dataset.profile = SHOWCASE;
   let renderer;
   try {
     // Low and Medium have no post-processing, so they take the GPU's own
@@ -303,6 +320,9 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   // PG1's emblem comes from the brand asset itself; without it, no emblem (never a redraw).
   const brand = await loadBrand().catch(() => null);
   const world = buildWorld(THREE, scene, settings, { waterMaterial, Reflector: ReflectorMod ? ReflectorMod.Reflector : null, brand });
+  // Showcase renders keep payments out of the picture: no toll gantry (x402) on the bridge.
+  if (offline) world.setBillboards({ brandOnly: true });
+  if (offline && world.toll) { world.toll.visible = false; world.toll.traverse((o) => { o.visible = false; }); world.toll.removeFromParent(); }
   // Blue-hour height fog on every material in the city (thicker low down).
   const fogDefine = (o) => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []; for (const m of ms) if (!m.isShaderMaterial && !m.isSpriteMaterial && !m.isPointsMaterial && m.fog !== false && !(m.defines && m.defines.PG1_HEIGHT_FOG !== undefined)) { m.defines = { ...(m.defines || {}), PG1_HEIGHT_FOG: '' }; m.needsUpdate = true; } };
   scene.traverse(fogDefine);
@@ -467,6 +487,8 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   canvas.addEventListener('webglcontextlost', onLost, false);
   canvas.addEventListener('webglcontextrestored', onRestored, false);
   const focusPoint = new THREE.Vector3();
+  // Showcase (scripts/showcase-render.mjs): one pose a frame { target, dist, theta, phi, fov?, focus? }.
+  let showcasePose = null; const poseTarget = new THREE.Vector3();
   const frame = (now) => {
     raf = 0;
     if (!running) return;
@@ -526,7 +548,14 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       // A slow sway that keeps the sightline along the river (no building enters it).
       controls.goalTheta = HV.theta + 0.025 * Math.sin(t * 0.03);
     }
+    // Showcase: the scripted camera's pose for this frame, exactly.
+    if (showcasePose) {
+      const p = showcasePose; poseTarget.set(p.target[0], p.target[1], p.target[2]);
+      controls.jumpTo({ target: poseTarget, dist: p.dist, theta: p.theta, phi: p.phi }); controls.userActive = 0;
+      if (p.fov && Math.abs(camera.fov - p.fov) > 1e-3) { camera.fov = p.fov; camera.updateProjectionMatrix(); }
+    }
     controls.update(dt);
+    if (showcasePose && post && post.setFocus) post.setFocus(showcasePose.focus === null ? null : showcasePose.focus || controls.dist);
     // The camera never goes into or through a building: lifted clear of
     // every box on its line of sight, smoothly (but never left inside one).
     const needY = clearCamera(camera.position, controls.target, world.obstacles);
@@ -597,6 +626,9 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       });
     },
     // While the feed is disconnected nothing new plays.
+    // Showcase: the scripted camera (null gives it back; the director stays off meanwhile).
+    setShowcasePose(p) { if (p) { setDirector(false); controls.minDist = Math.min(controls.minDist, p.dist); controls.maxDist = Math.max(controls.maxDist, p.dist); } showcasePose = p || null; },
+    profile: () => (offline ? SHOWCASE : null),
     setPaused(on) { paused = !!on; container.dataset.feedPaused = paused ? 'yes' : 'no'; },
     ingest(fresh, { perEventCap, live = false } = {}) {
       if (paused && live) return;
@@ -742,7 +774,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
 // The scene the page holds: the 3D city, or the still 2D map. It survives
 // a rebuild (into or out of Legacy, or after a lost WebGL context): the page
 // keeps one object, and the last state set on it is set again.
-export async function createKingdomScene(container, { reducedMotion = false, coarse = false, threeUrl = '/vendor/three/three.module.min.js', onFocus = null, onTier = null, onCaption = null, onGadget = null, tier = null } = {}) {
+export async function createKingdomScene(container, { reducedMotion = false, coarse = false, threeUrl = '/vendor/three/three.module.min.js', onFocus = null, onTier = null, onCaption = null, onGadget = null, tier = null, showcase = false } = {}) {
   if (reducedMotion) return create2d(container);
   let impl = null; let fallback = null; let rebuilding = null;
   const memo = new Map();
@@ -750,7 +782,7 @@ export async function createKingdomScene(container, { reducedMotion = false, coa
   const frameFns = new Set();
   const showFallback = () => { if (!fallback) { fallback = create2d(container); container.dataset.renderer = 'webgl-lost'; for (const [k, a] of memo) if (fallback[k]) fallback[k](...a); } };
   const build = async (t, { auto = false } = {}) => {
-    const s = await create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: t, auto, onRebuild, onContextLost: showFallback });
+    const s = await create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: t, auto, onRebuild, onContextLost: showFallback, showcase });
     if (!s) return null;
     for (const [k, a] of memo) { try { s[k](...a); } catch (e) { /* the next poll sets it again */ } }
     for (const fn of frameFns) s.onFrame(fn);

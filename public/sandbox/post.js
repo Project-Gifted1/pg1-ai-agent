@@ -4,7 +4,8 @@
 //   (glows, lamps, the sun; Medium and up) -> anti-aliasing (SMAA; Ultra
 //   adds temporal accumulation while the camera is still) -> depth of
 //   field on what the camera follows (Cinematic) -> ACES tone mapping and
-//   sRGB output (OutputPass).
+//   sRGB output (OutputPass). The offline Showcase profile (quality.js
+//   SHOWCASE_SETTINGS) settles TAA on every frame instead.
 //
 // The sky stays crisp (setSky): looking at space, or with nothing nearby
 // followed, depth of field is off (nothing is out of focus at infinity),
@@ -101,7 +102,13 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     composer, passes: { taa, gtao, bloom, bokeh, smaa },
     // TAA accumulates only while nothing moves on screen; otherwise it is plain rendering.
     // Looking at the sky, it takes one sample, unjittered: points stay points.
-    render(still) { if (taa) { taa.sampleLevel = skyView ? 0 : 2; taa.accumulate = !!still && !skyView; } composer.render(); },
+    // Showcase (settings.settle, offline): every frame is settled on its own,
+    // 2^taaSamples jittered samples, never accumulated across frames.
+    render(still) {
+      if (taa && settings.settle) { taa.sampleLevel = skyView ? 0 : (settings.taaSamples || 4); taa.accumulate = false; }
+      else if (taa) { taa.sampleLevel = skyView ? 0 : 2; taa.accumulate = !!still && !skyView; }
+      composer.render();
+    },
     // The distance in metres to keep sharp (the followed thing), eased; with
     // focus null (nothing nearby followed) depth of field is off.
     setFocus(d) {
