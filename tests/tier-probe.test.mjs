@@ -1,7 +1,6 @@
 /**
  * Automatic quality from a short probe (public/sandbox/tier-probe.js), shared
- * by the Sandbox viewer and PG1 City, and how the viewer chooses its
- * starting tier (sandbox-scene.js chooseStart):
+ * by the Sandbox viewer and PG1 City:
  *
  *   - a phone, or any device with 4 GB of memory or less (a budget Android
  *     phone such as a Galaxy A07), starts on Low; a computer on Medium;
@@ -10,8 +9,8 @@
  *   - the pick is the highest automatic tier whose estimated frame fits its
  *     budget with room to spare; a 4 GB phone never goes past Medium alone;
  *     Ultra and Cinematic are never picked automatically;
- *   - ?quality= in the address (the operator) wins over everything but the
- *     caller; then a tier kept by hand; then the last probe's pick (a week);
+ *   - ?quality= in the address is the operator's override; the probe's pick
+ *     is kept on the device for a week;
  *   - ?debug=1 turns on the frame-rate overlay, nothing else does.
  */
 
@@ -19,7 +18,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { AUTO_TIERS, TIER_COST, TIER_BUDGET_MS, BUDGET_SHARE, startTier, tierFromProbe, createProbe, overrideTier, debugOn, readProbeCache, writeProbeCache, PROBE_CACHE_MS } from '../public/sandbox/tier-probe.js';
 import { frameSummary } from '../public/sandbox/debug-overlay.js';
-import { chooseStart } from '../public/sandbox/sandbox-scene.js';
 
 const A07 = { coarse: true, memory: 4 };
 
@@ -89,16 +87,6 @@ test('the probe\'s pick is kept for a week on this device', () => {
   assert.equal(readProbeCache(storage, 'k', now), null, 'never an automatic Cinematic');
   mem.set('k', 'not json');
   assert.equal(readProbeCache(storage, 'k', now), null);
-});
-
-test('the viewer\'s start: caller, then ?quality=, then a tier kept by hand, then the kept probe, else probe', () => {
-  assert.deepEqual(chooseStart({ tier: 'high', search: '?quality=low' }), { tier: 'high', source: 'caller', probe: false, auto: false });
-  assert.deepEqual(chooseStart({ search: '?quality=low', saved: 'ultra' }), { tier: 'low', source: 'address', probe: false, auto: false });
-  assert.equal(chooseStart({ search: '?quality=cinematic' }).tier, 'cinematic', 'the operator may ask for any tier');
-  assert.deepEqual(chooseStart({ saved: 'ultra', cached: 'low' }), { tier: 'ultra', source: 'manual', probe: false, auto: false });
-  assert.deepEqual(chooseStart({ saved: 'auto', cached: 'medium' }), { tier: 'medium', source: 'probe (kept)', probe: false, auto: true });
-  assert.deepEqual(chooseStart({ ...A07 }), { tier: 'low', source: 'probe', probe: true, auto: true }, 'the A07 starts on Low and probes');
-  assert.deepEqual(chooseStart({ memory: 16 }), { tier: 'medium', source: 'probe', probe: true, auto: true });
 });
 
 test('the overlay\'s numbers: frames a second, average and slowest 5%', () => {
