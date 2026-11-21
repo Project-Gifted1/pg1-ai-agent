@@ -4,7 +4,8 @@
 // Fed from the view's own frame loop (no timer, no network); the text is
 // rewritten twice a second.
 //
-//   createDebugOverlay(container, { enabled }) -> { frame(now, info), destroy() } | null
+//   createDebugOverlay(container, { enabled, at }) -> { frame(now, info), reset(), destroy() } | null
+//     at: where it sits (CSS), top left under the clock by default
 //     info: { calls, triangles, tier, source, probeMs, scale }
 
 import { debugOn } from './tier-probe.js';
@@ -17,12 +18,12 @@ export function frameSummary(times) {
   return { fps: Math.round((1000 / avg) * 10) / 10, avgMs: Math.round(avg * 10) / 10, p95Ms: Math.round(s[Math.min(s.length - 1, Math.floor(s.length * 0.95))] * 10) / 10 };
 }
 
-export function createDebugOverlay(container, { enabled = debugOn(typeof location !== 'undefined' ? location.search : '') } = {}) {
+export function createDebugOverlay(container, { enabled = debugOn(typeof location !== 'undefined' ? location.search : ''), at = 'left:8px;top:44px' } = {}) {
   if (!enabled || !container || typeof document === 'undefined') return null;
   const el = document.createElement('div');
   el.className = 'pg1-debug-overlay';
   el.setAttribute('aria-hidden', 'true');
-  el.style.cssText = 'position:absolute;left:8px;top:44px;z-index:9;pointer-events:none;padding:6px 8px;border-radius:8px;background:rgba(0,0,0,0.72);color:#d7ffd9;font:600 11px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre;font-variant-numeric:tabular-nums;';
+  el.style.cssText = `position:absolute;${at};z-index:9;pointer-events:none;padding:6px 8px;border-radius:8px;background:rgba(0,0,0,0.72);color:#d7ffd9;font:600 11px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre;font-variant-numeric:tabular-nums;`;
   container.appendChild(el);
   const times = []; let last = 0; let shown = 0;
   return {

@@ -785,6 +785,15 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     set(lampPoles, i, x, 4, RIVER.z + side * (RIVER.half + 3)); set(lampHeads, i, x, 8.2, RIVER.z + side * (RIVER.half + 3));
   }
   root.add(lampPoles); root.add(lampHeads);
+  // Warm pools of light on the pavement under each lamp at night (one
+  // instanced, additive draw call; no real lights, so every tier has them).
+  const poolTex = (() => { const cv = document.createElement('canvas'); cv.width = cv.height = 64; const g = cv.getContext('2d'); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,214,150,0.85)'); gr.addColorStop(0.45, 'rgba(255,190,120,0.32)'); gr.addColorStop(1, 'rgba(255,170,100,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); const tx = new THREE.CanvasTexture(cv); tx.colorSpace = THREE.SRGBColorSpace; return tx; })();
+  const poolGeo = new THREE.PlaneGeometry(14, 14); poolGeo.rotateX(-Math.PI / 2);
+  const poolMat = new THREE.MeshBasicMaterial({ map: poolTex, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -2 });
+  const lampPools = named(new THREE.InstancedMesh(poolGeo, poolMat, lampN), 'lamp-pools');
+  for (let i = 0; i < lampN; i++) { const side = i % 2 ? 1 : -1; const x = -1600 + Math.floor(i / 2) * (3200 / (lampN / 2)); set(lampPools, i, x, 0.08, RIVER.z + side * (RIVER.half + 4.5)); }
+  lampPools.renderOrder = 2; lampPools.visible = false;
+  root.add(lampPools);
 
   // --- rooftop beacons (reports and approvals) on the twelve tallest towers ---
   const beacons = [];
@@ -954,7 +963,8 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       // Crisp shadows under a clear sky, soft under cloud.
       if (sun.shadow) sun.shadow.radius = 1.5 + 5 * (1 - sunny);
       sun.color.setRGB(1, 0.6 + 0.32 * (1 - dusk) * light, 0.36 + 0.52 * (1 - dusk) * light).lerp(cool, moon * 0.8);
-      hemi.intensity = 0.2 + 0.45 * light * (1 - storm * 0.4);
+      // A night that still reads on a phone: moonlit blue fill, not black.
+      hemi.intensity = 0.3 + 0.35 * light * (1 - storm * 0.4);
       gradU.uSunDir.value.copy(tmp);
       gradU.uTop.value.setRGB(0.04 + 0.16 * light * (1 - dusk), 0.07 + 0.3 * light * (1 - dusk), 0.17 + 0.55 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.5);
       gradU.uMid.value.setRGB(0.18 + 0.4 * light * (1 - dusk), 0.25 + 0.45 * light * (1 - dusk), 0.45 + 0.4 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.45);
@@ -987,6 +997,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       facade.userData.windows.uGround.value.setRGB(0.1, 0.105, 0.115).multiplyScalar(0.4 + 0.6 * light);
       facade.userData.windows.uTime.value = t;
       lampMat.color.setHex(moon > 0.3 || dusk > 0.5 ? 0xffd9a0 : 0x6a6252);
+      poolMat.opacity = Math.max(0, Math.max(dusk * 0.7, moon) - 0.25) * 0.9; lampPools.visible = poolMat.opacity > 0.01;
       streakMat.opacity = 0.25 + 0.7 * Math.max(dusk, moon);
       // Streaks shimmer with the ripples.
       for (let i = 0; i < streakSeeds.length; i++) { const s = streakSeeds[i]; const w = 1 + 0.35 * Math.sin(t * 2.2 + s.ph); set(streaks, i, s.x + Math.sin(t * 0.8 + s.ph) * 0.6, -3.0, RIVER.z + s.side * (RIVER.half - s.len / 2 - 1), w * 1.2, s.len, 1, 0, -Math.PI / 2); }

@@ -423,7 +423,8 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   // device. Each frame's draw calls and triangles feed ?debug=1's overlay.
   let probeRun = begin.probe ? createProbe() : null;
   const probePx = new Uint8Array(4);
-  const debug = createDebugOverlay(container);
+  // Bottom right, above the caption, clear of the HUD.
+  const debug = createDebugOverlay(container, { at: 'right:8px;bottom:92px' });
   const debugInfo = { calls: 0, triangles: 0, tier, source: begin.source, probeMs: null, scale: 1 };
   const onProbe = (r) => {
     container.dataset.probeMs = String(r.workMs); debugInfo.probeMs = r.workMs;
@@ -473,7 +474,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     // Blue atmospheric haze, warmer at dusk, that fades the far city.
     scene.fog.color.setRGB(0.14 + 0.32 * light * (1 - dusk) + 0.08 * dusk, 0.19 + 0.36 * light * (1 - dusk) + 0.05 * dusk, 0.36 + 0.36 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.4);
     scene.fog.density = fogBase + storm * 0.0005 + look.fog * 0.0024;
-    renderer.toneMappingExposure = 0.62 + 0.3 * light * (1 - dusk);
+    renderer.toneMappingExposure = 0.7 + 0.22 * light * (1 - dusk);
     wx.update(dt, t, look, { target: controls.target, sunDir, light, dusk });
     world.setWet(wx.state.wet);
     if (now - envAt > 180000) { envAt = now; refreshEnv(); if (post && post.setNight) post.setNight(Math.max(dusk, 1 - light)); }

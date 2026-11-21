@@ -36,7 +36,24 @@ export function greatCircle(a, b, n = 32) {
   return out;
 }
 
-export function createGlobe(canvas, { flagPx = 24, labels = true } = {}) {
+// Where the flags (and country codes) go: one per country (a live arc's
+// first), none overlapping another, none cut by the canvas's edge. A label
+// that would collide is left out (its arc still shows). Pure (the tests).
+export function labelLayout(shown, { flagPx, codePx = 0, w, h }) {
+  const seen = new Set(); const out = []; const boxes = [];
+  const order = shown.filter((s) => s[2]).concat(shown.filter((s) => !s[2]));
+  for (const [cc, [x, y], live] of order) {
+    if (seen.has(cc)) continue;
+    const bw = Math.max(flagPx * 1.3, codePx * 1.6); const top = y - flagPx * 1.15; const bottom = y + (codePx ? 9 * (codePx / 11) + codePx * 0.6 : 0);
+    const box = { x0: x - bw / 2, x1: x + bw / 2, y0: top, y1: Math.max(bottom, y) };
+    if (box.x0 < 0 || box.x1 > w || box.y0 < 0 || box.y1 > h) continue;
+    if (boxes.some((b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1)) continue;
+    seen.add(cc); boxes.push(box); out.push({ cc, x, y, live });
+  }
+  return out;
+}
+
+export function createGlobe(canvas, { flagPx = 24, labels = true, codes = true } = {}) {
   const g = canvas.getContext('2d');
   return {
     flagPx,
@@ -85,11 +102,14 @@ export function createGlobe(canvas, { flagPx = 24, labels = true } = {}) {
       // Flags at the origins (at least flagPx CSS pixels).
       if (labels) {
         g.textAlign = 'center'; g.textBaseline = 'middle';
-        for (const [cc, [x, y], live] of shown) {
+        const placed = labelLayout(shown, { flagPx: flagPx * dpr, codePx: codes ? 11 * dpr : 0, w: canvas.width, h: canvas.height });
+        for (const { cc, x, y, live } of placed) {
           g.font = `${Math.round(flagPx * dpr)}px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif`;
           g.fillText(flagOf(cc), x, y - flagPx * dpr * 0.6);
-          g.font = `600 ${Math.round(11 * dpr)}px Inter, system-ui, sans-serif`;
-          g.fillStyle = live ? '#ffffff' : 'rgba(255,255,255,0.75)'; g.fillText(cc, x, y + 9 * dpr); g.fillStyle = 'rgba(216,221,227,0.35)';
+          if (codes) {
+            g.font = `600 ${Math.round(11 * dpr)}px Inter, system-ui, sans-serif`;
+            g.fillStyle = live ? '#ffffff' : 'rgba(255,255,255,0.75)'; g.fillText(cc, x, y + 9 * dpr); g.fillStyle = 'rgba(216,221,227,0.35)';
+          }
         }
       }
       return { shown: shown.map(([cc]) => cc) };

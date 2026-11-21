@@ -137,6 +137,17 @@ async function auditSandbox(browser) {
   for (const w of [uni, uniNight, bw]) ticks[w.id] = (await store.getWorld(w.id)).tick;
   const { server, origin } = await sandboxServer(store);
   try {
+    // Auto: no tier kept, the A07 profile; which tier the probe picks (after only: main has no probe).
+    if (TAG !== 'before') {
+      const { page, errors, context } = await sandboxPage(browser, origin, 'auto');
+      await page.evaluate((w) => openSandboxScreen(w), uni.id);
+      await page.waitForFunction(() => !!document.getElementById('sandbox-view').dataset.probePick, null, { timeout: 600000 }).catch(() => {});
+      await sWait(page, 10);
+      report.sandbox.auto = { ...(await page.evaluate(() => ({ ...document.getElementById('sandbox-view').dataset }))), errors };
+      report.sandbox.auto = Object.fromEntries(Object.entries(report.sandbox.auto).filter(([k]) => ['tier', 'tierSource', 'probeMs', 'probePick', 'renderScale', 'errors'].includes(k)));
+      console.log('sandbox auto', JSON.stringify(report.sandbox.auto));
+      await context.close();
+    }
     for (const tier of ['low', 'medium', 'high']) {
       const r = report.sandbox[tier] = {};
       const { page, errors, context } = await sandboxPage(browser, origin, tier);
@@ -195,13 +206,13 @@ async function auditCity(browser) {
     const TIERS = await (async () => { const m = await import('../public/kingdom/kingdom-scene.js'); return m.KINGDOM_TIERS.filter((t) => t !== 'cinematic'); })();
     // The city's light follows real Dublin time: shift the page clock to 13:00 and 22:30 (UTC = Dublin time in winter).
     const shiftTo = (h, m) => { const d = new Date(); d.setUTCHours(h, m, 0, 0); return d.getTime() - Date.now(); };
-    for (const tier of TIERS) {
+    for (const tier of (TAG !== 'before' ? ['auto'] : []).concat(TIERS)) {
       const r = report.city[tier] = {};
       for (const [when, offset] of [['day', shiftTo(13, 0)], ['night', shiftTo(22, 30)]]) {
         const ctx = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: 'dark', userAgent: A07_UA });
         await routeReplyFont(ctx);
         await ctx.addInitScript(GL_COUNT);
-        await ctx.addInitScript(([off, t]) => { const n = Date.now; Date.now = () => n() + off; const D = Date; window.Date = class extends D { constructor(...a) { if (a.length) super(...a); else super(n() + off); } static now() { return n() + off; } }; try { localStorage.setItem('pg1_theme', 'dark'); localStorage.setItem('pg1_kingdom_quality', t); } catch (e) {} }, [offset, tier]);
+        await ctx.addInitScript(([off, t]) => { const n = Date.now; Date.now = () => n() + off; const D = Date; window.Date = class extends D { constructor(...a) { if (a.length) super(...a); else super(n() + off); } static now() { return n() + off; } }; try { localStorage.setItem('pg1_theme', 'dark'); if (t !== 'auto') localStorage.setItem('pg1_kingdom_quality', t); } catch (e) {} }, [offset, tier]);
         const page = await ctx.newPage();
         const errors = [];
         page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
@@ -218,7 +229,8 @@ async function auditCity(browser) {
         const shot = async (name) => { await page.evaluate(() => window.kingdomUi.scene().pause(true)); await page.screenshot({ path: join(OUT, `${TAG}-city-${tier}-${name}.png`), timeout: 300000 }); await page.evaluate(() => window.kingdomUi.scene().pause(false)); };
         const wait = async (n) => { const f0 = await page.evaluate(() => Number(document.getElementById('kingdom-view').dataset.frames || 0)); await page.waitForFunction((k) => Number(document.getElementById('kingdom-view').dataset.frames || 0) >= k, f0 + n, { timeout: 300000 }); };
         await wait(8);
-        r[when] = { firstFrameMs, tierShown: await page.evaluate(() => document.getElementById('kingdom-view').dataset.tier), ...(await measure(page, '#kingdom-view', 10)), ...(await page.evaluate(() => { const s = window.kingdomUi.scene().stats(); return { calls: s.calls, triangles: s.triangles, gpuMemoryMB: s.gpuMemoryMB, vehicles: s.life.vehicles, people: s.life.people, overlaps: s.life.overlaps }; })) };
+        if (tier === 'auto') await page.waitForFunction(() => !!document.getElementById('kingdom-view').dataset.probePick || document.getElementById('kingdom-view').dataset.tierSource !== 'probe', null, { timeout: 300000 }).catch(() => {});
+        r[when] = { tierSource: await page.evaluate(() => document.getElementById('kingdom-view').dataset.tierSource), probeMs: await page.evaluate(() => document.getElementById('kingdom-view').dataset.probeMs || null), probePick: await page.evaluate(() => document.getElementById('kingdom-view').dataset.probePick || null), firstFrameMs, tierShown: await page.evaluate(() => document.getElementById('kingdom-view').dataset.tier), ...(await measure(page, '#kingdom-view', 10)), ...(await page.evaluate(() => { const s = window.kingdomUi.scene().stats(); return { calls: s.calls, triangles: s.triangles, gpuMemoryMB: s.gpuMemoryMB, vehicles: s.life.vehicles, people: s.life.people, overlaps: s.life.overlaps }; })) };
         await shot(when);
         if (when === 'day') {
           await page.evaluate(() => window.kingdomUi.scene().debugView({ target: [0, 2, 40], dist: 60, phi: 1.3 })); await wait(6); await shot('street');

@@ -98,14 +98,31 @@ class Crowd {
 let glowGeo = null; let trailGeoQ = null; let LEAN = false;
 const GLOW_GEO = (THREE) => glowGeo || (glowGeo = new THREE.IcosahedronGeometry(1.15, 1));
 const TRAIL_GEO = (THREE) => { if (!trailGeoQ) { trailGeoQ = new THREE.CylinderGeometry(0.06, 0.45, 9, 6, 1, true); trailGeoQ.rotateX(Math.PI / 2); trailGeoQ.translate(0, 0, -5); } return trailGeoQ; };
-// lean (Legacy phone): the body and its light only (two draw calls a crowd).
+// Both arms of a quad drone as one geometry (an X), with a rotor hub at each tip.
+let armsGeoQ = null;
+function armsX(THREE) {
+  if (armsGeoQ) return armsGeoQ;
+  const parts = [];
+  for (const a of [Math.PI / 4, -Math.PI / 4]) { const b = new THREE.BoxGeometry(2.2, 0.08, 0.12); b.rotateY(a); parts.push(b.toNonIndexed()); }
+  for (const [x, z] of [[0.78, 0.78], [-0.78, 0.78], [0.78, -0.78], [-0.78, -0.78]]) { const c = new THREE.CylinderGeometry(0.42, 0.42, 0.04, 10); c.translate(x, 0.06, z); parts.push(c.toNonIndexed()); }
+  const n = parts.reduce((k, g) => k + g.attributes.position.count, 0);
+  const pos = new Float32Array(n * 3); const nor = new Float32Array(n * 3); let o = 0;
+  for (const g of parts) { pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3); o += g.attributes.position.count; g.dispose(); }
+  armsGeoQ = new THREE.BufferGeometry();
+  armsGeoQ.setAttribute('position', new THREE.BufferAttribute(pos, 3)); armsGeoQ.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  return armsGeoQ;
+}
+// lean (Low): the body, the arms and its light (three draw calls a crowd).
 function quadParts(THREE, M, light, body = 0x2a2e34, lean = LEAN) {
   const parts = [
     { geo: new THREE.BoxGeometry(0.9, 0.28, 0.9), mat: M(body, { metalness: 0.7, roughness: 0.35 }), offset: [0, 0, 0], swing: null },
     { geo: new THREE.BoxGeometry(0.42, 0.3, 0.42), mat: M(0x15181c, { metalness: 0.5, roughness: 0.3 }), offset: [0, -0.3, 0.1], swing: null },
     { geo: new THREE.SphereGeometry(0.1, 8, 6), mat: new THREE.MeshBasicMaterial({ color: light }), offset: [0, -0.1, 0.5], swing: null, flat: true }
   ];
-  if (lean) return [parts[0], parts[2]];
+  // Low has no environment map: a metal body reflects nothing there and drew
+  // as a black blob. A rough, lit body and the arms (one baked X, one draw
+  // call) read as a drone at a glance.
+  if (lean) return [{ ...parts[0], mat: M(0x4a525c, { metalness: 0.15, roughness: 0.62 }) }, { geo: armsX(THREE), mat: M(0x3a4048, { metalness: 0.1, roughness: 0.7 }), offset: [0, 0.05, 0], swing: null }, parts[2]];
   const arm = new THREE.BoxGeometry(2.2, 0.08, 0.12);
   parts.push({ geo: arm, mat: parts[0].mat, offset: [0, 0.05, 0], swing: 'yaw45' });
   parts.push({ geo: arm, mat: parts[0].mat, offset: [0, 0.05, 0], swing: 'yaw-45' });
