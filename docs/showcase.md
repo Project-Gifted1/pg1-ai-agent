@@ -31,23 +31,57 @@ Options: `--shots`, `--size WxH`, `--frames N` (fewer frames, for a look),
 | Shot | Scene | Move |
 | --- | --- | --- |
 | `city-night` | PG1 City, 23:10 in Dublin | dolly and crane up along the river to the tower: drones, lamp pools, the beacons PG1's real state lights |
-| `city-rain` | PG1 City, Dublin rain at night | drifting orbit over the river: traffic in its lanes, the wet streets and the tower's reflection |
-| `first-universe` | PG1's first universe (`aba0e1ed-…`) | descent from orbit to a town square |
-| `benin-warri` | Benin–Warri c. 1610, step 0 (dawn), light mist | from a canoe on the river, a crane up and push in to the walls of Benin and a gate |
+| `city-rain` | PG1 City, Dublin rain at night | low over the river, a long-lens push to the tower: wet quays mirroring facades and lamps, headlight cones, the bridge |
+| `first-universe` | PG1's first universe (`aba0e1ed-…`) | a low, oblique sweep (never top-down) down to people in a town square, with a clear line to them |
+| `benin-warri` | Benin–Warri c. 1610, step 0 (dawn), light mist | a low orbit round a carved canoe and its paddlers at the Ughoton landing (the walls stand some 700 m inland, too far to read in the same frame) |
 | `deep-space` | the universe's planets | slow orbit and push-in on a planet, its star beyond |
 
 ## How a frame is made (`scripts/showcase-render.mjs`)
 
 1. The script serves `public/` on 127.0.0.1 with two bare pages: the City's
    scene or the Sandbox viewer's scene, created with `showcase: true` on a
-   desktop viewport (no touch, fine pointer). No app overlays; the
-   Sandbox's "Simulation · day · time" stamp stays in the frame.
+   desktop viewport (no touch, fine pointer, `navigator.deviceMemory` 8). No
+   overlays at all: no clock, badges, minimap or labels (the render fails if
+   one shows). The post visuals label every Sandbox shot "Simulation".
+   Frames start once the compiled shaders and loaded textures stop changing.
 2. The page's clock is virtual: `requestAnimationFrame`, `performance.now()`
    and `Date.now()` move only when the script steps them, exactly 1000/30 ms
    a frame (the viewer's recorder rate, `public/sandbox/capture.js`).
 3. Each frame: the camera's pose for that moment is set
    (`setShowcasePose`), the clock steps, the frame is saved as a PNG.
 4. ffmpeg: `-c:v libx264 -preset veryfast -crf 18 -pix_fmt yuv420p`.
+
+## Proof of what a frame is drawn with
+
+Every frame, the script reads `showcaseInfo()` from the scene and refuses
+the frame (`checkShowcaseFrame`) unless: tier and profile `showcase`,
+coarse false, render scale 1, governor and probe off, no touch,
+deviceMemory 8 or more, and the drawing buffer exactly the output size
+(CSS viewport times devicePixelRatio). The first and last frame's record
+goes into `manifest.json` and the log, with the WebGL renderer string, e.g.:
+
+```
+canvas 1080x1920, CSS 1080x1920 at DPR 1, tier showcase (source showcase),
+render scale 1, settings.pixelRatio 1, governor off, probe off, coarse false,
+deviceMemory 8, WebGL ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device ...))
+```
+
+## The look (`public/sandbox/showcase-look.js`, Showcase only)
+
+- Light: a CC0 HDRI per scene (night city, misty dawn, daylight) for
+  image-based light and reflections; ACES tone mapping, then a colour grade
+  (teal shadows and warm highlights at night, warm at dawn), a soft
+  vignette and film grain. Bloom only on lights (threshold 0.97). Fog at
+  less than half its live density, so it only softens the distance.
+- City: masonry relief from a CC0 normal map; rain-wet streets (a rippled,
+  puddled mirror that stretches lights into vertical streaks); soft
+  headlight cones; the car model in place of box cars; mirrors drawn once a
+  frame from the main camera.
+- Universe and Benin: close-up water ripples, dawn mist in layers, the
+  carved canoe with paddlers in place of the light canoe.
+- Space: a tight corona instead of a frame-wide glow, no orbit lines or belts.
+- Assets and their licences: `docs/assets-licences.md`. The hero models
+  are built by `scripts/build-showcase-models.mjs`.
 
 ## The Showcase profile (`public/sandbox/quality.js`)
 

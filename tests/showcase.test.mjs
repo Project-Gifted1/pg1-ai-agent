@@ -80,16 +80,16 @@ test('five shots of 4 to 6 seconds at 30 fps, each with a planned camera path th
   assert.equal(smootherstep(0), 0); assert.equal(smootherstep(1), 1); assert.equal(smootherstep(0.5), 0.5);
 });
 
-test('the shots use their scenes: depth of field on the hero, none in deep space; Benin at the walls, from a canoe', () => {
+test('the shots use their scenes: depth of field on the hero, none in deep space; the canoe the hero at Benin', () => {
   const night = planShot('city-night');
   assert.ok(poseAt(night, 0.5).focus > 0);
   assert.equal(poseAt(planShot('deep-space', { planet: [0, 3000, 0], star: [4000, 3000, 0], planetSize: 80 }), 0.5).focus, null);
   const benin = planShot('benin-warri', { canoe: [880, 0, -680], walls: [1550, 0, -1020] });
-  assert.deepEqual(poseAt(benin, 0).target.map(Math.round), [880, 2, -680]);
-  assert.deepEqual(poseAt(benin, 1).target.map(Math.round), [1550, 4, -1020]);
-  // The universe shot starts high above the ground and ends near it.
+  for (const t of [0, 0.5, 1]) { const p = poseAt(benin, t); assert.deepEqual([Math.round(p.target[0]), Math.round(p.target[2])], [880, -680], 'the canoe stays the hero'); assert.ok(p.dist < 25 && p.focus > 0); }
+  // The universe shot starts high and oblique (never top-down) and ends low, near people.
   const u = planShot('first-universe', { spaceAlt: 2000, ground: [0, 0, 0] });
-  assert.ok(cameraPosition(poseAt(u, 0))[1] > 2000 * 2 && cameraPosition(poseAt(u, 1))[1] < 60);
+  assert.ok(cameraPosition(poseAt(u, 0))[1] > 1000 && cameraPosition(poseAt(u, 1))[1] < 20);
+  for (let i = 0; i <= 10; i++) assert.ok(poseAt(u, i / 10).phi > 0.8, 'never looking straight down');
 });
 
 test('the encoder: H.264, -preset veryfast, CRF 18, yuv420p; options are checked', () => {
@@ -117,4 +117,23 @@ test('the first universe is read through a store that refuses every write: never
 test('payments are left out of a showcase', () => {
   for (const e of [{ gadget: 'toll_bridge' }, { kind: 'payment_settled' }, { verdict: 'PAYMENT_REQUIRED_402' }, { verdict: 'SETTLED' }, { verdict: 'JOB_PAID' }, { kind: 'payer_refused', check: 'check_wallet_sanctions' }]) assert.equal(isPaymentEvent(e), true, JSON.stringify(e));
   for (const e of [{ gadget: 'rate_shield', kind: 'rate_limited', verdict: 'RATE_LIMITED' }, { gadget: 'truth_lens', check: 'check_agent_message', verdict: 'SUSPICIOUS' }]) assert.equal(isPaymentEvent(e), false);
+});
+
+test('a showcase frame is refused if drawn with phone settings, a render scale below 1, another tier, or fewer pixels', async () => {
+  const { checkShowcaseFrame } = await import('../scripts/showcase-render.mjs');
+  const ok = { canvas: [1080, 1920], drawingBuffer: [1080, 1920], css: [1080, 1920], dpr: 1, tier: 'showcase', profile: 'showcase', coarse: false, renderScale: 1, governor: 'off', probe: 'off', touchPoints: 0, deviceMemory: 8 };
+  assert.equal(checkShowcaseFrame(ok, { width: 1080, height: 1920 }), true);
+  assert.equal(checkShowcaseFrame({ ...ok, canvas: [1920, 1080], drawingBuffer: [1920, 1080], css: [960, 540], dpr: 2 }, { width: 1920, height: 1080 }), true);
+  const refused = (over, re) => assert.throws(() => checkShowcaseFrame({ ...ok, ...over }, { width: 1080, height: 1920 }), re);
+  refused({ coarse: true }, /coarse=true/);
+  refused({ renderScale: 0.5 }, /render scale 0.5/);
+  refused({ tier: 'cinematic' }, /tier cinematic/);
+  refused({ tier: 'high', profile: null }, /tier high/);
+  refused({ governor: 'on' }, /governor/);
+  refused({ probe: 'on' }, /probe/);
+  refused({ deviceMemory: 4 }, /deviceMemory/);
+  refused({ touchPoints: 5 }, /touch/);
+  refused({ drawingBuffer: [540, 960], canvas: [540, 960] }, /drawn at 540 x 960/);
+  refused({ css: [540, 960], dpr: 1 }, /viewport/);
+  assert.throws(() => checkShowcaseFrame(null, { width: 1080, height: 1920 }), /no scene/);
 });

@@ -32,6 +32,13 @@ test('showcase render: two frames of a shot, encoded to H.264', { skip, timeout:
   const s = m.shots[0];
   assert.equal(s.id, 'deep-space'); assert.equal(s.frames, 2);
   assert.deepEqual(s.page_errors, []);
+  // Drawn as a showcase on a desktop, every pixel of the output (checked on every frame by the script too).
+  for (const d of [s.diagnostics.first, s.diagnostics.last]) {
+    assert.deepEqual([d.tier, d.profile, d.coarse, d.renderScale, d.governor, d.probe, d.dpr], ['showcase', 'showcase', false, 1, 'off', 'off', 1]);
+    assert.deepEqual(d.drawingBuffer, [320, 568]);
+    assert.ok(d.deviceMemory >= 8 && !d.touchPoints);
+    assert.ok(typeof d.webglRenderer === 'string' && d.webglRenderer.length > 0);
+  }
   const png = readFileSync(join(out, 'deep-space.png'));
   assert.equal(png.toString('hex', 0, 8), '89504e470d0a1a0a');
   assert.deepEqual([png.readUInt32BE(16), png.readUInt32BE(20)], [320, 568]);

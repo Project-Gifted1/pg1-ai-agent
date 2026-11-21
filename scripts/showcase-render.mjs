@@ -141,12 +141,15 @@ export const CLOCK_SCRIPT = `(() => {
   const advance = (ms) => { vt += ms; const run = q; q = []; for (const x of run) { try { x.cb(vt); } catch (e) { console.error(e); } } };
   // Until the script takes the clock, frames run on their own (loading).
   free = setInterval(() => advance(16), 16);
+  // A desktop computer: no touch, 8 GB, 8 cores (never a phone's settings).
+  try { Object.defineProperty(Navigator.prototype, 'deviceMemory', { get: () => 8, configurable: true }); } catch (e) {}
+  try { Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => 8, configurable: true }); } catch (e) {}
+  try { Object.defineProperty(Navigator.prototype, 'maxTouchPoints', { get: () => 0, configurable: true }); } catch (e) {}
   window.__showcase = { advance, lock() { clearInterval(free); free = null; }, setDate(ms) { base = ms - vt; }, now: () => vt, pending: () => q.length, realDate };
 })();`;
 
 const PAGE_CSS = `html,body{margin:0;height:100%;background:#000;overflow:hidden}#view{position:fixed;inset:0}#view canvas{display:block;width:100%!important;height:100%!important}
-.sandbox-hud{position:absolute;inset:0;pointer-events:none}.sandbox-hud>:not(.sandbox-clock){display:none!important}
-.sandbox-clock{position:absolute;left:3vmin;bottom:3vmin;font:600 max(14px,1.6vmin)/1 Inter,system-ui,sans-serif;color:#fff;background:rgba(10,10,11,.55);padding:.55em .8em;border-radius:.5em;letter-spacing:.01em}
+.sandbox-hud,.sandbox-world-badge,.debug-overlay{display:none!important}
 #view>*:not(canvas):not(.sandbox-hud){display:none!important}`;
 
 function cityPage() {
@@ -170,11 +173,14 @@ window.showcase = {
     scene.setThreat('calm');
     scene.setDirector(false);
     if (scene.settleWeather) scene.settleWeather();
+    if (scene.setShowcaseLook) scene.setShowcaseLook({ mood: weather && /rain/.test(weather.state) ? 'rain' : 'night' });
   },
   // The last few real events of the day (never a payment), as the City replays them on open.
   stage() { const list = store.list().filter((e) => !(e.gadget === 'toll_bridge' || /pay|settle|402/i.test(String(e.kind) + String(e.verdict)))).slice(0, 6).reverse(); if (list.length) scene.ingest(list.map((e) => ({ event: e, delta: e.count }))); return list.length; },
   junction: () => (scene.busiestJunction ? scene.busiestJunction() : null),
   pose: (p) => scene.setShowcasePose(p),
+  info: () => scene.showcaseInfo(),
+  overlays: () => [...view.querySelectorAll('*')].filter((e) => e.tagName !== 'CANVAS' && e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden' && (e.textContent || '').trim()).length,
   frames: () => Number(view.dataset.frames || 0)
 };
 </script></body></html>`;
@@ -198,6 +204,8 @@ window.showcase = {
   spaceAlt: () => scene.spaceAlt(),
   groundAt: (x, z) => scene.groundAt(x, z),
   pose: (p) => scene.setShowcasePose(p),
+  info: () => scene.showcaseInfo(),
+  overlays: () => [...view.querySelectorAll('*')].filter((e) => e.tagName !== 'CANVAS' && e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden' && (e.textContent || '').trim()).length,
   frames: () => Number(view.dataset.frames || 0)
 };
 </script></body></html>`;
@@ -210,6 +218,7 @@ export function startServer(data) {
     if (req.method !== 'GET') { res.writeHead(405); return res.end(); }
     if (url.pathname === '/showcase/city.html') { res.writeHead(200, { 'Content-Type': MIME['.html'] }); return res.end(cityPage()); }
     if (url.pathname === '/showcase/sandbox.html') { res.writeHead(200, { 'Content-Type': MIME['.html'] }); return res.end(sandboxPage()); }
+    if (url.pathname === '/showcase/blank.html') { res.writeHead(200, { 'Content-Type': MIME['.html'] }); return res.end('<!doctype html><html><head><meta charset="utf-8"></head><body></body></html>'); }
     if (url.pathname === '/showcase/feed') return json(data.feed);
     if (url.pathname === '/showcase/world') { const w = data.worlds[url.searchParams.get('which')]; if (!w) { res.writeHead(404); return res.end(); } return json({ world: w }); }
     if (url.pathname.startsWith('/api/')) return json({ ok: true });
@@ -220,6 +229,27 @@ export function startServer(data) {
     res.end(body);
   });
   return new Promise((r) => server.listen(0, '127.0.0.1', () => r({ server, origin: `http://127.0.0.1:${server.address().port}` })));
+}
+
+// What a showcase frame must be drawn with; throws if it is anything else
+// (a phone's settings, fewer pixels than the output, another tier).
+export function checkShowcaseFrame(info, { width, height }) {
+  const bad = [];
+  if (!info) bad.push('no scene information');
+  else {
+    if (info.coarse) bad.push('coarse=true (phone settings)');
+    if (!(info.renderScale >= 1)) bad.push(`render scale ${info.renderScale}`);
+    if (info.tier !== 'showcase' || info.profile !== 'showcase') bad.push(`tier ${info.tier} (profile ${info.profile})`);
+    if (info.governor !== 'off') bad.push('the governor is on');
+    if (info.probe !== 'off') bad.push('the probe is on');
+    if (info.touchPoints) bad.push('touch');
+    if (!(info.deviceMemory >= 8)) bad.push(`deviceMemory ${info.deviceMemory}`);
+    const [cw, ch] = info.drawingBuffer || info.canvas || [];
+    if (cw !== width || ch !== height) bad.push(`drawn at ${cw} x ${ch}, not ${width} x ${height}`);
+    if (!info.css || Math.round(info.css[0] * info.dpr) !== width || Math.round(info.css[1] * info.dpr) !== height) bad.push(`viewport ${info.css} at DPR ${info.dpr} is not ${width} x ${height}`);
+  }
+  if (bad.length) throw new Error(`showcase frame refused: ${bad.join('; ')}`);
+  return true;
 }
 
 // --- one shot -------------------------------------------------------------------------------------
@@ -250,9 +280,21 @@ async function sceneContext(page, shot) {
   const find = (b) => page.evaluate((x) => window.showcase.find(x), b);
   if (shot.id === 'first-universe') {
     const spaceAlt = await page.evaluate(() => window.showcase.spaceAlt());
-    const squares = [...await find('fountain'), ...await find('stadium'), ...await find('hotel')];
-    const g = squares[0] ? squares[0].scene : [0, 0, 0];
-    return { spaceAlt, ground: [g[0], Math.max(0, await page.evaluate(([x, z]) => window.showcase.groundAt(x, z), [g[0], g[2]])), g[2]] };
+    // People in a town square: the person nearest a fountain (or a cafe).
+    const squares = [...await find('fountain'), ...await find('cafe'), ...await find('hotel')];
+    const people = (await find('person')).filter((p) => p.z < 5);
+    const sq = squares[0] ? squares[0].scene : [0, 0, 0];
+    const who = people.length ? nearest(people, sq) : null;
+    const g = who ? who.e.scene : sq;
+    // The closing angle with a clear line to them: no building between the camera and the person.
+    const blocks = [...await find('house'), ...await find('apartment'), ...await find('hotel'), ...await find('shop'), ...await find('cafe'), ...await find('school'), ...await find('tower'), ...await find('office')];
+    let endTheta = 1.05; let best = -1;
+    for (let k = 0; k < 24; k++) {
+      const th = (k / 24) * Math.PI * 2; let clear = Infinity;
+      for (let d = 4; d <= 40; d += 3) { const px = g[0] + Math.sin(1.44) * Math.cos(th) * d; const pz = g[2] + Math.sin(1.44) * Math.sin(th) * d; for (const b of blocks) clear = Math.min(clear, Math.hypot(b.scene[0] - px, b.scene[2] - pz) - (b.size || 10) * 0.6); }
+      if (clear > best) { best = clear; endTheta = th; }
+    }
+    return { spaceAlt, endTheta, ground: [g[0], Math.max(0, await page.evaluate(([x, z]) => window.showcase.groundAt(x, z), [g[0], g[2]])), g[2]] };
   }
   if (shot.id === 'benin-warri') {
     // The canoe nearest the walls of Benin (the earthwork ring), and the gate nearest it.
@@ -280,24 +322,51 @@ async function renderShot(browser, origin, shot, opts, log) {
   const { page, errors } = await contextFor(ctx, shot, opts);
   const url = shot.scene === 'city' ? `${origin}/showcase/city.html` : `${origin}/showcase/sandbox.html?world=${encodeURIComponent(shot.world)}`;
   await page.goto(url, { waitUntil: 'load', timeout: 180000 });
-  await page.waitForFunction(() => window.showcase && window.showcase.ready() && window.showcase.frames() > 2, null, { timeout: 600000, polling: 250 });
+  // Ready, or fail at once on a page error (never a ten-minute wait on a broken page).
+  for (const t0 = Date.now(); ;) {
+    if (errors.length) throw new Error(`${shot.id}: page error: ${errors[0]}`);
+    if (await page.evaluate(() => !!(window.showcase && window.showcase.ready() && window.showcase.frames() > 2))) break;
+    if (Date.now() - t0 > 600000) throw new Error(`${shot.id}: the scene was not ready in 10 minutes`);
+    await new Promise((r) => setTimeout(r, 250));
+  }
   const epoch = shot.light === 'night' ? dublinEpoch(23, 10) : shot.light === 'night-rain' ? dublinEpoch(22, 0) : null;
   await page.evaluate((o) => window.showcase.setup(o), { light: shot.light, weather: shot.weather || null, epoch });
   await page.evaluate(() => window.__showcase.lock());
-  const plan = planShot(shot.id, await sceneContext(page, shot));
+  const ctxS = await sceneContext(page, shot);
+  const plan = planShot(shot.id, ctxS);
+  // The shot's look (showcase-look.js): light, grade, ripples, mist, hero models.
+  if (shot.scene === 'sandbox') {
+    const look = { ...(shot.look || {}) };
+    if (look.hdri === 'by-hour') { const h = Number((await page.evaluate(() => window.showcase.scene.clock())).hh); Object.assign(look, h >= 5 && h < 9 ? { hdri: 'misty_dawn', mood: 'dawn', hdriIntensity: 0.55 } : h >= 9 && h < 18 ? { hdri: 'kloofendal_48d_partly_cloudy_puresky', mood: 'day', hdriIntensity: 0.6 } : { hdri: null, mood: 'night' }); }
+    if (look.mist && ctxS.canoe) look.mist = { centre: ctxS.canoe, radius: 700 };
+    await page.evaluate((o) => window.showcase.scene.setShowcaseLook(o), look);
+  }
   const total = opts.frames || frameCount(shot.seconds, opts.fps);
   const step = 1000 / opts.fps;
   const pose0 = poseAt(plan, 0);
   // Warm-up (not saved): the first pose held while the sky, weather, water
   // and easing settle (larger steps; the scene caps each at 0.1 s).
   await page.evaluate((p) => window.showcase.pose(p), pose0);
-  for (let i = 0; i < opts.warmup; i++) await page.evaluate(() => window.__showcase.advance(100));
+  // Shaders and textures first: frames until the compiled programs and
+  // loaded textures stop changing (at least the warm-up, at most 200).
+  let stable = 0; let last = '';
+  for (let i = 0; i < 200 && (i < opts.warmup || stable < 5); i++) {
+    const k = await page.evaluate(() => { window.__showcase.advance(100); const x = window.showcase.info(); return `${x.programs}|${x.textures}`; });
+    stable = k === last ? stable + 1 : 0; last = k;
+  }
+  const overlays = await page.evaluate(() => window.showcase.overlays());
+  if (overlays) throw new Error(`${shot.id}: ${overlays} overlay element(s) visible`);
   if (shot.scene === 'city') { const n = await page.evaluate(() => window.showcase.stage()); log(`${shot.id}: ${n} real event(s) staged`); }
-  const t0 = Date.now();
+  const t0 = Date.now(); const infos = {};
   for (let i = 0; i < total; i++) {
     const t = total > 1 ? i / (total - 1) : 0;
     await page.evaluate(([p, ms]) => { window.showcase.pose(p); window.__showcase.advance(ms); }, [poseAt(plan, t), step]);
     await page.screenshot({ path: join(framesDir, `${String(i + 1).padStart(5, '0')}.png`), type: 'png', timeout: 600000 });
+    // Every frame's settings are checked; the first and last are kept for the record.
+    const info = await page.evaluate(() => window.showcase.info());
+    checkShowcaseFrame(info, opts);
+    if (i === 0) { infos.first = info; log(`${shot.id}: ${diagLine(info)}`); }
+    if (i === total - 1) infos.last = info;
     if (i === 0 || (i + 1) % 15 === 0 || i === total - 1) log(`${shot.id}: frame ${i + 1}/${total} (${((Date.now() - t0) / 1000 / (i + 1)).toFixed(1)} s a frame)`);
   }
   await ctx.close();
@@ -308,8 +377,10 @@ async function renderShot(browser, origin, shot, opts, log) {
   const mp4 = join(opts.out, `${shot.id}.mp4`);
   encode(framesDir, mp4, opts.fps);
   if (!opts.keepFrames) rmSync(framesDir, { recursive: true, force: true });
-  return { id: shot.id, title: shot.title, frames: total, seconds: total / opts.fps, mp4, still, errors, plan: { move: shot.move } };
+  return { id: shot.id, title: shot.title, frames: total, seconds: total / opts.fps, mp4, still, errors, plan: { move: shot.move }, diagnostics: infos };
 }
+
+export const diagLine = (x) => `canvas ${x.canvas.join('x')}, CSS ${x.css.join('x')} at DPR ${x.dpr}, tier ${x.tier} (source ${x.tierSource}), render scale ${x.renderScale}, settings.pixelRatio ${x.settingsPixelRatio}, governor ${x.governor}, probe ${x.probe}, coarse ${x.coarse}, deviceMemory ${x.deviceMemory}, WebGL ${x.webglRenderer}`;
 
 export function ffmpegArgs(framesDir, out, fps) {
   return ['-y', '-hide_banner', '-loglevel', 'error', '-framerate', String(fps), '-i', join(framesDir, '%05d.png'), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out];
@@ -329,7 +400,8 @@ export async function main(argv = process.argv.slice(2)) {
   const { server, origin } = await startServer(data);
   let executablePath;
   if (!existsSync(chromium.executablePath()) && existsSync('/opt/pw-browsers/chromium')) executablePath = '/opt/pw-browsers/chromium';
-  const args = opts.gpu ? ['--ignore-gpu-blocklist', '--enable-gpu-rasterization'] : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+  // Software 3D (SwiftShader) unless --gpu; either way never the phone path.
+  const args = opts.gpu ? ['--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--use-angle=default'] : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
   const results = new Array(opts.shots.length);
   const queue = opts.shots.map((id, i) => ({ id, i }));
   const worker = async () => {
@@ -342,7 +414,7 @@ export async function main(argv = process.argv.slice(2)) {
     } finally { await browser.close(); }
   };
   try { await Promise.all(Array.from({ length: Math.min(opts.jobs, opts.shots.length) }, worker)); } finally { server.close(); }
-  const manifest = { generated_at: new Date().toISOString(), size: `${opts.width}x${opts.height}`, fps: opts.fps, profile: 'showcase', encoder: 'H.264 (libx264), -preset veryfast, CRF 18, yuv420p', shots: results.map((r) => ({ id: r.id, title: r.title, frames: r.frames, seconds: r.seconds, move: r.plan.move, data: data.sources[r.id === 'city-night' || r.id === 'city-rain' ? 'city' : r.id === 'deep-space' ? 'space' : r.id], mp4: r.mp4.slice(opts.out.length + 1), still: r.still.slice(opts.out.length + 1), page_errors: r.errors })) };
+  const manifest = { generated_at: new Date().toISOString(), size: `${opts.width}x${opts.height}`, fps: opts.fps, profile: 'showcase', encoder: 'H.264 (libx264), -preset veryfast, CRF 18, yuv420p', shots: results.map((r) => ({ id: r.id, title: r.title, frames: r.frames, seconds: r.seconds, move: r.plan.move, data: data.sources[r.id === 'city-night' || r.id === 'city-rain' ? 'city' : r.id === 'deep-space' ? 'space' : r.id], mp4: r.mp4.slice(opts.out.length + 1), still: r.still.slice(opts.out.length + 1), page_errors: r.errors, diagnostics: r.diagnostics })) };
   writeFileSync(join(opts.out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   log(`done: ${readdirSync(opts.out).filter((f) => /\.(mp4|png)$/.test(f)).join(', ')}`);
   return manifest;

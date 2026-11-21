@@ -97,9 +97,21 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     composer.addPass(smaa);
   }
   composer.addPass(new OutputPass());
+  // Showcase only (settings.grade): the colour grade, vignette and film grain
+  // after tone mapping (showcase-look.js).
+  let grade = null;
+  if (settings.grade) {
+    const [{ ShaderPass }, look] = await Promise.all([import(`${ADDONS}ShaderPass.js`), import('./showcase-look.js')]);
+    grade = new ShaderPass(look.gradeShader(settings.grade));
+    grade.uniforms.uAspect.value = size.x / Math.max(1, size.y);
+    composer.addPass(grade);
+  }
   let skyView = false;
   return {
-    composer, passes: { taa, gtao, bloom, bokeh, smaa },
+    composer, passes: { taa, gtao, bloom, bokeh, smaa, grade },
+    // Showcase: the grade's mood (GRADES) and the grain's frame.
+    setGrade(mood, look) { if (!grade || !look) return; const g = look.GRADES[mood]; if (!g) return; const u = grade.uniforms; u.uLift.value = g.shadows.slice(); u.uGain.value = g.highlights.slice(); u.uContrast.value = g.contrast; u.uSaturation.value = g.saturation; u.uVignette.value = g.vignette; u.uGrain.value = g.grain; },
+    setTime(t) { if (grade) grade.uniforms.uTime.value = t; },
     // TAA accumulates only while nothing moves on screen; otherwise it is plain rendering.
     // Looking at the sky, it takes one sample, unjittered: points stay points.
     // Showcase (settings.settle, offline): every frame is settled on its own,
@@ -122,10 +134,11 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     get skyView() { return skyView; },
     // Draw another scene (a world's surface) through the same passes.
     setScene(sc) { for (const p of composer.passes) if ('scene' in p) p.scene = sc; },
-    setSize(w, h, pr) { composer.setPixelRatio(pr); composer.setSize(w, h); if (gtao) gtao.setSize(Math.max(1, Math.round(w * pr * aoScale)), Math.max(1, Math.round(h * pr * aoScale))); },
+    setSize(w, h, pr) { composer.setPixelRatio(pr); composer.setSize(w, h); if (grade) grade.uniforms.uAspect.value = w / Math.max(1, h); if (gtao) gtao.setSize(Math.max(1, Math.round(w * pr * aoScale)), Math.max(1, Math.round(h * pr * aoScale))); },
     // Night makes the windows and lamps the brightest things on screen: a little more bloom.
     // (Never down to the stars' brightness: STAR_PEAK in environment.js.)
-    setNight(n) { if (bloom) { bloom.strength = (0.22 + n * 0.35) * (skyView ? 0.5 : 1); bloom.threshold = Math.max(STAR_BLOOM_FLOOR, 0.95 - n * 0.2); } },
+    // Showcase: bloom on lights only (a high threshold), a little stronger.
+    setNight(n) { if (bloom) { bloom.strength = (0.22 + n * 0.35) * (skyView ? 0.5 : 1) * (settings.grade ? 1.25 : 1); bloom.threshold = settings.grade ? 0.97 : Math.max(STAR_BLOOM_FLOOR, 0.95 - n * 0.2); bloom.radius = settings.grade ? 0.6 : 0.45; } },
     dispose() { for (const p of composer.passes) if (p.dispose) p.dispose(); composer.dispose(); }
   };
 }

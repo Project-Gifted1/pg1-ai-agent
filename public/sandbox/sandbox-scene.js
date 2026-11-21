@@ -343,7 +343,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   try { renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.aa === 'none', alpha: false, powerPreference: tier === 'low' ? 'low-power' : 'high-performance', preserveDrawingBuffer: false }); } catch (e) { return null; }
   container.appendChild(canvas);
   container.dataset.renderer = 'webgl';
-  container.dataset.tier = tier;
+  container.dataset.tier = offline ? SHOWCASE : tier;
   const targetFps = coarse && tier === 'low' ? 30 : settings.targetFps;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -592,7 +592,9 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     }
     if (e.base === 'star') {
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
-      halo.scale.setScalar(size * 9);
+      // Showcase: a tight corona, not a glow over the whole frame.
+      halo.scale.setScalar(size * (offline ? 3.4 : 9));
+      if (offline) halo.material.opacity = 0.55;
       fadeGlowUpClose(halo, 1);
       g.add(halo);
       const light = new THREE.PointLight(color, 3, 0, 0);
@@ -606,7 +608,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     }
     if (e.props.clouds) { const cl = new THREE.Mesh(new THREE.SphereGeometry(size * 1.02, 40, 20), new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.25, roughness: 1, depthWrite: false })); cl.userData.spin = 0.05; g.add(cl); }
     // A radiation belt (lib/sandbox/cosmos.mjs): a faint glowing band round the world's middle, where it is.
-    if (Number(e.props.belt_outer) > Number(e.props.belt_inner)) {
+    if (!offline && Number(e.props.belt_outer) > Number(e.props.belt_inner)) {
       const ri = Number(e.props.belt_inner) * size; const ro = Number(e.props.belt_outer) * size;
       const belt = new THREE.Mesh(new THREE.TorusGeometry((ri + ro) / 2, (ro - ri) / 2 * 0.55, 18, 96), new THREE.MeshBasicMaterial({ color: 0x7fd4ff, transparent: true, opacity: 0.07, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
       belt.rotation.x = Math.PI / 2;
@@ -1143,6 +1145,38 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   // frame { target: [x, y, z], dist, theta, phi, fov?, focus? } in the
   // controls' own terms (focus: metres kept sharp; null for none).
   let showcasePose = null;
+  // Showcase look (showcase-look.js): HDRI light, the grade's mood, close
+  // ripples, dawn mist, hero models in place of the light ones.
+  let showLook = null; let lookMod = null; let ripples = null;
+  async function setShowcaseLook(o = {}) {
+    if (!offline) return false;
+    lookMod = lookMod || await import('./showcase-look.js');
+    showLook = { ...o, heroes: o.heroes || {}, decorated: new Set(), mist: null, heroObjs: {} };
+    if (o.hdri) { env.hdri = await lookMod.loadHdri(THREE, renderer, o.hdri); scene.environment = env.hdri; scene.environmentIntensity = o.hdriIntensity ?? 0.7; }
+    if (o.mood && post && post.setGrade) post.setGrade(o.mood, lookMod);
+    if (o.mist) { showLook.mist = lookMod.createMistLayers(THREE, { centre: o.mist.centre, radius: o.mist.radius || 900, color: o.mist.color || 0xf2dcc8 }); scene.add(showLook.mist); }
+    for (const [kind, name] of Object.entries(showLook.heroes)) showLook.heroObjs[kind] = await lookMod.loadHero(name);
+    if (o.ripple) ripples = lookMod.rippleNormals(THREE);
+    return true;
+  }
+  function showLookFrame(now) {
+    const L = showLook; const t = now / 1000;
+    if (post && post.setTime) post.setTime(t);
+    if (L.mist) L.mist.userData.update(t);
+    // Close water: the lakes' shader ripples more; rivers and creeks get a rippled, mirror-like finish.
+    if (L.ripple) {
+      for (const w of env.lakes) if (w.userData.water && w.material.uniforms.uRipple) w.material.uniforms.uRipple.value = L.ripple;
+      if (waterGroup) waterGroup.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && o.material && o.material.isMeshStandardMaterial && !o.userData.rippled) { o.userData.rippled = true; o.material.normalMap = ripples; o.material.normalScale.set(0.6, 0.6); o.material.roughness = 0.04; o.material.metalness = 0.2; ripples.repeat.set(0.08, 0.08); o.material.needsUpdate = true; } });
+      if (ripples) ripples.offset.set(t * 0.01, t * 0.006);
+    }
+    // Hero models in place of the light ones (each mover once).
+    for (const [kind, src] of Object.entries(L.heroObjs)) for (const m of movers.values()) {
+      if (m.e.kind !== kind || L.decorated.has(m)) continue;
+      L.decorated.add(m);
+      for (const c of m.inner.children) c.visible = false;
+      const h = src.clone(true); h.name = `showcase-hero-${kind}`; m.inner.add(h);
+    }
+  }
   const poseTarget = new THREE.Vector3();
   function applyShowcasePose() {
     const p = showcasePose;
@@ -1389,6 +1423,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     }
     // Showcase: the scripted camera's pose for this frame, exactly.
     if (showcasePose) applyShowcasePose();
+    if (showLook) showLookFrame(now);
     controls.update(step);
     checkInside();
     // The near plane follows the camera's distance (2% of it): depth stays
@@ -1422,7 +1457,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     }
     // Orbits are drawn in space only: from the ground they were lines across the sky.
     const orbitK = Math.max(envState.space, mode === 'space' ? 1 : 0);
-    for (const l of orbitLines.values()) { l.material.opacity = 0.32 * orbitK; if (orbitK < 0.02) l.visible = false; }
+    for (const l of orbitLines.values()) { l.material.opacity = 0.32 * orbitK; if (orbitK < 0.02 || offline) l.visible = false; }
     // Windows read as dark glass by day and warm light at night.
     const nt = Math.min(1, envState.night + envState.space * 0.4);
     matGlow.color.setRGB(0.22 + nt * 1.2, 0.27 + nt * 1.0, 0.36 + nt * 0.6);
@@ -1619,9 +1654,17 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     setXray(on) { setXray(on); schedule(); }, xray: () => xray,
     // Showcase: the scripted camera's pose (null gives the camera back), and
     // a weather to hold everywhere (null for the world's own).
+    setShowcaseLook: (o) => setShowcaseLook(o),
     setShowcasePose(p) { if (p) { controls.minDist = Math.min(controls.minDist, p.dist); controls.maxDist = Math.max(controls.maxDist, p.dist); controls.maxPhi = Math.max(controls.maxPhi || 0, p.phi); } showcasePose = p || null; schedule(); },
     // w: a name, or { state, ...overrides } (a lighter mist, say).
     setWeather(w) { const name = w && typeof w === 'object' ? w.state : w; forcedWeather = name && WEATHER_LOOK[name] ? Object.freeze({ state: name, ...WEATHER_LOOK[name], ...(typeof w === 'object' ? w : {}) }) : null; weatherAtMs = -Infinity; schedule(); },
+    // Showcase: what this frame is drawn with (scripts/showcase-render.mjs logs and checks it).
+    showcaseInfo: () => (() => {
+      const gl = renderer.getContext(); let unmasked = null;
+      try { const ext = gl.getExtension('WEBGL_debug_renderer_info'); unmasked = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER); } catch (e) { unmasked = null; }
+      const nav = typeof navigator !== 'undefined' ? navigator : {};
+      return { canvas: [canvas.width, canvas.height], drawingBuffer: [gl.drawingBufferWidth, gl.drawingBufferHeight], css: [window.innerWidth, window.innerHeight], dpr: window.devicePixelRatio || 1, tier: offline ? SHOWCASE : tier, tierSource: offline ? SHOWCASE : tierSource, profile: offline ? SHOWCASE : null, coarse: !!coarse, renderScale: scaling() ? renderScale.scale : 1, settingsPixelRatio: settings.pixelRatio, rendererPixelRatio: renderer.getPixelRatio(), governor: governor.auto ? 'on' : 'off', probe: probeRun && !probeRun.done ? 'on' : 'off', deviceMemory: nav.deviceMemory || 0, cores: nav.hardwareConcurrency || 0, touchPoints: nav.maxTouchPoints || 0, webglRenderer: unmasked, programs: renderer.info.programs ? renderer.info.programs.length : 0, textures: renderer.info.memory.textures };
+    })(),
     worldEntities: (base) => world.entities.filter((e) => !base || e.base === base || e.kind === base).map((e) => ({ id: e.id, kind: e.kind, base: e.base, x: e.x, y: e.y, z: e.z, size: sizeOf(e.id), scene: (() => { const p = toScene(e, new THREE.Vector3()); return [p.x, p.y, p.z]; })() })),
     groundAt: (x, z) => (env.heightAt ? env.heightAt(x, z) : 0),
     spaceAlt: () => world.spaceAlt,
@@ -1704,7 +1747,7 @@ export async function createSandboxScene(container, { reducedMotion = false, coa
   const offline = !!(showcase && showcaseSettings({ coarse }));
   let auto = offline ? false : start.auto;
   let current = offline ? 'cinematic' : start.tier;
-  if (offline) start.probe = false;
+  if (offline) { start.probe = false; start.source = SHOWCASE; }
   let tierSource = start.source; let probeMs = null; let probing = start.probe;
   container.dataset.tierSource = tierSource;
   // The probe's answer: keep it on this device and move to that tier (once).
@@ -1773,6 +1816,8 @@ export async function createSandboxScene(container, { reducedMotion = false, coa
     screenshot: () => call('screenshot') || null,
     quality: () => ({ tier: current, auto, tiers: TIERS.slice(), source: tierSource, probeMs, ...(offline ? { profile: SHOWCASE } : {}) }),
     setShowcasePose: (p) => call('setShowcasePose', p),
+    setShowcaseLook: (o) => call('setShowcaseLook', o),
+    showcaseInfo: () => call('showcaseInfo') || null,
     setWeather: (w) => call('setWeather', w),
     worldEntities: (b) => call('worldEntities', b) || [],
     groundAt: (x, z) => call('groundAt', x, z) || 0,
