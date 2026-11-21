@@ -35,6 +35,7 @@ uniform float uIslands[${MAX_ISLANDS * 3}];
 uniform int uIslandCount;
 uniform float uFoam;
 uniform float uReflect;
+uniform float uRipple;
 uniform sampler2D tReflect;
 uniform mat4 uReflectMatrix;
 varying vec3 vWorld;
@@ -55,7 +56,10 @@ void main() {
   vec2 uv = vWorld.xz;
   vec3 n1 = texture2D(uNormals, uv / 38.0 + vec2(uTime * 0.012, uTime * 0.007)).xyz * 2.0 - 1.0;
   vec3 n2 = texture2D(uNormals, uv / 11.0 - vec2(uTime * 0.021, -uTime * 0.017)).xyz * 2.0 - 1.0;
-  vec3 n = normalize(vec3(n1.x + n2.x * 0.6, 3.2, n1.y + n2.y * 0.6));
+  // Showcase only (uRipple > 1): a third, fine layer of ripples for water seen close up.
+  vec3 n3 = vec3(0.0);
+  if (uRipple > 1.0) n3 = texture2D(uNormals, uv / 2.7 + vec2(uTime * 0.05, uTime * 0.031)).xyz * 2.0 - 1.0;
+  vec3 n = normalize(vec3((n1.x + n2.x * 0.6) * uRipple + n3.x * (uRipple - 1.0) * 0.5, 3.2, (n1.y + n2.y * 0.6) * uRipple + n3.y * (uRipple - 1.0) * 0.5));
   vec3 v = normalize(cameraPosition - vWorld);
   float fres = 0.02 + 0.98 * pow(1.0 - max(dot(n, v), 0.0), 5.0);
   vec3 r = reflect(-v, n);
@@ -96,7 +100,7 @@ export function createWaterMaterial(THREE, normals, islands = [], { offset = tru
     uZenith: { value: new THREE.Color('#2a6fd6') }, uHorizon: { value: new THREE.Color('#bcd9f2') },
     uDeep: { value: new THREE.Color('#0b3550') }, uShallow: { value: new THREE.Color('#2bb3b1') },
     uIslands: { value: Array.from(flat) }, uIslandCount: { value: Math.min(MAX_ISLANDS, islands.length) }, uFoam: { value: 1 },
-    uReflect: { value: 0 }, tReflect: { value: null }, uReflectMatrix: { value: new THREE.Matrix4() }
+    uReflect: { value: 0 }, uRipple: { value: 1 }, tReflect: { value: null }, uReflectMatrix: { value: new THREE.Matrix4() }
   }]);
   uniforms.uNormals.value = normals;
   // Pushed back in depth a little, so land just above sea level always wins, even from far away.

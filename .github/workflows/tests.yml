@@ -143,6 +143,11 @@ jobs:
       - run: npm ci
       - name: Install Chromium (version pinned by package-lock.json)
         run: npx playwright install --with-deps chromium
+      # The Showcase render's 2-frame smoke test encodes with ffmpeg.
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
       # The sandbox's 3D tests run in the job below. npm run test:browser
       # still runs every browser test, for running them all locally.
       - name: Browser tests but the sandbox's (network blocked)

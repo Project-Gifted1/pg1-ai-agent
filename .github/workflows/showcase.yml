@@ -1,0 +1,90 @@
+name: PG1 Showcase render
+
+# Art-directed shots of PG1 City and PG1 Universe, rendered offline
+# (scripts/showcase-render.mjs): headless Chromium at the desktop-only
+# Showcase profile, the clock stepped frame by frame at 30 fps, frames
+# encoded with ffmpeg (H.264, -preset veryfast, CRF 18, yuv420p). Started by
+# hand only (Actions > PG1 Showcase render > Run workflow). The MP4s, a PNG
+# still of each shot and manifest.json are uploaded as the run's artifact.
+#
+# No secrets are needed. With read_pg1_data on and PG1's database secrets
+# set in this repository, the City shows the last 24 hours of real PG1
+# events (never payments) and the first universe is read through a store
+# that refuses every write (never stepped, reset or changed); without them
+# the City is calm and the universe shot uses the universe template.
+# manifest.json says which data each shot used.
+
+on:
+  workflow_dispatch:
+    inputs:
+      shots:
+        description: Shots, comma-separated (city-night, city-rain, first-universe, benin-warri, deep-space)
+        required: false
+        default: city-night,city-rain,first-universe,benin-warri,deep-space
+        type: string
+      size:
+        description: Frame size, WxH (1080x1920 vertical, 1920x1080 landscape)
+        required: false
+        default: 1080x1920
+        type: string
+      read_pg1_data:
+        description: Read PG1's real events and first universe (read only) if the database secrets are set
+        required: false
+        default: true
+        type: boolean
+      social:
+        description: Also build the post visuals (cards, cover, highlights.mp4; vertical size only)
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: showcase
+  cancel-in-progress: false
+
+jobs:
+  render:
+    name: render
+    # Pinned: Playwright 1.56.1 cannot install Chromium on ubuntu-latest.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium (version pinned by package-lock.json) and ffmpeg
+        run: |
+          npx playwright install --with-deps chromium
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffmpeg -version | head -1
+      - name: Render (software 3D, one shot per core)
+        env:
+          SHOTS: ${{ inputs.shots }}
+          SIZE: ${{ inputs.size }}
+          SUPABASE_URL: ${{ inputs.read_pg1_data && secrets.SUPABASE_URL || '' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ inputs.read_pg1_data && secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
+        run: node scripts/showcase-render.mjs --shots "$SHOTS" --size "$SIZE" --jobs "$(nproc)" --out showcase-out
+      - name: Post visuals
+        if: inputs.social
+        run: node scripts/social-build.mjs --from showcase-out --out showcase-out/social
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pg1-showcase-${{ github.run_number }}
+          path: |
+            showcase-out/*.mp4
+            showcase-out/*.png
+            showcase-out/manifest.json
+            showcase-out/social/
+          if-no-files-found: warn
+          retention-days: 30

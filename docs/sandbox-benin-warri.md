@@ -140,6 +140,21 @@ Portuguese priests came to this region on trading ships, and were told to suppor
 - **Cassava** is left out. The sources found are weak or conflicting: a continental study says cassava reached Africa's coasts before 1600, an FAO summary says it came to the Warri area from Fernando Po but was not widespread until about 1800, and another source says the late 18th century. Farming in the world yields "farm produce", without naming a crop.
 - **The two "silver crowns".** Palace tradition says Domingos brought two crowns from the king; the art historian Kathy Curnow found that one is gilt silver and the other bronze or brass, and treats their origin as tradition. **Not used.** It stays an open question.
 
+## How the world is drawn (scenery, not claims)
+
+- **Trees.** The viewer's scenery forest is generic. In a wholly tropical
+  world such as this one it now draws rainforest trees (buttressed trunks,
+  high crowns), oil palms (native to West Africa) and smaller broadleaf
+  trees; never pines, birches or oaks. Like the forest itself (open
+  question 7), this is scenery, not a sourced claim.
+- **The Showcase canoe** (`public/showcase/models/canoe.glb`, offline renders
+  only): a dugout from one trunk with a carved prow and stern, three
+  paddlers in wrappers (cloth, B6), and a cargo drawn only from the sources:
+  fresh fish in a basket, salt cakes in a basket and a coiled net (fishing,
+  and fish and salt traded by canoe: N1, W14). No crop is named on it
+  (cassava and the market's goods stay unnamed, as above). The paddlers are
+  anonymous; no real person is shown.
+
 ## The fictional storyline
 
 **Fictional, clearly labelled, inspired by history (W10, W11):** a prince of Warri, with an invented name, has been studying in Lisbon. Early in the world he comes home on a Portuguese ship with his Portuguese wife, also invented. Their arrival is an event marked "Storyline (fictional, inspired by history)". Neither says or does anything attributed to a real person, and neither is Dom Domingos or Maria Pereira.

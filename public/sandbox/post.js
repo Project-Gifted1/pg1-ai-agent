@@ -4,7 +4,8 @@
 //   (glows, lamps, the sun; Medium and up) -> anti-aliasing (SMAA; Ultra
 //   adds temporal accumulation while the camera is still) -> depth of
 //   field on what the camera follows (Cinematic) -> ACES tone mapping and
-//   sRGB output (OutputPass).
+//   sRGB output (OutputPass). The offline Showcase profile (quality.js
+//   SHOWCASE_SETTINGS) settles TAA on every frame instead.
 //
 // The sky stays crisp (setSky): looking at space, or with nothing nearby
 // followed, depth of field is off (nothing is out of focus at infinity),
@@ -96,12 +97,30 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     composer.addPass(smaa);
   }
   composer.addPass(new OutputPass());
+  // Showcase only (settings.grade): the colour grade, vignette and film grain
+  // after tone mapping (showcase-look.js).
+  let grade = null;
+  if (settings.grade) {
+    const [{ ShaderPass }, look] = await Promise.all([import(`${ADDONS}ShaderPass.js`), import('./showcase-look.js')]);
+    grade = new ShaderPass(look.gradeShader(settings.grade));
+    grade.uniforms.uAspect.value = size.x / Math.max(1, size.y);
+    composer.addPass(grade);
+  }
   let skyView = false;
   return {
-    composer, passes: { taa, gtao, bloom, bokeh, smaa },
+    composer, passes: { taa, gtao, bloom, bokeh, smaa, grade },
+    // Showcase: the grade's mood (GRADES) and the grain's frame.
+    setGrade(mood, look) { if (!grade || !look) return; const g = look.GRADES[mood]; if (!g) return; const u = grade.uniforms; u.uLift.value = g.shadows.slice(); u.uGain.value = g.highlights.slice(); u.uContrast.value = g.contrast; u.uSaturation.value = g.saturation; u.uVignette.value = g.vignette; u.uGrain.value = g.grain; },
+    setTime(t) { if (grade) grade.uniforms.uTime.value = t; },
     // TAA accumulates only while nothing moves on screen; otherwise it is plain rendering.
     // Looking at the sky, it takes one sample, unjittered: points stay points.
-    render(still) { if (taa) { taa.sampleLevel = skyView ? 0 : 2; taa.accumulate = !!still && !skyView; } composer.render(); },
+    // Showcase (settings.settle, offline): every frame is settled on its own,
+    // 2^taaSamples jittered samples, never accumulated across frames.
+    render(still) {
+      if (taa && settings.settle) { taa.sampleLevel = skyView ? 0 : (settings.taaSamples || 4); taa.accumulate = false; }
+      else if (taa) { taa.sampleLevel = skyView ? 0 : 2; taa.accumulate = !!still && !skyView; }
+      composer.render();
+    },
     // The distance in metres to keep sharp (the followed thing), eased; with
     // focus null (nothing nearby followed) depth of field is off.
     setFocus(d) {
@@ -115,10 +134,11 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     get skyView() { return skyView; },
     // Draw another scene (a world's surface) through the same passes.
     setScene(sc) { for (const p of composer.passes) if ('scene' in p) p.scene = sc; },
-    setSize(w, h, pr) { composer.setPixelRatio(pr); composer.setSize(w, h); if (gtao) gtao.setSize(Math.max(1, Math.round(w * pr * aoScale)), Math.max(1, Math.round(h * pr * aoScale))); },
+    setSize(w, h, pr) { composer.setPixelRatio(pr); composer.setSize(w, h); if (grade) grade.uniforms.uAspect.value = w / Math.max(1, h); if (gtao) gtao.setSize(Math.max(1, Math.round(w * pr * aoScale)), Math.max(1, Math.round(h * pr * aoScale))); },
     // Night makes the windows and lamps the brightest things on screen: a little more bloom.
     // (Never down to the stars' brightness: STAR_PEAK in environment.js.)
-    setNight(n) { if (bloom) { bloom.strength = (0.22 + n * 0.35) * (skyView ? 0.5 : 1); bloom.threshold = Math.max(STAR_BLOOM_FLOOR, 0.95 - n * 0.2); } },
+    // Showcase: bloom on lights only (a high threshold), a little stronger.
+    setNight(n) { if (bloom) { bloom.strength = (0.22 + n * 0.35) * (skyView ? 0.5 : 1); bloom.threshold = Math.max(STAR_BLOOM_FLOOR, 0.95 - n * 0.2); if (settings.grade) { bloom.strength *= 1.25; bloom.threshold = 0.97; bloom.radius = 0.6; } } },
     dispose() { for (const p of composer.passes) if (p.dispose) p.dispose(); composer.dispose(); }
   };
 }

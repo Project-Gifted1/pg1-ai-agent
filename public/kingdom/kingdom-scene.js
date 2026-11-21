@@ -28,7 +28,7 @@
 // prefers-reduced-motion, or no WebGL: a still 2D map of the kingdom with
 // today's count by each gadget; the text feed beside it carries the events.
 
-import { TIER_SETTINGS, pickTier, createGovernor, createRenderScale, QUALITY_KEY } from '../sandbox/quality.js';
+import { TIER_SETTINGS, pickTier, createGovernor, createRenderScale, QUALITY_KEY, SHOWCASE, SHOWCASE_SETTINGS } from '../sandbox/quality.js';
 import { createPost } from '../sandbox/post.js';
 import { createControls } from '../sandbox/controls.js';
 import { createWaterMaterial } from '../sandbox/water.js';
@@ -159,6 +159,19 @@ export function kingdomSettings(tier, { coarse = false, memory = 0 } = {}) {
   return Object.freeze({ tier, ...base, ease: v ? v.ease : 5 });
 }
 
+// SHOWCASE (scripts/showcase-render.mjs): the offline profile, on a computer
+// only, never chosen by the probe, the governor or Auto (it is not one of
+// KINGDOM_TIERS). Cinematic's city with the viewer's Showcase post-processing
+// (quality.js SHOWCASE_SETTINGS: 32 occlusion samples, TAA settled per
+// frame, depth of field), 4096 shadows, the planar river mirror, the full
+// crowds, and no render scale: each frame takes as long as it needs.
+export function kingdomShowcaseSettings({ coarse = false } = {}) {
+  if (coarse) return null;
+  const c = kingdomSettings('cinematic', { coarse: false });
+  const S = SHOWCASE_SETTINGS;
+  return Object.freeze({ ...c, shadows: S.shadowMapSize, post: Object.freeze({ aa: 'taa', taaSamples: S.taaSamples, settle: true, bloom: true, gtao: true, gtaoSamples: S.gtaoSamples, gtaoScale: 1, dof: true, grade: 'night' }), fogScale: 0.45, targetFps: S.targetFps, pixelRatio: S.pixelRatio, renderScale: false, profile: SHOWCASE, ease: S.ease });
+}
+
 // Height fog: the scene's exponential fog, thicker low down (blue hour),
 // only for materials that define PG1_HEIGHT_FOG (the city's), so other
 // three.js views on the page are untouched.
@@ -250,7 +263,7 @@ function waterNormals(THREE) {
   return t;
 }
 
-async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: forcedTier, auto: rebuiltAuto = false, onRebuild = null, onContextLost = null }) {
+async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: forcedTier, auto: rebuiltAuto = false, onRebuild = null, onContextLost = null, showcase = false }) {
   const THREE = await import(threeUrl);
   const canvas = document.createElement('canvas');
   canvas.className = 'kingdom-canvas';
@@ -264,10 +277,14 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   const begin = rebuiltAuto && forcedTier
     ? { tier: forcedTier, source: 'auto', probe: !(probeStore && readProbeCache(probeStore, KINGDOM_PROBE_KEY)), held: false }
     : chooseKingdomStart({ forced: forcedTier, search: location.search, saved, cached: probeStore ? readProbeCache(probeStore, KINGDOM_PROBE_KEY) : null, profile, coarse, memory });
+  // Showcase: asked for by name, never on a phone; it holds its tier.
+  const offline = showcase ? kingdomShowcaseSettings({ coarse }) : null;
+  if (offline) { begin.tier = 'cinematic'; begin.source = SHOWCASE; begin.probe = false; begin.held = true; }
   let tier = begin.tier;
   const forced = begin.held;
   container.dataset.tierSource = begin.source;
-  let settings = kingdomSettings(tier, { coarse, memory });
+  let settings = offline || kingdomSettings(tier, { coarse, memory });
+  if (offline) container.dataset.profile = SHOWCASE;
   let renderer;
   try {
     // Low and Medium have no post-processing, so they take the GPU's own
@@ -279,7 +296,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   }
   container.appendChild(canvas);
   container.dataset.renderer = 'webgl';
-  container.dataset.tier = tier;
+  container.dataset.tier = offline ? SHOWCASE : tier;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   // Count every pass of a frame (post-processing renders several times).
   renderer.info.autoReset = false;
@@ -302,7 +319,37 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   patchHeightFog(THREE);
   // PG1's emblem comes from the brand asset itself; without it, no emblem (never a redraw).
   const brand = await loadBrand().catch(() => null);
-  const world = buildWorld(THREE, scene, settings, { waterMaterial, Reflector: ReflectorMod ? ReflectorMod.Reflector : null, brand });
+  // Showcase: the look module, a night HDRI for light and reflections, and
+  // PBR detail for the masonry (CC0 assets, docs/assets-licences.md).
+  const showLook = offline ? await import('../sandbox/showcase-look.js') : null;
+  const [hdri, asphalt, facadeDetail] = showLook ? await Promise.all([
+    showLook.loadHdri(THREE, renderer, 'modern_buildings_night').catch(() => null),
+    showLook.loadPbr(THREE, 'asphalt_02').catch(() => null),
+    showLook.loadPbr(THREE, 'concrete_tile_facade').catch(() => null)
+  ]) : [];
+  const world = buildWorld(THREE, scene, settings, { waterMaterial, Reflector: ReflectorMod ? ReflectorMod.Reflector : null, brand, detail: facadeDetail ? facadeDetail.normalMap : null });
+  // Mirrors drawn once a frame, not once per TAA sample.
+  const mirrors = [];
+  if (offline && world.mirror) mirrors.push(showLook.oncePerFrame(world.mirror));
+  // Rain-wet streets: a rippled, puddled mirror over the ground on both banks.
+  let wetGround = null;
+  if (offline && ReflectorMod && asphalt) {
+    wetGround = new THREE.Group(); wetGround.name = 'showcase-wet-streets';
+    for (const [z0, z1] of [[-2200, RIVER.z - RIVER.half - 2], [RIVER.z + RIVER.half + 2, 2200]]) {
+      const m = showLook.createWetGround(THREE, ReflectorMod.Reflector, { width: 4400, depth: z1 - z0, y: 0.09, textureWidth: 1080, textureHeight: 1080, normalMap: asphalt.normalMap, roughnessMap: asphalt.roughnessMap });
+      m.position.z = (z0 + z1) / 2; wetGround.add(m); mirrors.push(m);
+    }
+    wetGround.visible = false; scene.add(wetGround);
+  }
+  for (const m of mirrors) m.userData.camera = camera;
+  if (hdri) { scene.environment = hdri; scene.environmentIntensity = 0.12; }
+  // Showcase renders keep payments out of the picture: no toll gantry (x402) on the bridge.
+  if (offline) world.setBillboards({ brandOnly: true });
+  // Showcase: the floating hologram reads as a faint second shield above the
+  // crown's emblem, and the river's fixed light streaks turn into stray lines
+  // seen along the river (the mirror and the wet streets reflect for real).
+  if (offline) for (const n of ['pg1-emblem-hologram', 'river-light-streaks']) { const o = scene.getObjectByName(n); if (o) o.removeFromParent(); }
+  if (offline && world.toll) { world.toll.visible = false; world.toll.traverse((o) => { o.visible = false; }); world.toll.removeFromParent(); }
   // Blue-hour height fog on every material in the city (thicker low down).
   const fogDefine = (o) => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []; for (const m of ms) if (!m.isShaderMaterial && !m.isSpriteMaterial && !m.isPointsMaterial && m.fog !== false && !(m.defines && m.defines.PG1_HEIGHT_FOG !== undefined)) { m.defines = { ...(m.defines || {}), PG1_HEIGHT_FOG: '' }; m.needsUpdate = true; } };
   scene.traverse(fogDefine);
@@ -321,11 +368,25 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   const actors = createActors(THREE, scene, world, settings);
   actors.onFire = (g, e) => { if (onGadget) onGadget(g, e); };
   const life = createLife(THREE, scene, world, settings);
+  // Showcase: the hero car model (public/showcase/models/car.glb) in place of the box cars.
+  if (offline) {
+    const car = await showLook.loadHero('car').catch(() => null);
+    const bodies = scene.getObjectByName('car-bodies'); const cabs = scene.getObjectByName('car-cabins');
+    const part = (n) => { let g = null; if (car) car.traverse((o) => { if (o.isMesh && o.name === n) g = o.geometry; }); return g; };
+    if (bodies && part('body')) { bodies.geometry = part('body'); bodies.material.vertexColors = true; bodies.material.needsUpdate = true; }
+    if (cabs && part('glass')) { cabs.geometry = part('glass'); cabs.material.roughness = 0.05; cabs.material.needsUpdate = true; }
+  }
+  // Showcase: soft light cones ahead of every car's headlights (copied from the headlight instances).
+  let cones = null; let headMesh = null;
+  if (offline) {
+    headMesh = scene.getObjectsByProperty('name', 'car-lights')[0] || null;
+    if (headMesh) { cones = showLook.createHeadlightCones(THREE, headMesh.instanceMatrix.count); scene.add(cones); }
+  }
 
   // Image-based light from the sky (Balanced and up), refreshed every few minutes.
   let pmrem = null; let envRT = null; let envAt = -Infinity;
   const refreshEnv = () => {
-    if (!settings.post || !world.sky) return;
+    if (!settings.post || !world.sky || hdri) return;
     try {
       pmrem = pmrem || new THREE.PMREMGenerator(renderer);
       const envScene = new THREE.Scene(); const skyClone = world.sky.clone(); envScene.add(skyClone);
@@ -467,6 +528,8 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   canvas.addEventListener('webglcontextlost', onLost, false);
   canvas.addEventListener('webglcontextrestored', onRestored, false);
   const focusPoint = new THREE.Vector3();
+  // Showcase (scripts/showcase-render.mjs): one pose a frame { target, dist, theta, phi, fov?, focus? }.
+  let showcasePose = null; const poseTarget = new THREE.Vector3();
   const frame = (now) => {
     raf = 0;
     if (!running) return;
@@ -491,7 +554,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     world.update(dt, t, { sunDir, light, storm, cover: look.cover, wind: wx.state.wind, sunny: look.sun, dusk, fogColor: scene.fog.color });
     // Blue atmospheric haze, warmer at dusk, that fades the far city.
     scene.fog.color.setRGB(0.14 + 0.32 * light * (1 - dusk) + 0.08 * dusk, 0.19 + 0.36 * light * (1 - dusk) + 0.05 * dusk, 0.36 + 0.36 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.4);
-    scene.fog.density = fogBase + storm * 0.0005 + look.fog * 0.0024;
+    scene.fog.density = (fogBase + storm * 0.0005 + look.fog * 0.0024) * (settings.fogScale || 1);
     renderer.toneMappingExposure = 0.7 + 0.22 * light * (1 - dusk);
     wx.update(dt, t, look, { target: controls.target, sunDir, light, dusk });
     world.setWet(wx.state.wet);
@@ -526,7 +589,14 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       // A slow sway that keeps the sightline along the river (no building enters it).
       controls.goalTheta = HV.theta + 0.025 * Math.sin(t * 0.03);
     }
+    // Showcase: the scripted camera's pose for this frame, exactly.
+    if (showcasePose) {
+      const p = showcasePose; poseTarget.set(p.target[0], p.target[1], p.target[2]);
+      controls.jumpTo({ target: poseTarget, dist: p.dist, theta: p.theta, phi: p.phi }); controls.userActive = 0;
+      if (p.fov && Math.abs(camera.fov - p.fov) > 1e-3) { camera.fov = p.fov; camera.updateProjectionMatrix(); }
+    }
     controls.update(dt);
+    if (showcasePose && post && post.setFocus) post.setFocus(showcasePose.focus === null ? null : showcasePose.focus || controls.dist);
     // The camera never goes into or through a building: lifted clear of
     // every box on its line of sight, smoothly (but never left inside one).
     const needY = clearCamera(camera.position, controls.target, world.obstacles);
@@ -536,6 +606,13 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     if (hardY > camera.position.y) camera.position.y = hardY;
     camera.lookAt(controls.target);
     if (world.obstacles.hit(camera.position.x, camera.position.y, camera.position.z, 0)) camInside++;
+    // Showcase: wet streets follow the rain, mirrors once a frame, the grain moves.
+    if (offline) {
+      for (const m of mirrors) m.userData.frame++;
+      if (wetGround) { const wet = Math.min(1, wx.state.wet || 0); wetGround.visible = wet > 0.05; for (const m of wetGround.children) { m.material.uniforms.uWet.value = wet; m.material.uniforms.uTime.value = t; } }
+      if (post && post.setTime) post.setTime(t);
+      if (cones && headMesh) { cones.instanceMatrix.array.set(headMesh.instanceMatrix.array); cones.count = headMesh.count; cones.instanceMatrix.needsUpdate = true; cones.material.uniforms.uStrength.value = 0.05 + 0.1 * Math.min(1, wx.state.wet || 0) + 0.06 * (1 - light); }
+    }
     renderer.info.reset();
     const timing = probeRun && !probeRun.done;
     const pt0 = timing ? performance.now() : 0;
@@ -597,6 +674,17 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       });
     },
     // While the feed is disconnected nothing new plays.
+    // Showcase: the scripted camera (null gives it back; the director stays off meanwhile).
+    setShowcasePose(p) { if (p) { setDirector(false); controls.minDist = Math.min(controls.minDist, p.dist); controls.maxDist = Math.max(controls.maxDist, p.dist); } showcasePose = p || null; },
+    profile: () => (offline ? SHOWCASE : null),
+    // Showcase: the grade's mood ('night', 'rain').
+    setShowcaseLook({ mood } = {}) { if (post && post.setGrade && showLook) post.setGrade(mood, showLook); },
+    showcaseInfo: () => (() => {
+      const gl = renderer.getContext(); let unmasked = null;
+      try { const ext = gl.getExtension('WEBGL_debug_renderer_info'); unmasked = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER); } catch (e) { unmasked = null; }
+      const nav = typeof navigator !== 'undefined' ? navigator : {};
+      return { canvas: [canvas.width, canvas.height], drawingBuffer: [gl.drawingBufferWidth, gl.drawingBufferHeight], css: [window.innerWidth, window.innerHeight], dpr: window.devicePixelRatio || 1, tier: offline ? SHOWCASE : tier, tierSource: begin.source, profile: offline ? SHOWCASE : null, coarse: !!coarse, renderScale: renderScale ? renderScale.scale : 1, settingsPixelRatio: settings.pixelRatio, rendererPixelRatio: renderer.getPixelRatio(), governor: governor.auto ? 'on' : 'off', probe: probeRun && !probeRun.done ? 'on' : 'off', deviceMemory: nav.deviceMemory || 0, cores: nav.hardwareConcurrency || 0, touchPoints: nav.maxTouchPoints || 0, webglRenderer: unmasked, programs: renderer.info.programs ? renderer.info.programs.length : 0, textures: renderer.info.memory.textures };
+    })(),
     setPaused(on) { paused = !!on; container.dataset.feedPaused = paused ? 'yes' : 'no'; },
     ingest(fresh, { perEventCap, live = false } = {}) {
       if (paused && live) return;
@@ -742,7 +830,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
 // The scene the page holds: the 3D city, or the still 2D map. It survives
 // a rebuild (into or out of Legacy, or after a lost WebGL context): the page
 // keeps one object, and the last state set on it is set again.
-export async function createKingdomScene(container, { reducedMotion = false, coarse = false, threeUrl = '/vendor/three/three.module.min.js', onFocus = null, onTier = null, onCaption = null, onGadget = null, tier = null } = {}) {
+export async function createKingdomScene(container, { reducedMotion = false, coarse = false, threeUrl = '/vendor/three/three.module.min.js', onFocus = null, onTier = null, onCaption = null, onGadget = null, tier = null, showcase = false } = {}) {
   if (reducedMotion) return create2d(container);
   let impl = null; let fallback = null; let rebuilding = null;
   const memo = new Map();
@@ -750,7 +838,7 @@ export async function createKingdomScene(container, { reducedMotion = false, coa
   const frameFns = new Set();
   const showFallback = () => { if (!fallback) { fallback = create2d(container); container.dataset.renderer = 'webgl-lost'; for (const [k, a] of memo) if (fallback[k]) fallback[k](...a); } };
   const build = async (t, { auto = false } = {}) => {
-    const s = await create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: t, auto, onRebuild, onContextLost: showFallback });
+    const s = await create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: t, auto, onRebuild, onContextLost: showFallback, showcase });
     if (!s) return null;
     for (const [k, a] of memo) { try { s[k](...a); } catch (e) { /* the next poll sets it again */ } }
     for (const fn of frameFns) s.onFrame(fn);

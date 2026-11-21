@@ -91,12 +91,12 @@ export function makeObstacleIndex(boxes, cell = 100) {
 // back wall sits behind the glass and slides with the view, so a window has
 // depth. Anti-aliasing: with fwidth, where a cell gets near a pixel the
 // pattern blends to its average, so it never turns to noise.
-function facadeMaterial(THREE, { reflective, envMap = null }) {
+function facadeMaterial(THREE, { reflective, envMap = null, detail = null }) {
   const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: reflective ? 0.12 : 0.5, metalness: reflective ? 0.7 : 0.15 });
   // Without the scene's sky light (the phone tiers), a small baked sky still
   // gives the glass something to reflect.
   if (envMap) { m.envMap = envMap; m.envMapIntensity = 0.9; }
-  const uniforms = { uNight: { value: 0.6 }, uTime: { value: 0 }, uOffice: { value: 0.4 }, uHome: { value: 0.4 }, uShops: { value: 1 }, uSkyTop: { value: new THREE.Color(0x4a6a9a) }, uSkyHor: { value: new THREE.Color(0xc8ccd2) }, uGround: { value: new THREE.Color(0x2a2c30) }, uReflBoost: { value: envMap ? 2.1 : 1 } };
+  const uniforms = { tDetail: { value: detail }, uNight: { value: 0.6 }, uTime: { value: 0 }, uOffice: { value: 0.4 }, uHome: { value: 0.4 }, uShops: { value: 1 }, uSkyTop: { value: new THREE.Color(0x4a6a9a) }, uSkyHor: { value: new THREE.Color(0xc8ccd2) }, uGround: { value: new THREE.Color(0x2a2c30) }, uReflBoost: { value: envMap ? 2.1 : 1 } };
   m.userData.windows = uniforms;
   m.onBeforeCompile = (sh) => {
     Object.assign(sh.uniforms, uniforms);
@@ -110,7 +110,7 @@ function facadeMaterial(THREE, { reflective, envMap = null }) {
       wp4 = modelMatrix * wp4;
       vWPos = wp4.xyz; vSeed = aSeed; vStyle = aStyle;
       vWNorm = normalize(mat3(modelMatrix) * n0);`);
-    sh.fragmentShader = 'uniform float uNight;\nuniform float uTime;\nuniform float uOffice;\nuniform float uHome;\nuniform float uShops;\nuniform vec3 uSkyTop;\nuniform vec3 uSkyHor;\nuniform vec3 uGround;\nuniform float uReflBoost;\nvarying float vSeed;\nvarying float vStyle;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nfloat wh(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }\nfloat box(vec2 f, vec2 lo, vec2 hi, vec2 aa){ vec2 a = smoothstep(lo - aa, lo + aa, f) * (1.0 - smoothstep(hi - aa, hi + aa, f)); return a.x * a.y; }\n'
+    sh.fragmentShader = (detail ? '#define PG1_DETAIL\nuniform sampler2D tDetail;\n' : '') + 'uniform float uNight;\nuniform float uTime;\nuniform float uOffice;\nuniform float uHome;\nuniform float uShops;\nuniform vec3 uSkyTop;\nuniform vec3 uSkyHor;\nuniform vec3 uGround;\nuniform float uReflBoost;\nvarying float vSeed;\nvarying float vStyle;\nvarying vec3 vWPos;\nvarying vec3 vWNorm;\nfloat wh(vec3 p){ return fract(sin(dot(p, vec3(12.9898, 78.233, 37.719))) * 43758.5453); }\nfloat box(vec2 f, vec2 lo, vec2 hi, vec2 aa){ vec2 a = smoothstep(lo - aa, lo + aa, f) * (1.0 - smoothstep(hi - aa, hi + aa, f)); return a.x * a.y; }\n'
       + sh.fragmentShader
         .replace('#include <color_fragment>', `#include <color_fragment>
       // Seeds and styles are whole numbers: rounded, so interpolation error can never reach the hash (no speckle).
@@ -179,7 +179,16 @@ function facadeMaterial(THREE, { reflective, envMap = null }) {
       if (glass && wall && pane > 0.5) {
         vec3 tilt = vec3(wh(vec3(sd, id.y, id.x + 3.0)) - 0.5, wh(vec3(id.x, sd, id.y + 7.0)) - 0.5, 0.0) * 0.035 * (1.0 - tiny);
         normal = normalize(normal + (viewMatrix * vec4(tilt, 0.0)).xyz);
-      }`)
+      }
+      #ifdef PG1_DETAIL
+      // Showcase: real masonry relief (a CC0 normal map in world metres) on stone, brick and podiums.
+      if (!glass && wall) {
+        vec3 dn = texture2D(tDetail, vec2(u, vWPos.y) * 0.22).xyz * 2.0 - 1.0;
+        vec3 t3 = alongZ ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
+        vec3 wn = normalize(vWNorm + (t3 * dn.x + vec3(0.0, 1.0, 0.0) * dn.y) * 0.55 * (1.0 - tiny));
+        normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);
+      }
+      #endif`)
         .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
       if (wall) {
         float bay = floor(id.x / (glass ? 3.0 : 1.0));
@@ -226,7 +235,7 @@ function facadeMaterial(THREE, { reflective, envMap = null }) {
         diffuseColor.rgb *= glass ? 1.0 : georgian ? mix(1.0, 0.25, pane) : mix(1.0, 0.35, pane);
       }`);
   };
-  m.customProgramCacheKey = () => `pg1-facade-v2-${reflective ? 1 : 0}`;
+  m.customProgramCacheKey = () => `pg1-facade-v2-${reflective ? 1 : 0}${detail ? '-d' : ''}`;
   return m;
 }
 
@@ -269,7 +278,7 @@ function streakTexture(THREE) {
 import { buildEmblem, buildHologram, brandCanvas } from './kingdom-emblem.js';
 import { billboardLines } from './kingdom-data.js';
 
-export function buildWorld(THREE, scene, settings, { waterMaterial = null, Reflector = null, brand = null } = {}) {
+export function buildWorld(THREE, scene, settings, { waterMaterial = null, Reflector = null, brand = null, detail: facadeDetail = null } = {}) {
   const legacy = !!settings.legacy;
   const phone = settings.tier === 'phone' || legacy;
   const cinematic = settings.tier === 'cinematic';
@@ -305,7 +314,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     g.fillStyle = gr; g.fillRect(0, 0, 256, 128);
     bakedSky = new THREE.CanvasTexture(cv); bakedSky.mapping = THREE.EquirectangularReflectionMapping; bakedSky.colorSpace = THREE.SRGBColorSpace;
   }
-  const facade = facadeMaterial(THREE, { reflective, envMap: bakedSky });
+  const facade = facadeMaterial(THREE, { reflective, envMap: bakedSky, detail: facadeDetail });
   const leafWind = { uTime: { value: 0 }, uWind: { value: 0 } };
   const root = named(new THREE.Group(), 'pg1-city');
   scene.add(root);
@@ -821,7 +830,8 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     billboards.push({ cv, tex, text: [] });
   }
   const drawBillboards = (stats) => {
-    const lines = billboardLines(stats || {});
+    // Showcase renders (brandOnly): the mark and title only, no figures.
+    const lines = stats && stats.brandOnly ? [] : billboardLines(stats || {});
     for (const b of billboards) {
       const g = b.cv.getContext('2d');
       g.fillStyle = '#05080d'; g.fillRect(0, 0, 512, 256);

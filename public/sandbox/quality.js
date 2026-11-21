@@ -134,3 +134,28 @@ export function createRenderScale({ budgetMs = 1000 / 30, min = 0.5, window = 30
     }
   };
 }
+
+// SHOWCASE: an offline render profile (scripts/showcase-render.mjs), above
+// Cinematic and outside the tiers. It is never in TIERS, so pickTier, the
+// probe, the governor, Auto and the Quality menu can never choose it; it is
+// asked for by name (createSandboxScene / createKingdomScene { showcase:
+// true }) and refused on a phone (coarse pointer): showcaseSettings returns
+// null there and the scene keeps its ordinary tier. Each frame may take as
+// long as it needs (the clock is stepped frame by frame), so it spends:
+//   more samples for ambient occlusion (32) and soft shadows (4096 maps,
+//   four cascades), the planar water mirror, full foliage, the longest
+//   full-detail distance, depth of field on the hero, and temporal AA
+//   settled per frame: 16 jittered samples of every frame (taaSamples 4 =
+//   2^4), not accumulated over still frames, so a moving camera is as clean
+//   as a still one.
+export const SHOWCASE = 'showcase';
+export const SHOWCASE_SETTINGS = Object.freeze({
+  ...TIER_SETTINGS.cinematic,
+  pixelRatio: 1, cascades: 4, shadowMapSize: 4096, gtao: true, gtaoSamples: 32, gtaoScale: 1,
+  bloom: true, aa: 'taa', taaSamples: 4, settle: true, water: true, reflect: 'planar', dof: true,
+  grass: 1.6, forest: 1.4, foliage: 120000, foliageRadius: 95, lod: 160, targetFps: 30, ease: 1.6,
+  offline: true, grade: 'day'
+});
+export function showcaseSettings({ coarse = false } = {}) {
+  return coarse ? null : SHOWCASE_SETTINGS;
+}
