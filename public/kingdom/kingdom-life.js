@@ -36,7 +36,47 @@ import { createTraffic, GRID, ROAD_W, STOP_BACK, JUNCTION_HALF, ZEBRA_IN, ZEBRA_
 export const TRAM_Z = -200;
 export { GRID };
 // Every colour the life uses, for the tests (none may be the enemy red).
-export const LIFE_COLOURS = Object.freeze({ head: 0xfff4d6, tail: 0xff9a2e, taxi: 0xf2c94c, bus: 0x2f6db5, busWin: 0xffe6b0, van: 0xe9edf1, stop: 0xff8c1a, go: 0x3ddc84, wait: 0xffc94d, strobe: 0xf5f7fa, nav: 0x3ddc84, roof: 0xffc070, tram: 0xd8dde3, tramWin: 0xffe2b0, steam: 0xc9ced6, lamp: 0xffcf8a, crane: 0xf3c623, figure: [0x2b3340, 0x44506a, 0x5a4a3a, 0x36454f, 0x6b6f7a, 0x3d5a4a], umbrella: [0x1f2a36, 0x2f4a6b, 0x3d5a4a, 0xf3c623, 0x6b6f7a], boat: 0xe9edf1, ferry: 0xf5f7fa, cabin: 0xffe2b0, bike: 0x2f6db5, parasol: 0xe8dcc0, gull: 0xf1f3f5, pigeon: 0x5a5f66, flag: 0x2f6db5, dog: 0x6b5a45, shelter: 0x8fb8d8 });
+// A pedestrian: legs, a torso a little wider at the shoulders, arms and a
+// head, about 1.75 m tall, merged into one geometry (one draw call for the
+// whole crowd). Vertex colours: dark trousers and shoes, a skin-toned head
+// aTint marks the clothes (1: the instance's colour) and the skin (2: the
+// instance's aSkin tone; personMaterial). Low: fewer sides, no arms, about
+// 50 triangles a figure (the whole crowd stays inside Low's budget).
+const SKIN = [[0.55, 0.38, 0.27], [0.78, 0.6, 0.47], [0.36, 0.24, 0.17], [0.88, 0.72, 0.6]];
+export function personGeometry(THREE, { low = false } = {}) {
+  const sides = low ? 4 : 5; const parts = [];
+  const add = (g, rgb, tint) => { const n = g.toNonIndexed(); g.dispose(); const c = new Float32Array(n.attributes.position.count * 3); const t = new Float32Array(n.attributes.position.count); for (let i = 0; i < t.length; i++) { c[i * 3] = rgb[0]; c[i * 3 + 1] = rgb[1]; c[i * 3 + 2] = rgb[2]; t[i] = tint; } n.setAttribute('color', new THREE.BufferAttribute(c, 3)); n.setAttribute('aTint', new THREE.BufferAttribute(t, 1)); parts.push(n); };
+  const trousers = [0.16, 0.17, 0.2];
+  for (const x of [-0.1, 0.1]) { const l = new THREE.CylinderGeometry(0.075, 0.065, 0.86, sides, 1, true); l.translate(x, 0.45, 0); add(l, trousers, 0); }
+  if (!low) for (const x of [-0.1, 0.1]) { const sh = new THREE.BoxGeometry(0.11, 0.07, 0.24); sh.translate(x, 0.035, 0.04); add(sh, [0.08, 0.08, 0.09], 0); }
+  const torso = new THREE.CylinderGeometry(0.21, 0.16, 0.62, sides, 1, false); torso.translate(0, 1.18, 0); add(torso, [1, 1, 1], 1);
+  if (!low) for (const x of [-0.25, 0.25]) { const a = new THREE.CylinderGeometry(0.05, 0.045, 0.58, 4, 1, true); a.translate(x, 1.17, 0); add(a, [1, 1, 1], 1); }
+  const head = new THREE.SphereGeometry(0.115, low ? 5 : 7, low ? 3 : 5); head.scale(1, 1.12, 1); head.translate(0, 1.64, 0); add(head, [1, 1, 1], 2);
+  const n = parts.reduce((k, g) => k + g.attributes.position.count, 0);
+  const out = new THREE.BufferGeometry();
+  for (const [name, size] of [['position', 3], ['normal', 3], ['color', 3], ['aTint', 1]]) {
+    const arr = new Float32Array(n * size); let o = 0;
+    for (const g of parts) { arr.set(g.attributes[name].array, o); o += g.attributes[name].array.length; }
+    out.setAttribute(name, new THREE.BufferAttribute(arr, size));
+  }
+  for (const g of parts) g.dispose();
+  out.computeBoundingSphere();
+  return out;
+}
+// The clothes take the instance's colour, the skin the instance's aSkin tone
+// (personSkins); trousers and shoes keep their own.
+export function personSkins(THREE, n) { const a = new Float32Array(n * 3); for (let i = 0; i < n; i++) a.set(SKIN[(i * 7 + 3) % SKIN.length], i * 3); return new THREE.InstancedBufferAttribute(a, 3); }
+export function personMaterial(THREE) {
+  const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, vertexColors: true });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aTint;\nattribute vec3 aSkin;')
+      .replace('#include <color_vertex>', 'vColor = vec3(1.0);\n#ifdef USE_COLOR\n vColor *= color.xyz;\n#endif\n#ifdef USE_INSTANCING_COLOR\n if (aTint > 0.5 && aTint < 1.5) vColor *= instanceColor.xyz;\n#endif\n if (aTint > 1.5) vColor = aSkin;');
+  };
+  m.customProgramCacheKey = () => 'pg1-person';
+  return m;
+}
+
+export const LIFE_COLOURS = Object.freeze({ head: 0xfff4d6, tail: 0xff9a2e, taxi: 0xf2c94c, bus: 0x2f6db5, busWin: 0xffe6b0, van: 0xe9edf1, stop: 0xff8c1a, go: 0x3ddc84, wait: 0xffc94d, strobe: 0xf5f7fa, nav: 0x3ddc84, roof: 0xffc070, tram: 0xd8dde3, tramWin: 0xffe2b0, steam: 0xc9ced6, lamp: 0xffcf8a, crane: 0xf3c623, figure: [0x2b3340, 0x4a3a6a, 0x44506a, 0xc8b89a, 0x5a4a3a, 0x2f5d8a, 0x36454f, 0xb8902c, 0x6b6f7a, 0x55703f, 0x3d5a4a, 0x2f6d6a, 0x8a6a3a], umbrella: [0x1f2a36, 0x2f4a6b, 0x3d5a4a, 0xf3c623, 0x6b6f7a], boat: 0xe9edf1, ferry: 0xf5f7fa, cabin: 0xffe2b0, bike: 0x2f6db5, parasol: 0xe8dcc0, gull: 0xf1f3f5, pigeon: 0x5a5f66, flag: 0x2f6db5, dog: 0x6b5a45, shelter: 0x8fb8d8 });
 
 function rng(seed) { let s = seed >>> 0 || 1; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; }; }
 
@@ -176,8 +216,9 @@ export function createLife(THREE, scene, world, settings) {
   const buskers = [{ x: -12, z: 46 }, { x: -10.6, z: 47.2 }, { x: 14, z: 47 }];
   const zebraPeds = traffic.peds;
   const nFig = people.length + zebraPeds.length + stopPeople.length + cafes.length * 2 + buskers.length + 4;
-  const personGeo = new THREE.CapsuleGeometry(0.24, 1.25, 3, 6); personGeo.translate(0, 0.87, 0);
-  const figures = dyn(named(new THREE.InstancedMesh(personGeo, std(0xffffff, { roughness: 0.9 }), nFig), 'pedestrians'));
+  const personGeo = personGeometry(THREE, { low: !!settings.legacy });
+  personGeo.setAttribute('aSkin', personSkins(THREE, nFig));
+  const figures = dyn(named(new THREE.InstancedMesh(personGeo, personMaterial(THREE), nFig), 'pedestrians'));
   for (let i = 0; i < nFig; i++) figures.setColorAt(i, new THREE.Color(LIFE_COLOURS.figure[i % LIFE_COLOURS.figure.length]));
   root.add(figures);
   const umbGeo = new THREE.ConeGeometry(0.55, 0.3, 8); umbGeo.translate(0, 2.05, 0);
@@ -371,7 +412,12 @@ export function createLife(THREE, scene, world, settings) {
       let fi = 0; let di = 0;
       const umbShare = Math.min(0.85, rain * 1.2 + (wet > 0.5 ? 0.15 : 0));
       const put = (x, y, z, ry, seed) => {
-        set(figures, fi, x, y, z, ry);
+        // A step: the stride's phase from the distance walked (about 0.75 m a
+        // step), so a walker rises a little mid-stride and sways side to side
+        // in time with their pace, and someone standing still stands still.
+        const ph = (Math.abs(x) + Math.abs(z)) * (Math.PI / 0.75) + seed;
+        const bob = Math.abs(Math.sin(ph)) * 0.045;
+        set(figures, fi, x, y + bob, z, ry, 1, 1, 1, 0, Math.sin(ph) * 0.035);
         if (((seed * 2654435761) >>> 0) / 4294967296 < umbShare) set(umbrellas, fi, x, y, z, ry); else hide(umbrellas, fi);
         fi++;
       };

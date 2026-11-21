@@ -40,8 +40,10 @@ test('the Legacy phone tier is chosen for an iPhone 8 profile, and not for curre
   assert.equal(detectLegacy({ userAgent: DESKTOP, screenW: 1440, screenH: 900, memory: 2 }), false, 'not a touch device');
   // Selectable by hand, first in the list.
   assert.equal(KINGDOM_TIERS[0], 'legacy');
-  assert.equal(KINGDOM_TIER_LABEL.legacy, 'Legacy phone');
-  assert.match(read('public/index.html'), /<option value="legacy">Legacy phone<\/option>/);
+  // On screen the tiers are Low, Medium, High and Cinematic (the ids are kept).
+  assert.equal(KINGDOM_TIER_LABEL.legacy, 'Low');
+  assert.deepEqual(KINGDOM_TIER_LABEL, { legacy: 'Low', phone: 'Medium', balanced: 'High', cinematic: 'Cinematic' });
+  assert.match(read('public/index.html'), /<option value="auto">Auto<\/option><option value="legacy">Low<\/option><option value="phone">Medium<\/option><option value="balanced">High<\/option>/);
 });
 
 test('Legacy settings: 30 fps, nothing heavy, textures capped, density cut', () => {

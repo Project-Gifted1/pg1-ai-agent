@@ -1,0 +1,56 @@
+{
+  "tag": "before",
+  "at": "2026-11-21T03:38:57.114Z",
+  "renderer": "SwiftShader (software)",
+  "viewport": {
+    "width": 360,
+    "height": 800
+  },
+  "sandbox": {},
+  "city": {
+    "cinematic": {
+      "day": {
+        "probeMs": null,
+        "probePick": null,
+        "firstFrameMs": 6693,
+        "tierShown": "cinematic",
+        "msPerFrame": 944,
+        "fps": 1.1,
+        "glDrawCalls": 650,
+        "calls": 655,
+        "triangles": 2774381,
+        "gpuMemoryMB": 32,
+        "vehicles": 1238,
+        "people": 2290,
+        "overlaps": 0,
+        "overflowX": false,
+        "errors": [
+          "http 404: /api/home-context"
+        ]
+      },
+      "night": {
+        "probeMs": null,
+        "probePick": null,
+        "firstFrameMs": 7266,
+        "tierShown": "cinematic",
+        "msPerFrame": 932,
+        "fps": 1.1,
+        "glDrawCalls": 650,
+        "calls": 657,
+        "triangles": 2774154,
+        "gpuMemoryMB": 32,
+        "vehicles": 1237,
+        "people": 2290,
+        "overlaps": 0,
+        "overflowX": false,
+        "errors": [
+          "http 404: /api/home-context"
+        ]
+      }
+    }
+  },
+  "errors": [
+    "city cinematic day: http 404: /api/home-context",
+    "city cinematic night: http 404: /api/home-context"
+  ]
+}

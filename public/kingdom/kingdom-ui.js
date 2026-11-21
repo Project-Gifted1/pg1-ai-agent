@@ -150,7 +150,15 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     if (!c) return;
     const o = store.origins;
     c.dataset.n = String(o.length);
-    const strip = $('kingdom-flags'); if (strip) strip.textContent = flagStrip(o);
+    const strip = $('kingdom-flags');
+    if (strip) {
+      // The flags in the emoji font; "+N" for the rest in the text's own font.
+      const [flags, more] = flagStrip(o, (globalThis.innerWidth || 1024) <= 560 ? 3 : 5).split(' +');
+      strip.textContent = flags;
+      let m = strip.nextElementSibling && strip.nextElementSibling.classList.contains('kd-more') ? strip.nextElementSibling : null;
+      if (more && !m) { m = document.createElement('span'); m.className = 'kd-more'; m.setAttribute('aria-hidden', 'true'); strip.after(m); }
+      if (m) { m.textContent = more ? `+${more}` : ''; m.hidden = !more; }
+    }
     const t = $('kingdom-countries-text'); if (t) t.textContent = countriesText(o.length);
   }
   function popFlag(e) {
@@ -179,7 +187,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
   function renderPip() {
     const cv = $('kingdom-globe-pip');
     if (!cv) return;
-    if (!pip) { const dpr = Math.min(2, globalThis.devicePixelRatio || 1); cv.width = cv.clientWidth * dpr || 240; cv.height = cv.clientHeight * dpr || 240; pip = { mod: null, globe: null }; import('./kingdom-globe.js').then((m) => { pip.globe = m.createGlobe(cv, { flagPx: 18 }); }); }
+    if (!pip) { const dpr = Math.min(2, globalThis.devicePixelRatio || 1); cv.width = cv.clientWidth * dpr || 240; cv.height = cv.clientHeight * dpr || 240; pip = { mod: null, globe: null }; import('./kingdom-globe.js').then((m) => { pip.globe = m.createGlobe(cv, { flagPx: cv.clientWidth < 100 ? 13 : 18, codes: cv.clientWidth >= 100 }); }); }
     if (!pip.globe) return;
     const now = Date.now();
     arcs = arcs.filter((a) => now - a.at < 6000);

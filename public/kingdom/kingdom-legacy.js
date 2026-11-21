@@ -89,7 +89,7 @@ export function mergeStatic(THREE, scene, names = STATIC_NAMES, instanced = STAT
 // Instanced meshes worth simplifying: at least `minTris` triangles each and
 // `minTotal` in all. Skyline and terrain are left alone (their shaders need
 // the real faces), and so are the PG1 tower and emblem.
-export function simplifyInstances(THREE, scene, { minTris = 24, minTotal = 2500, exclude = /^(?:skyline|pg1-|tower|emblem|tree-crowns)/ } = {}) {
+export function simplifyInstances(THREE, scene, { minTris = 24, minTotal = 2500, exclude = /^(?:skyline|pg1-|tower|emblem|tree-crowns|pedestrians)/ } = {}) {
   const box = new THREE.Box3(); const size = new THREE.Vector3(); const centre = new THREE.Vector3();
   let saved = 0;
   scene.traverse((o) => {

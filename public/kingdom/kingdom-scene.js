@@ -28,7 +28,7 @@
 // prefers-reduced-motion, or no WebGL: a still 2D map of the kingdom with
 // today's count by each gadget; the text feed beside it carries the events.
 
-import { TIER_SETTINGS, pickTier, createGovernor, QUALITY_KEY } from '../sandbox/quality.js';
+import { TIER_SETTINGS, pickTier, createGovernor, createRenderScale, QUALITY_KEY } from '../sandbox/quality.js';
 import { createPost } from '../sandbox/post.js';
 import { createControls } from '../sandbox/controls.js';
 import { createWaterMaterial } from '../sandbox/water.js';
@@ -39,6 +39,8 @@ import { loadBrand, BRAND_SVG_URL } from './kingdom-emblem.js';
 import { dublinSun, daylight, pickDirectorEvent, normalizeState, windowRatios, dublinHour, weatherLook, GADGET_META } from './kingdom-data.js';
 import { createWeatherFx } from './kingdom-weather.js';
 import { mergeStatic, simplifyInstances, createLegacyWatch } from './kingdom-legacy.js';
+import { createProbe, startTier, tierFromProbe, readProbeCache, writeProbeCache } from '../sandbox/tier-probe.js';
+import { createDebugOverlay } from '../sandbox/debug-overlay.js';
 
 // The hero look: golden hour, the sun low in the west behind the tower.
 export const DUSK_SUN = Object.freeze({ elevation: 0.035, azimuth: (262 * Math.PI) / 180 });
@@ -71,7 +73,35 @@ export const HOME_VIEW_PHONE = Object.freeze({ target: [0, 150, 0], dist: 570, t
 export const EMBLEM_CLEARANCE = 150;
 
 export const KINGDOM_TIERS = Object.freeze(['legacy', 'phone', 'balanced', 'cinematic']);
-export const KINGDOM_TIER_LABEL = Object.freeze({ legacy: 'Legacy phone', phone: 'Phone', balanced: 'Balanced', cinematic: 'Cinematic' });
+// On screen: Low, Medium, High (picked automatically) and Cinematic (by hand
+// only). The ids stay as they were (a choice kept on a device still holds).
+export const KINGDOM_TIER_LABEL = Object.freeze({ legacy: 'Low', phone: 'Medium', balanced: 'High', cinematic: 'Cinematic' });
+// The shared probe's tiers (tier-probe.js) and the city's.
+export const KINGDOM_FROM_AUTO = Object.freeze({ low: 'legacy', medium: 'phone', high: 'balanced' });
+export const KINGDOM_TO_AUTO = Object.freeze({ legacy: 'low', phone: 'medium', balanced: 'high', cinematic: 'high' });
+export const KINGDOM_PROBE_KEY = 'pg1_kingdom_probe';
+// ?quality= in the address (the operator): low, medium, high or cinematic (or a tier's id).
+export function kingdomTierFromParam(search) {
+  let q = null; try { q = new URLSearchParams(search || '').get('quality'); } catch (e) { q = null; }
+  if (!q) return null;
+  if (KINGDOM_TIERS.includes(q)) return q;
+  if (q === 'cinematic') return 'cinematic';
+  return KINGDOM_FROM_AUTO[q] || null;
+}
+// How the city's starting tier is chosen, in order: the caller's (a test, a
+// recording, a rebuild), ?quality= (the operator, this visit), a tier kept
+// by hand, Low for an iPhone 8-class device, the last probe's pick on this
+// device; else Low on a phone or a 4 GB device (Medium on a computer) and a
+// short probe of real frames that may step up (tier-probe.js).
+export function chooseKingdomStart({ forced = null, search = '', saved = null, cached = null, profile = {}, coarse = false, memory = 0 } = {}) {
+  if (forced) return { tier: forced, source: 'caller', probe: false, held: true };
+  const url = kingdomTierFromParam(search);
+  if (url) return { tier: url, source: 'address', probe: false, held: true };
+  if (KINGDOM_TIERS.includes(saved)) return { tier: saved, source: 'manual', probe: false, held: true };
+  if (detectLegacy(profile)) return { tier: 'legacy', source: 'device', probe: false, held: false };
+  if (cached && KINGDOM_FROM_AUTO[cached]) return { tier: KINGDOM_FROM_AUTO[cached], source: 'probe (kept)', probe: false, held: false };
+  return { tier: KINGDOM_FROM_AUTO[startTier({ coarse, memory })], source: 'probe', probe: true, held: false };
+}
 // The Legacy phone tier's budgets (an iPhone 8: A11 GPU, about 2 GB of RAM,
 // Safari on iOS 16), checked by tests/browser/kingdom-city.browser.test.mjs.
 export const LEGACY_BUDGET = Object.freeze({ drawCalls: 150, triangles: 150000, maxTexture: 1024, gpuMemoryMB: 300, targetFps: 30 });
@@ -93,24 +123,7 @@ export function detectLegacy({ userAgent = '', screenW = 0, screenH = 0, memory 
   return false;
 }
 
-// A quick GPU benchmark: a few draws of a busy fragment shader into a small
-// target, timed with a read-back (so the GPU really finished). ms, or -1.
-export function gpuBenchmark(THREE, renderer) {
-  try {
-    const rt = new THREE.WebGLRenderTarget(256, 256);
-    const mat = new THREE.ShaderMaterial({ vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }', fragmentShader: 'void main(){ vec2 p = gl_FragCoord.xy / 256.0; float a = 0.0; for (int i = 0; i < 48; i++){ a += sin(p.x * float(i) + cos(p.y * float(i) + a)); } gl_FragColor = vec4(vec3(fract(a)), 1.0); }' });
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat); mesh.frustumCulled = false;
-    const sc = new THREE.Scene(); sc.add(mesh); const cam = new THREE.Camera();
-    const px = new Uint8Array(4);
-    renderer.setRenderTarget(rt); renderer.render(sc, cam); renderer.readRenderTargetPixels(rt, 0, 0, 1, 1, px);
-    const t0 = performance.now();
-    for (let i = 0; i < 6; i++) renderer.render(sc, cam);
-    renderer.readRenderTargetPixels(rt, 0, 0, 1, 1, px);
-    const ms = performance.now() - t0;
-    renderer.setRenderTarget(null); rt.dispose(); mat.dispose(); mesh.geometry.dispose();
-    return ms;
-  } catch (e) { return -1; }
-}
+export const PHONE_CINEMATIC_CITY = Object.freeze({ shadows: 1024, post: Object.freeze({ gtaoScale: 0.5, gtaoSamples: 8 }), crowdCap: 300, perEvent: 30, targetFps: 30, pixelRatio: 1.5, lifeScale: 0.55, renderScale: true });
 export const KINGDOM_QUALITY_KEY = 'pg1_kingdom_quality';
 export const DIRECTOR_CUT_MS = 6500;
 
@@ -123,7 +136,7 @@ export function kingdomTierOf(viewerTier) {
 const VIEWER_TIER = { legacy: 'low', phone: 'low', balanced: 'high', cinematic: 'ultra' };
 
 // What each tier turns on (shadows: the shadow map's size, 0 for none).
-export function kingdomSettings(tier, { coarse = false } = {}) {
+export function kingdomSettings(tier, { coarse = false, memory = 0 } = {}) {
   const v = TIER_SETTINGS[VIEWER_TIER[tier] || 'high'];
   const base = {
     // The Legacy phone tier: no post-processing, shadows, reflections or
@@ -135,6 +148,14 @@ export function kingdomSettings(tier, { coarse = false } = {}) {
     balanced: { shadows: 1024, post: { aa: 'smaa', bloom: true, gtao: true, dof: false }, water: true, sky: 'physical', crowdCap: 400, perEvent: 30, shafts: false, rain: true, targetFps: 60, pixelRatio: 1.5 },
     cinematic: { shadows: coarse ? 1024 : 2048, post: { aa: 'smaa', bloom: true, gtao: true, dof: false }, water: true, sky: 'physical', crowdCap: 800, perEvent: 60, shafts: true, rain: true, targetFps: 60, pixelRatio: 2 }
   }[tier] || null;
+  // Cinematic on a phone (a Galaxy A07 class GPU): the same look at 30 fps.
+  // Kept: soft shadows, bloom, ambient occlusion, SMAA, the water shader and
+  // the physical sky. Changed: occlusion at half resolution with 8 samples,
+  // 1.5x pixels at most (the render scale lowers them while frames run
+  // slow), smaller crowds and a little less ambient life.
+  if (tier === 'cinematic' && coarse && base) Object.assign(base, PHONE_CINEMATIC_CITY, { post: { ...base.post, ...PHONE_CINEMATIC_CITY.post } });
+  // 4 GB or less (the Galaxy A07): no ambient occlusion (its pass draws the whole city again).
+  if (tier === 'cinematic' && coarse && memory && memory <= 4 && base) base.post = { ...base.post, gtao: false };
   return Object.freeze({ tier, ...base, ease: v ? v.ease : 5 });
 }
 
@@ -229,29 +250,33 @@ function waterNormals(THREE) {
   return t;
 }
 
-async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: forced, onRebuild = null, onContextLost = null }) {
+async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: forcedTier, auto: rebuiltAuto = false, onRebuild = null, onContextLost = null }) {
   const THREE = await import(threeUrl);
   const canvas = document.createElement('canvas');
   canvas.className = 'kingdom-canvas';
   canvas.setAttribute('aria-hidden', 'true');
+  let saved = null;
+  try { saved = localStorage.getItem(KINGDOM_QUALITY_KEY); } catch (e) { saved = null; }
+  const memory = navigator.deviceMemory || 0;
+  let probeStore = null; try { probeStore = localStorage; } catch (e) { probeStore = null; }
+  const profile = { userAgent: navigator.userAgent, screenW: (window.screen && window.screen.width) || 0, screenH: (window.screen && window.screen.height) || 0, memory, touch: !!coarse };
+  // A rebuild the probe or the governor asked for stays automatic.
+  const begin = rebuiltAuto && forcedTier
+    ? { tier: forcedTier, source: 'auto', probe: !(probeStore && readProbeCache(probeStore, KINGDOM_PROBE_KEY)), held: false }
+    : chooseKingdomStart({ forced: forcedTier, search: location.search, saved, cached: probeStore ? readProbeCache(probeStore, KINGDOM_PROBE_KEY) : null, profile, coarse, memory });
+  let tier = begin.tier;
+  const forced = begin.held;
+  container.dataset.tierSource = begin.source;
+  let settings = kingdomSettings(tier, { coarse, memory });
   let renderer;
   try {
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
+    // Low and Medium have no post-processing, so they take the GPU's own
+    // multisampling: on a tile-based phone GPU (Mali, Adreno, Apple) it is
+    // resolved on the chip for little cost, and edges no longer crawl.
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: !settings.post, alpha: false, powerPreference: 'high-performance' });
   } catch (e) {
     return null;
   }
-  let saved = null;
-  try { saved = localStorage.getItem(KINGDOM_QUALITY_KEY); } catch (e) { saved = null; }
-  const viewerSaved = (() => { try { return localStorage.getItem(QUALITY_KEY); } catch (e) { return null; } })();
-  let tier = forced || (KINGDOM_TIERS.includes(saved) ? saved : null);
-  if (!tier) {
-    // An iPhone 8-class device starts on Legacy phone; the benchmark only runs when the profile alone does not decide it.
-    const profile = { userAgent: navigator.userAgent, screenW: (window.screen && window.screen.width) || 0, screenH: (window.screen && window.screen.height) || 0, memory: navigator.deviceMemory || 0, touch: !!coarse };
-    let legacy = detectLegacy(profile);
-    if (!legacy && coarse) legacy = detectLegacy({ ...profile, gpuMs: gpuBenchmark(THREE, renderer) });
-    tier = legacy ? 'legacy' : kingdomTierOf(pickTier({ coarse, memory: navigator.deviceMemory || 0, cores: navigator.hardwareConcurrency || 0, saved: viewerSaved }));
-  }
-  let settings = kingdomSettings(tier, { coarse });
   container.appendChild(canvas);
   container.dataset.renderer = 'webgl';
   container.dataset.tier = tier;
@@ -269,7 +294,9 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   // Legacy: a nearer far plane, hidden in thicker haze (distance culling).
   const fogBase = settings.legacy ? 0.0011 : 0.00055;
   const ADD = '/vendor/three/addons/';
-  const ReflectorMod = settings.tier === 'cinematic' ? await import(`${ADD}objects/Reflector.js`).catch(() => null) : null;
+  // The river's planar mirror draws the whole city a second time: a
+  // computer's Cinematic only (a phone's has the water shader, as High).
+  const ReflectorMod = settings.tier === 'cinematic' && !settings.renderScale ? await import(`${ADD}objects/Reflector.js`).catch(() => null) : null;
   const normals = settings.water ? waterNormals(THREE) : null;
   const waterMaterial = settings.water ? createWaterMaterial(THREE, normals, [], { offset: false }) : null;
   patchHeightFog(THREE);
@@ -364,15 +391,19 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   container.dataset.light = lightMode;
   let ambientAt = -Infinity;
 
-  // Size and quality.
+  // Size and quality. Cinematic on a phone draws fewer pixels while frames run
+  // over 30 fps's budget (down to half), and more again when they recover.
+  let renderScale = null;
   const resize = () => {
     const r = container.getBoundingClientRect();
     const w = Math.max(1, Math.round(r.width)); const h = Math.max(1, Math.round(r.height));
-    const pr = Math.min(settings.pixelRatio, window.devicePixelRatio || 1);
+    const pr = Math.min(settings.pixelRatio, window.devicePixelRatio || 1) * (settings.renderScale && renderScale ? renderScale.scale : 1);
     renderer.setPixelRatio(pr); renderer.setSize(w, h, false);
     camera.aspect = w / h; camera.updateProjectionMatrix();
     if (post) post.setSize(w, h, pr);
   };
+  const ensureScale = () => { if (settings.renderScale && !renderScale) renderScale = createRenderScale({ budgetMs: (1000 / settings.targetFps) * 1.15, min: 0.5, onChange: (sc) => { container.dataset.renderScale = String(sc); resize(); } }); if (!settings.renderScale) renderScale = null; };
+  ensureScale();
   const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(resize) : null;
   if (ro) ro.observe(container);
   resize();
@@ -380,19 +411,20 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   // A lower tier in place: post-processing, shadows and resolution follow;
   // the crowds' size is kept (they were built for the starting tier) but
   // fewer new figures are staged per event.
-  async function applyTier(next, { manual = false } = {}) {
+  async function applyTier(next, { manual = false, probe = false } = {}) {
     if (!KINGDOM_TIERS.includes(next) || next === tier) return;
     // Into or out of Legacy: the city is rebuilt (density, textures, far plane).
     if ((next === 'legacy' || tier === 'legacy') && onRebuild) {
       if (manual) { try { localStorage.setItem(KINGDOM_QUALITY_KEY, next); } catch (e) { /* not remembered */ } }
-      onRebuild(next, { manual });
+      onRebuild(next, { manual, auto: probe });
       return;
     }
-    tier = next; settings = kingdomSettings(tier, { coarse });
+    tier = next; settings = kingdomSettings(tier, { coarse, memory });
     container.dataset.tier = tier;
     renderer.shadowMap.enabled = !!settings.shadows;
     world.sun.castShadow = !!settings.shadows;
     scene.traverse((o) => { if (o.material && o.material.needsUpdate !== undefined) o.material.needsUpdate = true; });
+    ensureScale();
     await buildPost();
     resize();
     if (manual) { try { localStorage.setItem(KINGDOM_QUALITY_KEY, tier); } catch (e) { /* not remembered */ } }
@@ -401,7 +433,24 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   const governor = createGovernor({ tier: VIEWER_TIER[tier], budgetMs: 1000 / settings.targetFps, onChange: (vt, { manual }) => { if (!manual) applyTier(kingdomTierOf(vt)); } });
   // A tier chosen by the caller (a test, a recording) holds.
   // A tier chosen by hand (remembered on this device) holds too.
-  if (forced || KINGDOM_TIERS.includes(saved)) governor.setAuto(false);
+  if (forced) governor.setAuto(false);
+  // The probe (automatic tiers only): render work timed over a few frames,
+  // then the tier it says this device can hold (tier-probe.js), kept on the
+  // device. Each frame's draw calls and triangles feed ?debug=1's overlay.
+  let probeRun = begin.probe ? createProbe() : null;
+  const probePx = new Uint8Array(4);
+  // Bottom right, above the caption, clear of the HUD.
+  const debug = createDebugOverlay(container, { at: 'right:8px;bottom:92px' });
+  // ?debug=1 only: the renderer and scene, for looking into a frame from the console.
+  if (debug && typeof window !== 'undefined') { window.__kingdomRenderer = renderer; window.__kingdomScene = scene; }
+  const debugInfo = { calls: 0, triangles: 0, tier, source: begin.source, probeMs: null, scale: 1 };
+  const onProbe = (r) => {
+    container.dataset.probeMs = String(r.workMs); debugInfo.probeMs = r.workMs;
+    const pick = KINGDOM_FROM_AUTO[tierFromProbe({ workMs: r.workMs, probed: KINGDOM_TO_AUTO[tier], coarse, memory })];
+    if (probeStore) writeProbeCache(probeStore, KINGDOM_PROBE_KEY, KINGDOM_TO_AUTO[pick], Date.now(), r.workMs);
+    container.dataset.probePick = pick;
+    if (pick !== tier && governor.auto !== false) applyTier(pick, { probe: true });
+  };
 
   // The loop: paused while hidden; frame listeners (the recorder) after each frame.
   const frameFns = new Set();
@@ -424,7 +473,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     const budget = 1000 / settings.targetFps;
     if (now - last < budget - 2) { raf = requestAnimationFrame(frame); return; }
     const dt = Math.min(0.1, last ? (now - last) / 1000 : 0.016);
-    if (last) governor.sample(now - last, budget);
+    if (last) { if (renderScale) renderScale.sample(now - last); governor.sample(now - last, budget); }
     // Frames that stay slow on the lowest ordinary tier: drop to Legacy phone.
     if (last && tier === 'phone' && !forced && governor.auto !== false && legacyWatch.sample(now - last)) { container.dataset.autoDrop = 'legacy'; applyTier('legacy'); }
     last = now;
@@ -443,7 +492,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     // Blue atmospheric haze, warmer at dusk, that fades the far city.
     scene.fog.color.setRGB(0.14 + 0.32 * light * (1 - dusk) + 0.08 * dusk, 0.19 + 0.36 * light * (1 - dusk) + 0.05 * dusk, 0.36 + 0.36 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.4);
     scene.fog.density = fogBase + storm * 0.0005 + look.fog * 0.0024;
-    renderer.toneMappingExposure = 0.62 + 0.3 * light * (1 - dusk);
+    renderer.toneMappingExposure = 0.7 + 0.22 * light * (1 - dusk);
     wx.update(dt, t, look, { target: controls.target, sunDir, light, dusk });
     world.setWet(wx.state.wet);
     if (now - envAt > 180000) { envAt = now; refreshEnv(); if (post && post.setNight) post.setNight(Math.max(dusk, 1 - light)); }
@@ -488,8 +537,17 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     camera.lookAt(controls.target);
     if (world.obstacles.hit(camera.position.x, camera.position.y, camera.position.z, 0)) camInside++;
     renderer.info.reset();
+    const timing = probeRun && !probeRun.done;
+    const pt0 = timing ? performance.now() : 0;
     if (post) post.render(false); else renderer.render(scene, camera);
+    if (timing) {
+      // A one-pixel read-back waits for the GPU to finish: the frame's real cost.
+      const gl = renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, probePx);
+      const r = probeRun.sample(performance.now() - pt0);
+      if (r) onProbe(r);
+    }
     lastInfo.calls = renderer.info.render.calls; lastInfo.triangles = renderer.info.render.triangles;
+    if (debug) { debugInfo.calls = lastInfo.calls; debugInfo.triangles = lastInfo.triangles; debugInfo.tier = KINGDOM_TIER_LABEL[tier]; debugInfo.scale = renderScale ? renderScale.scale : 1; debug.frame(now, debugInfo); }
     container.dataset.attackers = String(actors.attackers);
     if ((Number(container.dataset.frames) || 0) % 5 === 0) {
       container.dataset.fired = JSON.stringify(actors.fired);
@@ -508,7 +566,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     raf = requestAnimationFrame(frame);
   };
   const start = () => { if (!raf && running) { last = 0; raf = requestAnimationFrame(frame); } };
-  const onVis = () => { if (document.hidden) { if (raf) cancelAnimationFrame(raf); raf = 0; container.dataset.paused = 'yes'; } else { container.dataset.paused = 'no'; start(); } };
+  const onVis = () => { if (document.hidden) { if (raf) cancelAnimationFrame(raf); raf = 0; container.dataset.paused = 'yes'; } else { container.dataset.paused = 'no'; if (debug) debug.reset(); start(); } };
   document.addEventListener('visibilitychange', onVis);
   start();
 
@@ -620,7 +678,13 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     cutTo(id) { if (!director) return; lastCut = performance.now(); lastLive = lastCut; focus(id); },
     setDirector, director: () => director,
     tier: () => tier,
-    setTier: (t) => applyTier(t, { manual: true }),
+    // A tier by hand (kept on this device), or 'auto': forget it and the
+    // last probe, and rebuild from the safe tier with a fresh probe.
+    setTier: (t) => {
+      if (t !== 'auto') return applyTier(t, { manual: true });
+      try { localStorage.removeItem(KINGDOM_QUALITY_KEY); if (probeStore) probeStore.removeItem(KINGDOM_PROBE_KEY); } catch (e) { /* private mode */ }
+      if (onRebuild) onRebuild(KINGDOM_FROM_AUTO[startTier({ coarse, memory })], { auto: true });
+    },
     // For the tests and the budget check: what the last frame cost.
     stats() {
       let texBytes = 0; let maxTex = 0; const seen = new Set();
@@ -636,7 +700,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       });
       const c = renderer.getContext(); const W = c.drawingBufferWidth; const H = c.drawingBufferHeight;
       const fbBytes = W * H * 4 * 3 + (settings.shadows ? settings.shadows * settings.shadows * 4 : 0);
-      return { tier, calls: lastInfo.calls, triangles: lastInfo.triangles, textures: seen.size, maxTexture: maxTex, gpuMemoryMB: Math.round((texBytes + geoBytes + fbBytes) / 1048576), targetFps: settings.targetFps, pixelRatio: renderer.getPixelRatio(), life: life.counts(), weather: wx.counts() };
+      return { tier, label: KINGDOM_TIER_LABEL[tier], source: begin.source, probeMs: debugInfo.probeMs, calls: lastInfo.calls, triangles: lastInfo.triangles, textures: seen.size, maxTexture: maxTex, gpuMemoryMB: Math.round((texBytes + geoBytes + fbBytes) / 1048576), targetFps: settings.targetFps, pixelRatio: renderer.getPixelRatio(), life: life.counts(), weather: wx.counts() };
     },
     // For screenshots: the junction with the longest queue now.
     busiestJunction: () => life.traffic.busiest(),
@@ -685,19 +749,19 @@ export async function createKingdomScene(container, { reducedMotion = false, coa
   const REPLAY = ['setThreat', 'setWeather', 'setState', 'setBillboards', 'setLight', 'setDirector', 'setToday', 'setDay', 'setPaused'];
   const frameFns = new Set();
   const showFallback = () => { if (!fallback) { fallback = create2d(container); container.dataset.renderer = 'webgl-lost'; for (const [k, a] of memo) if (fallback[k]) fallback[k](...a); } };
-  const build = async (t) => {
-    const s = await create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: t, onRebuild, onContextLost: showFallback });
+  const build = async (t, { auto = false } = {}) => {
+    const s = await create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: t, auto, onRebuild, onContextLost: showFallback });
     if (!s) return null;
     for (const [k, a] of memo) { try { s[k](...a); } catch (e) { /* the next poll sets it again */ } }
     for (const fn of frameFns) s.onFrame(fn);
     return s;
   };
-  async function onRebuild(next, { restored = false } = {}) {
+  async function onRebuild(next, { restored = false, auto = false } = {}) {
     if (rebuilding) return rebuilding;
     rebuilding = (async () => {
       const old = impl; impl = null;
       try { old.destroy(); } catch (e) { /* a lost context cannot be disposed cleanly */ }
-      const s = await build(next).catch(() => null);
+      const s = await build(next, { auto }).catch(() => null);
       if (s) { impl = s; if (fallback) { fallback.destroy(); fallback = null; } if (onTier) onTier(s.tier(), { manual: false, rebuilt: true, restored }); }
       else showFallback();
       container.dataset.rebuilds = String((Number(container.dataset.rebuilds) || 0) + 1);
@@ -713,7 +777,11 @@ export async function createKingdomScene(container, { reducedMotion = false, coa
       if (key === 'rebuilding') return rebuilding;
       if (key === 'renderer') return fallback && !impl ? '2d' : 'webgl';
       const cur = impl || fallback;
-      if (!cur) return undefined;
+      // Mid-rebuild (a quality change, a restored context) there is no scene
+      // for a moment: what the page sets then (the threat, the weather, the
+      // light...) is kept and played onto the new scene when it is built,
+      // never a "not a function" error when a feed update lands in that gap.
+      if (!cur) return REPLAY.includes(key) ? (...args) => { memo.set(key, args); } : undefined;
       const v = cur[key];
       if (typeof v !== 'function') return v;
       return (...args) => { if (REPLAY.includes(key)) memo.set(key, args); return v.apply(cur, args); };

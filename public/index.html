@@ -481,6 +481,8 @@
     @keyframes kd-live { 0%, 100% { box-shadow: 0 0 0 0 rgba(61, 220, 132, 0.0); } 50% { box-shadow: 0 0 0 4px rgba(61, 220, 132, 0.25); } }
     .kd-countries { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 0.95rem; font-weight: 700; color: #ffffff; }
     .kd-flags { font-size: 24px; line-height: 1; letter-spacing: 2px; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+    .kd-more { font-size: 0.8em; font-weight: 700; color: #c9ccd2; padding: 1px 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); }
+    .kd-more[hidden] { display: none; }
     .kd-pop { font-size: 24px; line-height: 1; padding: 2px 6px; border-radius: 8px; background: rgba(255, 92, 92, 0.25); }
     .kd-hud { color: #f3c623; font-size: 0.74rem; font-weight: 600; }
     .kd-ticker { list-style: none; display: flex; flex-direction: column; gap: 2px; font-size: 0.7rem; color: #ececee; }
@@ -502,6 +504,22 @@
       .kd-ticker { font-size: 0.62rem; }
       .kd-ticker li:nth-child(n+3) { display: none; }
       .kd-globe-pip { width: 84px; height: 84px; bottom: 90px; }
+    }
+    /* A phone: the city gets most of the screen. The HUD keeps the LIVE badge,
+       the country counter (flags 24 px) and the defences in a tight column
+       beside the mini-globe (top right, never over the caption); the caption
+       is two lines at most; the ticker shows its latest line. */
+    @media (max-width: 560px) {
+      .kd-body { grid-template-rows: minmax(360px, 70vh) 1fr; }
+      .kd-overlay { right: 96px; }
+      .kd-overlay > * { background: rgba(10, 10, 11, 0.58); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+      .kd-countries { column-gap: 6px; row-gap: 0; font-size: 0.72rem; line-height: 1.25; }
+      .kd-countries .kd-pop { font-size: 20px; }
+      .kd-ticker li:nth-child(n+2) { display: none; }
+      .kd-globe-pip { top: 6px; bottom: auto; right: 8px; width: 80px; height: 80px; }
+      .kd-caption { left: 8px; right: 8px; bottom: 8px; padding: 6px 10px; font-size: 0.74rem; line-height: 1.3; background: rgba(10, 10, 11, 0.62); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+      .kd-caption > * { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+      .kd-caption .kd-cap-when { font-size: 0.66rem; }
     }
     .kd-caption { display: flex; flex-direction: column; gap: 2px; }
     .kd-cap-enemy { color: #ff8a7a; font-size: 0.76rem; }
@@ -3083,7 +3101,7 @@
         <button type="button" id="kingdom-sound" aria-pressed="false" onclick="kingdomUi && kingdomUi.toggleSound()">Sound</button>
         <button type="button" id="kingdom-record-btn" aria-expanded="false" aria-controls="kingdom-record" onclick="kingdomUi && kingdomUi.toggleRecordPanel()">Record</button>
         <label class="sr-only" for="kingdom-quality">Quality</label>
-        <select id="kingdom-quality" onchange="kingdomUi && kingdomUi.setQuality(this.value)"><option value="legacy">Legacy phone</option><option value="phone">Phone</option><option value="balanced">Balanced</option><option value="cinematic">Cinematic</option><option value="still" hidden>Still</option></select>
+        <select id="kingdom-quality" onchange="kingdomUi && kingdomUi.setQuality(this.value)"><option value="auto">Auto</option><option value="legacy">Low</option><option value="phone">Medium</option><option value="balanced">High</option><option value="cinematic">Cinematic</option><option value="still" hidden>Still</option></select>
       </div>
       <button type="button" class="icon-btn" aria-label="Close the Kingdom view" data-dialog-close onclick="triggerHaptic(40); closeKingdomScreen()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
