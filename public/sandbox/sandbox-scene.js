@@ -1097,10 +1097,11 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   // rebuilds the view). A Pixel-class phone keeps High's look.
   const renderScale = createRenderScale({ budgetMs: (1000 / targetFps) * 1.15, min: coarse && tier !== 'cinematic' ? 0.65 : 0.5, onChange: (sc) => { container.dataset.renderScale = String(sc); resize(); } });
   const scaling = () => tier === 'cinematic' || recording || coarse;
+  let fullShot = false;
   function resize() {
     const r = container.getBoundingClientRect();
     viewW = Math.max(1, r.width); viewH = Math.max(1, r.height);
-    const pr = Math.min(settings.pixelRatio, window.devicePixelRatio || 1) * (renderScale && scaling() ? renderScale.scale : 1);
+    const pr = Math.min(settings.pixelRatio, window.devicePixelRatio || 1) * (renderScale && scaling() && !fullShot ? renderScale.scale : 1);
     renderer.setPixelRatio(pr);
     renderer.setSize(Math.max(1, r.width), Math.max(1, r.height), false);
     camera.aspect = Math.max(1, r.width) / Math.max(1, r.height);
@@ -1454,7 +1455,11 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   if (debug && typeof window !== 'undefined') window.__pg1Sandbox = { scene, camera, renderer, env };
   const debugInfo = { calls: 0, triangles: 0, tier, source: tierSource, probeMs, scale: 1 };
   // A still of the view (a PNG data URL), stamped "Simulation" with the day and time.
+  // A still is always taken at the tier's full resolution: the render scale
+  // (fewer pixels while frames run slow) is lifted for that one frame (fullShot).
   function screenshot() {
+    const lifted = !!(renderScale && scaling() && renderScale.scale < 1);
+    if (lifted) { fullShot = true; resize(); }
     draw(true);
     const src = renderer.domElement;
     const c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
@@ -1467,6 +1472,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     const w = g.measureText(text).width;
     g.fillStyle = 'rgba(10,10,11,0.6)'; g.fillRect(fs * 0.6, c.height - fs * 2.4, w + fs * 1.2, fs * 1.8);
     g.fillStyle = '#ffffff'; g.fillText(text, fs * 1.2, c.height - fs * 1.05);
+    if (lifted) { fullShot = false; resize(); }
     return c.toDataURL('image/png');
   }
   function schedule() { if (!raf && running()) { last = performance.now(); lastRender = 0; raf = requestAnimationFrame(frame); } }
