@@ -57,10 +57,13 @@ import { pickTourTarget, cycleFollow, TOUR_DWELL_MS, TOUR_DWELL_RECORDING_MS } f
 import { createCapture } from './capture.js';
 import { wayPoints, parseWaypoints, pointOnWay, VEHICLE_BODIES } from './vehicle-path.js';
 import { gait } from './gait.js';
-import { createProbe, startTier, tierFromProbe, overrideTier, readProbeCache, writeProbeCache, AUTO_TIERS } from './tier-probe.js';
+import { createProbe, startTier, tierFromProbe, overrideTier, readProbeCache, writeProbeCache, AUTO_TIERS, debugOn } from './tier-probe.js';
 import { createDebugOverlay } from './debug-overlay.js';
+import { weatherAt, weatherWord, WEATHER_LOOK } from './weather.js';
+import { createAtmosphere } from './atmosphere.js';
 
 const MAX_ENTITIES = 1000;
+const WEATHER_CLEAR = Object.freeze({ state: 'clear', cloud: 0.08, rain: 0, snow: 0, wind: 0.15, fog: 0, dark: 0, lightning: false });
 // The camera's angle from straight down in space: a little under the horizontal, looking up.
 export const SPACE_PHI = 1.66;
 // A glow (a star's halo, a world's haze) fades out as it grows past the
@@ -348,6 +351,22 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, 1, 0.3, 200000);
   const env = createEnvironment(THREE, scene, { coarse, quality: settings, camera, renderer, addons: { Sky: skyMod && skyMod.Sky, CSM: csmMod && csmMod.CSM, Reflector: reflMod && reflMod.Reflector } });
+  // Weather, rain, snow, lightning and birds (weather.js, atmosphere.js): drawn, never simulated.
+  const atmos = createAtmosphere(THREE, scene, { tier, coarse });
+  // The islands, with their climates: the weather is the one over the island the camera looks at.
+  let weatherIslands = []; let weatherSig = '';
+  let weatherNow = null; let weatherAtMs = 0;
+  // ?debug=1&weather=rain (or storm, snow, mist, overcast...): that weather
+  // everywhere, to look at it (the debug overlay's page only).
+  const forcedWeather = (() => { if (typeof location === 'undefined' || !debugOn(location.search)) return null; try { const w = new URLSearchParams(location.search).get('weather'); return w && WEATHER_LOOK[w] ? Object.freeze({ state: w, ...WEATHER_LOOK[w] }) : null; } catch (e) { return null; } })();
+  function syncWeatherIslands() {
+    const list = world.entities.filter((e) => e.base === 'island');
+    const sig = list.map((e) => e.id).join(',');
+    if (sig === weatherSig) return;
+    weatherSig = sig;
+    weatherIslands = list.map((e) => { const p = toScene(e, new THREE.Vector3()); return { id: e.id, climate: typeof e.props.climate === 'string' ? e.props.climate : 'temperate', x: p.x, z: p.z, y: 0 }; });
+    atmos.setIslands(weatherIslands);
+  }
   // Streets in detail (streets.js) replace the plain road strips, here and in the ground.
   env.detailedRoads = !!settings.streets;
   let streets = null; let coast = null; let detailSig = '';
@@ -1145,7 +1164,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   const flat0 = () => 0;
   let spinDt = 0;
   const spinOne = (o) => { if (o.userData.spin) o.rotation.y += o.userData.spin * spinDt; };
-  let labelKey = null; let labelTick = -1; let labelX = NaN; let labelY = NaN; let lastClockKey = -1;
+  let labelKey = null; let labelTick = -1; let labelX = NaN; let labelY = NaN; let lastClockKey = '';
   // The clock for a fractional tick, one object kept and its words made once a simulated minute.
   const clkOut = { day: 1, hh: '06', mm: '00', fraction: 0.25, minute: -1 };
   function clockAt(tickF) {
@@ -1367,13 +1386,31 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     const effAlt = controls.target.y > world.spaceAlt * 0.5 ? camAlt : Math.min(camAlt, world.spaceAlt * 0.4);
     envIn.dayFraction = clk.fraction; envIn.cameraAlt = effAlt; envIn.spaceAlt = world.spaceAlt; envIn.camera = camera; envIn.target = controls.target; envIn.shadowSpan = controls.dist * 0.7; envIn.dt = step;
     const envState = env.update(envIn);
+    // The weather over where the camera looks: eased towards (minutes of the
+    // world's day pass in seconds), so a shower rolls in, never pops.
+    if (now - weatherAtMs > 400 || !weatherNow) {
+      weatherAtMs = now;
+      let best = null; let bd = Infinity;
+      for (const isl of weatherIslands) { const d = Math.hypot(isl.x - controls.target.x, isl.z - controls.target.z); if (d < bd) { bd = d; best = isl; } }
+      weatherNow = surface ? null : forcedWeather || weatherAt({ seed: world.seed, key: best ? best.id : 'world', tick: tickF, daySteps: world.daySteps, climate: best ? best.climate : 'temperate' });
+    }
+    {
+      const W = env.weather; const goal = weatherNow || WEATHER_CLEAR; const k = 1 - Math.exp(-step * 0.6);
+      for (const n of ['cloud', 'rain', 'snow', 'wind', 'fog', 'dark']) W[n] += (goal[n] - W[n]) * k;
+      W.lightning = !!goal.lightning; W.state = goal.state || 'clear';
+      const ground = Math.max(0, (env.heightAt || flat0)(camera.position.x, camera.position.z));
+      atmos.update(step, now, { camera, weather: W, day: envState.day, space: surface ? 1 : envState.space, alt: camera.position.y - ground, heightAt: env.heightAt });
+      W.flash = atmos.flash;
+      if (container.dataset.weather !== W.state) container.dataset.weather = W.state;
+    }
     // Orbits are drawn in space only: from the ground they were lines across the sky.
     const orbitK = Math.max(envState.space, mode === 'space' ? 1 : 0);
     for (const l of orbitLines.values()) { l.material.opacity = 0.32 * orbitK; if (orbitK < 0.02) l.visible = false; }
     // Windows read as dark glass by day and warm light at night.
     const nt = Math.min(1, envState.night + envState.space * 0.4);
     matGlow.color.setRGB(0.22 + nt * 1.2, 0.27 + nt * 1.0, 0.36 + nt * 0.6);
-    renderer.toneMappingExposure = 0.95 + envState.space * 0.15;
+    // Under heavy cloud the whole picture is a little darker (exposure), as a camera sees it.
+    renderer.toneMappingExposure = (0.95 + envState.space * 0.15) * (1 - (env.weather ? env.weather.dark : 0) * 0.3 * (1 - envState.space));
     // Looking at space (above the space altitude, or the Space view): the
     // sky stays crisp (post.js setSky: no depth of field, unjittered TAA,
     // bloom held under the stars).
@@ -1418,8 +1455,9 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     // Walking on another world, the ground follows its hills.
     if (surface) { const h = surface.heightAt(controls.goalTarget.x, controls.goalTarget.z) + 1.6; if (Math.abs(controls.goalTarget.y - h) > 0.05) controls.goalTarget.y = h; }
     // The clock's words change once a simulated minute, not every frame.
-    const clockKey = clk.minute * 4 + (surface ? 1 : 0) + (effAlt > world.spaceAlt ? 2 : 0);
-    if (clockKey !== lastClockKey) { lastClockKey = clockKey; clockEl.textContent = surface ? `Simulation · day ${clk.day} · ${clk.hh}:${clk.mm} · on ${surface.name}` : `Simulation · day ${clk.day} · ${clk.hh}:${clk.mm}${effAlt > world.spaceAlt ? ' · in space' : ''}`; }
+    const wWord = surface || effAlt > world.spaceAlt ? '' : weatherWord(weatherNow);
+    const clockKey = `${clk.minute}|${surface ? 1 : 0}|${effAlt > world.spaceAlt ? 1 : 0}|${wWord}`;
+    if (clockKey !== lastClockKey) { lastClockKey = clockKey; clockEl.textContent = surface ? `Simulation · day ${clk.day} · ${clk.hh}:${clk.mm} · on ${surface.name}` : `Simulation · day ${clk.day} · ${clk.hh}:${clk.mm}${effAlt > world.spaceAlt ? ' · in space' : ''}${wWord ? ` · ${wWord}` : ''}`; }
     updateTags(now);
     if (now - miniAt > 250) { drawMini(); miniAt = now; }
     const still = controls.userActive <= 0 && !controls.autoRotate && t0done(now);
@@ -1530,6 +1568,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       effects.onWorld(next);
       syncOrbits();
       syncBelt();
+      syncWeatherIslands();
       if (firstWorld) {
         firstWorld = false;
         if (probe) probeRun = createProbe();
@@ -1584,9 +1623,10 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     clock: () => clockOf(world),
     screenshot,
     // What the last frame drew (all passes), for the debug overlay and the tests.
-    stats: () => ({ tier: governor.tier, calls: frameInfo.calls, triangles: frameInfo.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio(), targetFps, probeMs: probeRun && probeRun.result ? probeRun.result.workMs : null }),
+    stats: () => ({ weather: env.weather ? { state: env.weather.state || 'clear', rain: Math.round(env.weather.rain * 100) / 100, dark: Math.round(env.weather.dark * 100) / 100 } : null, atmosphere: atmos.counts(), tier: governor.tier, calls: frameInfo.calls, triangles: frameInfo.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio(), targetFps, probeMs: probeRun && probeRun.result ? probeRun.result.workMs : null }),
     destroy() {
       if (debug) debug.destroy();
+      atmos.dispose();
       cancelAnimationFrame(raf); raf = 0;
       if (io) io.disconnect(); if (ro) ro.disconnect();
       document.removeEventListener('visibilitychange', onVis);
