@@ -1,0 +1,50 @@
+{
+  "tag": "before",
+  "at": "2026-11-21T03:28:15.797Z",
+  "renderer": "SwiftShader (software)",
+  "viewport": {
+    "width": 360,
+    "height": 800
+  },
+  "sandbox": {
+    "cinematic": {
+      "tierShown": "cinematic",
+      "overview": {
+        "msPerFrame": 1608,
+        "fps": 0.6,
+        "glDrawCalls": 589
+      },
+      "space": {
+        "msPerFrame": 615,
+        "fps": 1.6,
+        "glDrawCalls": 176
+      },
+      "planet": {
+        "msPerFrame": 632,
+        "fps": 1.6,
+        "glDrawCalls": 163
+      },
+      "ground": {
+        "msPerFrame": 494,
+        "fps": 2,
+        "glDrawCalls": 131
+      },
+      "night": {
+        "msPerFrame": 386,
+        "fps": 2.6,
+        "glDrawCalls": 149
+      },
+      "beninOverview": {
+        "msPerFrame": 925,
+        "fps": 1.1,
+        "glDrawCalls": 338
+      },
+      "ui": {
+        "overflowX": false
+      },
+      "errors": []
+    }
+  },
+  "city": {},
+  "errors": []
+}
