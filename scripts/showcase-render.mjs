@@ -51,14 +51,14 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, readdirSync
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { SHOTS, shotById, planShot, poseAt, frameCount, SHOWCASE_FPS } from '../lib/showcase/shots.mjs';
+import { SHOTS, shotById, planShot, poseAt, frameCount, SHOWCASE_FPS, STILLS, stillById } from '../lib/showcase/shots.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC_DIR = join(ROOT, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.css': 'text/css; charset=utf-8', '.bin': 'application/octet-stream', '.ktx2': 'application/octet-stream' };
 
 export function parseArgs(argv) {
-  const o = { shots: SHOTS.map((s) => s.id), width: 1080, height: 1920, out: join(ROOT, 'showcase-out'), frames: null, warmup: 40, gpu: false, keepFrames: false, fps: SHOWCASE_FPS, jobs: 1, range: null };
+  const o = { shots: SHOTS.map((s) => s.id), width: 1080, height: 1920, out: join(ROOT, 'showcase-out'), frames: null, warmup: 40, gpu: false, keepFrames: false, fps: SHOWCASE_FPS, jobs: 1, range: null, stills: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]; const v = () => argv[++i];
     if (a === '--shots') o.shots = v().split(',').map((x) => x.trim()).filter(Boolean);
@@ -67,11 +67,13 @@ export function parseArgs(argv) {
     else if (a === '--frames') o.frames = Math.max(1, Number(v()) | 0);
     else if (a === '--warmup') o.warmup = Math.max(0, Number(v()) | 0);
     else if (a === '--gpu') o.gpu = true;
+    else if (a === '--stills') o.stills = v().split(',').map((x) => x.trim()).filter(Boolean);
     else if (a === '--jobs') o.jobs = Math.max(1, Number(v()) | 0);
     else if (a === '--range') { const m = /^(\d+):(\d+)$/.exec(v()); if (!m || Number(m[1]) < 1 || Number(m[2]) < Number(m[1])) throw new Error('--range FIRST:LAST (1-based)'); o.range = [Number(m[1]), Number(m[2])]; }
     else if (a === '--keep-frames') o.keepFrames = true;
     else throw new Error(`unknown option ${a}`);
   }
+  if (o.stills) for (const id of o.stills) if (!stillById(id)) throw new Error(`unknown still ${id} (stills: ${STILLS.map((x) => x.id).join(', ')})`);
   for (const id of o.shots) if (!shotById(id)) throw new Error(`unknown shot ${id} (shots: ${SHOTS.map((s) => s.id).join(', ')})`);
   if (o.width % 2 || o.height % 2) throw new Error('--size must be even (yuv420p)');
   return o;
@@ -150,7 +152,7 @@ export const CLOCK_SCRIPT = `(() => {
   try { Object.defineProperty(Navigator.prototype, 'deviceMemory', { get: () => 8, configurable: true }); } catch (e) {}
   try { Object.defineProperty(Navigator.prototype, 'hardwareConcurrency', { get: () => 8, configurable: true }); } catch (e) {}
   try { Object.defineProperty(Navigator.prototype, 'maxTouchPoints', { get: () => 0, configurable: true }); } catch (e) {}
-  window.__showcase = { advance, lock() { clearInterval(free); free = null; }, setDate(ms) { base = ms - vt; }, now: () => vt, pending: () => q.length, realDate };
+  window.__showcase = { advance, skip(ms) { vt += ms; }, lock() { clearInterval(free); free = null; }, setDate(ms) { base = ms - vt; }, now: () => vt, pending: () => q.length, realDate };
 })();`;
 
 const PAGE_CSS = `html,body{margin:0;height:100%;background:#000;overflow:hidden}#view{position:fixed;inset:0}#view canvas{display:block;width:100%!important;height:100%!important}
@@ -367,7 +369,7 @@ async function renderShot(browser, origin, shot, opts, log) {
   const t0 = Date.now(); const infos = {};
   const [first, lastF] = opts.range ? [opts.range[0] - 1, Math.min(total, opts.range[1]) - 1] : [0, total - 1];
   // A range starts where the whole shot would be at its first frame.
-  if (first > 0) await page.evaluate((ms) => { for (let k = 0; k < ms / 100; k++) window.__showcase.advance(100); }, first * step);
+  if (first > 0) await page.evaluate((ms) => window.__showcase.skip(ms), first * step);
   for (let i = first; i <= lastF; i++) {
     const t = total > 1 ? i / (total - 1) : 0;
     await page.evaluate(([p, ms]) => { window.showcase.pose(p); window.__showcase.advance(ms); }, [poseAt(plan, t), step]);
@@ -393,6 +395,56 @@ async function renderShot(browser, origin, shot, opts, log) {
 
 export const diagLine = (x) => `canvas ${x.canvas.join('x')}, CSS ${x.css.join('x')} at DPR ${x.dpr}, tier ${x.tier} (source ${x.tierSource}), render scale ${x.renderScale}, settings.pixelRatio ${x.settingsPixelRatio}, governor ${x.governor}, probe ${x.probe}, coarse ${x.coarse}, deviceMemory ${x.deviceMemory}, WebGL ${x.webglRenderer}`;
 
+// One still at full resolution: the scene set up as for its shot, the pose
+// held while the light, weather and textures settle, then one frame.
+async function renderStill(browser, origin, still, opts, log) {
+  const dir = join(opts.out, 'stills'); mkdirSync(dir, { recursive: true });
+  const ctx = await browser.newContext({ viewport: { width: opts.width, height: opts.height }, deviceScaleFactor: 1, isMobile: false, hasTouch: false, colorScheme: 'dark', reducedMotion: 'no-preference' });
+  await ctx.addInitScript(CLOCK_SCRIPT);
+  const page = await ctx.newPage(); const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e && e.message || e)));
+  await page.goto(still.scene === 'city' ? `${origin}/showcase/city.html` : `${origin}/showcase/sandbox.html?world=${encodeURIComponent(still.world)}`, { waitUntil: 'load', timeout: 180000 });
+  for (const t0 = Date.now(); ;) {
+    if (errors.length) throw new Error(`${still.id}: page error: ${errors[0]}`);
+    if (await page.evaluate(() => !!(window.showcase && window.showcase.ready() && window.showcase.frames() > 2))) break;
+    if (Date.now() - t0 > 600000) throw new Error(`${still.id}: not ready in 10 minutes`);
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  const epoch = still.light === 'night' ? dublinEpoch(23, 10) : still.light === 'night-rain' ? dublinEpoch(22, 0) : null;
+  await page.evaluate((o) => window.showcase.setup(o), { light: still.light, weather: still.weather || null, epoch });
+  await page.evaluate(() => window.__showcase.lock());
+  let pose = still.pose ? { fov: 40, focus: still.pose.dist, ...still.pose } : null;
+  const shot = still.shot ? shotById(still.shot) : null;
+  if (shot) pose = poseAt(planShot(shot.id, await sceneContext(page, shot)), still.t ?? 0.66);
+  if (still.entity) {
+    const e = (await page.evaluate(() => window.showcase.find(null))).find((x) => x.id === still.entity);
+    if (!e) throw new Error(`${still.id}: no entity ${still.entity} in this world`);
+    pose = { target: [e.scene[0], e.scene[1] + 2, e.scene[2]], dist: still.dist, theta: still.theta, phi: still.phi, fov: 40, focus: still.dist };
+  }
+  if (still.scene === 'sandbox') {
+    const look = { ...(still.look || (shot && shot.look) || {}) };
+    if (look.hdri === 'by-hour') { const h = Number((await page.evaluate(() => window.showcase.scene.clock())).hh); Object.assign(look, h >= 5 && h < 9 ? { hdri: 'misty_dawn', mood: 'dawn', hdriIntensity: 0.55 } : h >= 9 && h < 18 ? { hdri: 'kloofendal_48d_partly_cloudy_puresky', mood: 'day', hdriIntensity: 0.6 } : { hdri: null, mood: 'night' }); }
+    if (look.mist) delete look.mist;
+    await page.evaluate((o) => window.showcase.scene.setShowcaseLook(o), look);
+  }
+  await page.evaluate((p) => window.showcase.pose(p), pose);
+  let stable = 0; let last = '';
+  for (let i = 0; i < 200 && (i < Math.max(20, opts.warmup) || stable < 5); i++) {
+    const k = await page.evaluate(() => { window.__showcase.advance(100); const x = window.showcase.info(); return `${x.programs}|${x.textures}`; });
+    stable = k === last ? stable + 1 : 0; last = k;
+  }
+  const overlays = await page.evaluate(() => window.showcase.overlays());
+  if (overlays) throw new Error(`${still.id}: ${overlays} overlay element(s) visible`);
+  await page.evaluate(() => window.__showcase.advance(1000 / 30));
+  const file = join(dir, `${still.id}-${opts.width}x${opts.height}.png`);
+  await page.screenshot({ path: file, type: 'png', timeout: 600000 });
+  const info = await page.evaluate(() => window.showcase.info());
+  checkShowcaseFrame(info, opts);
+  log(`still ${still.id}: ${diagLine(info)}`);
+  await ctx.close();
+  return { id: still.id, title: still.title, file: file.slice(opts.out.length + 1), diagnostics: info, page_errors: errors };
+}
+
 export function ffmpegArgs(framesDir, out, fps) {
   return ['-y', '-hide_banner', '-loglevel', 'error', '-framerate', String(fps), '-i', join(framesDir, '%05d.png'), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', out];
 }
@@ -413,6 +465,13 @@ export async function main(argv = process.argv.slice(2)) {
   if (!existsSync(chromium.executablePath()) && existsSync('/opt/pw-browsers/chromium')) executablePath = '/opt/pw-browsers/chromium';
   // Software 3D (SwiftShader) unless --gpu; either way never the phone path.
   const args = opts.gpu ? ['--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--use-angle=default'] : ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+  if (opts.stills) {
+    const out = []; const q = [...opts.stills];
+    const w = async () => { const b = await chromium.launch({ executablePath, args }); try { for (let id = q.shift(); id; id = q.shift()) out.push(await renderStill(b, origin, stillById(id), opts, log)); } finally { await b.close(); } };
+    try { await Promise.all(Array.from({ length: Math.min(opts.jobs, opts.stills.length) }, w)); } finally { server.close(); }
+    writeFileSync(join(opts.out, `stills-${opts.width}x${opts.height}.json`), JSON.stringify({ generated_at: new Date().toISOString(), profile: 'showcase', stills: out }, null, 2) + '\n');
+    return { stills: out };
+  }
   const results = new Array(opts.shots.length);
   const queue = opts.shots.map((id, i) => ({ id, i }));
   const worker = async () => {

@@ -345,6 +345,10 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   if (hdri) { scene.environment = hdri; scene.environmentIntensity = 0.12; }
   // Showcase renders keep payments out of the picture: no toll gantry (x402) on the bridge.
   if (offline) world.setBillboards({ brandOnly: true });
+  // Showcase: the floating hologram reads as a faint second shield above the
+  // crown's emblem, and the river's fixed light streaks turn into stray lines
+  // seen along the river (the mirror and the wet streets reflect for real).
+  if (offline) for (const n of ['pg1-emblem-hologram', 'river-light-streaks']) { const o = scene.getObjectByName(n); if (o) o.removeFromParent(); }
   if (offline && world.toll) { world.toll.visible = false; world.toll.traverse((o) => { o.visible = false; }); world.toll.removeFromParent(); }
   // Blue-hour height fog on every material in the city (thicker low down).
   const fogDefine = (o) => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []; for (const m of ms) if (!m.isShaderMaterial && !m.isSpriteMaterial && !m.isPointsMaterial && m.fog !== false && !(m.defines && m.defines.PG1_HEIGHT_FOG !== undefined)) { m.defines = { ...(m.defines || {}), PG1_HEIGHT_FOG: '' }; m.needsUpdate = true; } };

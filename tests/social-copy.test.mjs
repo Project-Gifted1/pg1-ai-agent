@@ -12,13 +12,13 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { HIGHLIGHTS, COVER, CUT, MARK, cutSeconds } from '../scripts/social-build.mjs';
+import { HIGHLIGHTS, SLIDES, STORY, COVER, CUT, MARK, cutSeconds } from '../scripts/social-build.mjs';
 import { SHOTS } from '../lib/showcase/shots.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DIR = join(ROOT, 'docs', 'social', '2026-11');
 const BUILD = readFileSync(join(ROOT, 'scripts', 'social-build.mjs'), 'utf8');
-const words = [...HIGHLIGHTS.flatMap((h) => [h.tag, h.title, h.line]), COVER.title, COVER.line, ...CUT.map((c) => c[3] || ''), ...SHOTS.map((s) => s.title)].join('\n');
+const words = [...SLIDES.flatMap((h) => [h.tag, h.title, h.line]), COVER.title, COVER.line, ...CUT.map((c) => c[3] || ''), ...SHOTS.map((s) => s.title)].join('\n');
 
 test('white label, the mark, and the house rules on every word of the post', () => {
   const providers = /elevenlabs|google|gemini|veo\b|lyria|replicate|kling|cartesia|flux|openrouter|openai|anthropic|claude/i;
@@ -36,11 +36,15 @@ test('no figures but version numbers (and the names that carry digits)', () => {
   const stripped = words.replace(/\bv?\d+\.\d+(?:\.\d+)?\b/g, '').replace(/\bPG1\b|Gifted1|Ed25519|c\. 1610|November 2026|\bA2A\b|\b3D\b/g, '');
   assert.doesNotMatch(stripped, /\d/, stripped.match(/.*\d.*/) && stripped.match(/.*\d.*/)[0]);
   // The features and their versions, as shipped.
-  const byId = Object.fromEntries(HIGHLIGHTS.map((h) => [h.id, h]));
+  const byId = Object.fromEntries(SLIDES.map((h) => [h.id, h]));
   assert.match(byId['check-repo-trap'].tag, /v1\.22\.0/);
   assert.match(byId['check-agent-message'].tag, /v1\.21\b/);
-  assert.match(byId['a2a-1-0'].title, /A2A 1\.0 conformance/);
-  assert.deepEqual(HIGHLIGHTS.map((h) => h.title), ['check_repo_trap', 'check_agent_message', 'A2A 1.0 conformance', 'PG1 City', 'PG1 Universe', 'Passkey sign-in + signed results']);
+  assert.equal(byId['a2a-1-0'].title, 'A2A 1.0');
+  assert.doesNotMatch(byId['a2a-1-0'].line, /registry/i, 'no listing claim the repo cannot back');
+  assert.deepEqual(SLIDES.map((h) => h.title), ['What PG1 shipped', 'check_repo_trap', 'check_agent_message', 'A2A 1.0', 'PG1 City', 'PG1 Universe', 'Passkey sign-in + signed results', 'Link in bio']);
+  // Each slide over its own still; the passkey slide's city frame differs from slides 1, 2 and 5.
+  const stills = SLIDES.filter((h) => h.still).map((h) => h.still);
+  assert.equal(new Set(stills).size, stills.length);
 });
 
 test('the cut: every shot and every highlight, 20 to 30 seconds', () => {
@@ -48,16 +52,17 @@ test('the cut: every shot and every highlight, 20 to 30 seconds', () => {
   assert.ok(s >= 20 && s <= 30, `${s} s`);
   assert.deepEqual([...new Set(CUT.filter((c) => c[0] === 'shot').map((c) => c[1]))].sort(), SHOTS.map((x) => x.id).sort());
   assert.deepEqual(CUT.filter((c) => c[0] === 'card').map((c) => c[1]).sort(), HIGHLIGHTS.map((h) => h.id).sort());
+  assert.equal(SLIDES.length, 8);
 });
 
 const png = (f) => { const b = readFileSync(f); assert.equal(b.toString('hex', 0, 8), '89504e470d0a1a0a'); return { w: b.readUInt32BE(16), h: b.readUInt32BE(20) }; };
-test('the committed files: six 1080 x 1350 cards, a 1200 x 675 cover, highlights.mp4', { skip: !existsSync(join(DIR, 'highlights.mp4')) && 'not built yet' }, () => {
-  for (const h of HIGHLIGHTS) assert.deepEqual(png(join(DIR, h.file)), { w: 1080, h: 1350 }, h.file);
+test('the committed files: eight 1080 x 1350 slides, the Story at 1080 x 1920, a 1200 x 675 cover, highlights.mp4', { skip: !existsSync(join(DIR, 'highlights.mp4')) && 'not built yet' }, () => {
+  for (const h of SLIDES) assert.deepEqual(png(join(DIR, h.file)), { w: 1080, h: 1350 }, h.file);
+  assert.deepEqual(png(join(DIR, STORY.file)), { w: 1080, h: 1920 });
   assert.deepEqual(png(join(DIR, COVER.file)), { w: 1200, h: 675 });
   const mp4 = readFileSync(join(DIR, 'highlights.mp4'));
   assert.equal(mp4.toString('latin1', 4, 8), 'ftyp');
   assert.ok(statSync(join(DIR, 'highlights.mp4')).size > 200000);
-  // 1080 x 1920 in its track header (tkhd width and height, 16.16 fixed point).
   const i = mp4.indexOf('tkhd');
   assert.ok(i > 0);
   const v = mp4[i + 4]; const off = i + 4 + (v === 1 ? 88 : 76);
