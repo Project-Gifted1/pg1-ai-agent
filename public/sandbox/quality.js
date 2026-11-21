@@ -86,8 +86,24 @@ export function createGovernor({ tier = 'high', budgetMs = 1000 / 60, window = 1
 // the shadow map is at most PHONE_SHADOW_MAP (4096) and the foliage scales
 // with what the device has (fewer cores or less memory, fewer tufts).
 export const PHONE_SHADOW_MAP = 4096;
-export function deviceSettings(settings, { coarse = false, memory = 0, cores = 0 } = {}) {
+// Ultra and Cinematic on a phone (a Galaxy A07 class GPU, a 30 fps
+// budget): the same look, made for the phone. Kept: depth of field on what
+// the camera follows (Cinematic), bloom, soft cascaded shadows, ambient
+// occlusion, the physical sky, the water shader, image-based light, the
+// detailed streets and coasts. Changed: SMAA instead of temporal
+// accumulation (four scene renders a still frame), the water's sky
+// reflection instead of a planar mirror (the whole scene drawn twice),
+// ambient occlusion at half resolution with 8 samples, two 2048 shadow
+// cascades, 1.5x pixels at most (the render scale lowers them while frames
+// run slow), less grass and forest, a shorter full-detail distance, and
+// depth of field reading the scene's own depth (post.js shareDepth).
+export const PHONE_CINEMATIC = Object.freeze({ shareDepth: true, pixelRatio: 1.5, cascades: 2, shadowMapSize: 2048, aa: 'smaa', reflect: 'sky', gtaoScale: 0.5, gtaoSamples: 8, grass: 0.9, forest: 0.9, lod: 70, foliage: 20000, foliageRadius: 50, targetFps: 30 });
+export function deviceSettings(settings, { coarse = false, memory = 0, cores = 0, tier = null } = {}) {
   const s = { ...settings };
+  if (coarse && (tier === 'cinematic' || tier === 'ultra')) Object.assign(s, PHONE_CINEMATIC, { dof: settings.dof });
+  // 4 GB or less (the Galaxy A07): no ambient occlusion. Its normal and depth
+  // pass draws the whole scene again, a cost the render scale cannot lower.
+  if (coarse && (tier === 'cinematic' || tier === 'ultra') && memory && memory <= 4) s.gtao = false;
   if (coarse && s.shadowMapSize > PHONE_SHADOW_MAP) s.shadowMapSize = PHONE_SHADOW_MAP;
   let k = coarse ? 0.6 : 1;
   if (memory && memory <= 4) k *= 0.6;

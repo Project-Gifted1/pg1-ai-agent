@@ -51,7 +51,7 @@ function flowerHead(THREE) {
   const stem = new THREE.CylinderGeometry(0.01, 0.012, 0.45, 4); stem.translate(0, 0.225, 0);
   const head = new THREE.IcosahedronGeometry(0.05, 0); head.translate(0, 0.47, 0);
   const g = new THREE.BufferGeometry();
-  const parts = [stem.toNonIndexed(), head.toNonIndexed()];
+  const parts = [stem, head].map((x) => (x.index ? x.toNonIndexed() : x));
   const cols = [[0.18, 0.32, 0.1], [1, 1, 1]];
   const pos = []; const nor = []; const col = [];
   parts.forEach((p, k) => { pos.push(...p.attributes.position.array); nor.push(...p.attributes.normal.array); for (let i = 0; i < p.attributes.position.count; i++) col.push(...cols[k]); p.dispose(); });

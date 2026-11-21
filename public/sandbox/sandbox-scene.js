@@ -315,7 +315,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   const THREE = await import(threeUrl);
   // The tier's settings, fitted to this device (quality.js deviceSettings).
   const nav = typeof navigator !== 'undefined' ? navigator : {};
-  const settings = deviceSettings(TIER_SETTINGS[tier] || TIER_SETTINGS.high, { coarse, memory: nav.deviceMemory || 0, cores: nav.hardwareConcurrency || 0 });
+  const settings = deviceSettings(TIER_SETTINGS[tier] || TIER_SETTINGS.high, { coarse, memory: nav.deviceMemory || 0, cores: nav.hardwareConcurrency || 0, tier });
   // Low draws the plain shapes; Medium and up the finer detail (models.js).
   setModelDetail(tier === 'low' ? 1 : 2);
   const ADD = '/vendor/three/addons/';
