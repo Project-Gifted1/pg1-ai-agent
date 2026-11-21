@@ -68,7 +68,9 @@ const frames = (page, n, timeout = 120000) => page.waitForFunction((k) => Number
 // fixed time, and frame times are reported, not asserted.
 const IN_CI = !!process.env.CI;
 const DESKTOP_TIER = IN_CI ? 'phone' : 'cinematic';
-const forcePhoneTierInCi = (page) => (IN_CI ? page.evaluate(() => { try { localStorage.setItem('pg1_kingdom_quality', 'phone'); } catch (e) {} }) : null);
+// The 412 px checks are of the Phone (Medium) tier's city: pinned everywhere,
+// since Auto starts a touch screen on Low (tier-probe.js).
+const forcePhoneTierInCi = (page) => page.evaluate(() => { try { localStorage.setItem('pg1_kingdom_quality', 'phone'); } catch (e) {} });
 const frameCount = (page) => page.evaluate(() => Number(document.getElementById('kingdom-view').dataset.frames || 0));
 // After a camera move (an instant jump; the camera's lift off rooftops eases
 // over about a second of scene time): wait until at least `n` more frames
