@@ -98,7 +98,7 @@ async function measure(page, viewSel, n = 12) {
   return { msPerFrame: t.msPerFrame && Math.round(t.msPerFrame), fps: Math.round(t.fps * 10) / 10, glDrawCalls: await glCalls(page) };
 }
 
-async function sandboxPage(browser, origin, tier) {
+async function sandboxPage(browser, origin, tier, query = '') {
   const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: 'dark', userAgent: A07_UA });
   await routeReplyFont(context);
   await context.addInitScript(GL_COUNT);
@@ -109,7 +109,7 @@ async function sandboxPage(browser, origin, tier) {
   page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource/.test(m.text())) errors.push(`console: ${m.text()}`); });
   page.on('response', (res) => { if (res.status() >= 400) errors.push(`http ${res.status()}: ${new URL(res.url()).pathname}`); });
-  await page.goto(origin + '/', { waitUntil: 'load' });
+  await page.goto(origin + '/' + query, { waitUntil: 'load' });
   await page.fill('#auth-user', 'operator'); await page.fill('#auth-pass', 'passkey'); await page.press('#auth-pass', 'Enter');
   await page.waitForSelector('#auth-modal', { state: 'hidden' });
   return { page, errors, context };
@@ -199,6 +199,20 @@ async function auditSandbox(browser) {
       r.errors = errors;
       report.errors.push(...errors.map((e) => `sandbox ${tier}: ${e}`));
       await context.close();
+      // The weather, forced for a look (after only: main has none): rain on Low, a storm on Cinematic, snow on Medium.
+      const forced = TAG === 'before' ? null : { low: 'rain', medium: 'snow', cinematic: 'storm' }[tier];
+      if (forced) {
+        const wx = await sandboxPage(browser, origin, tier, `?debug=1&weather=${forced}`);
+        await wx.page.evaluate((w) => openSandboxScreen(w), uni.id);
+        await wx.page.waitForFunction((t) => new RegExp(`^Step ${t} · `).test(document.getElementById('sandbox-tick').textContent), ticks[uni.id], { timeout: 120000 });
+        await sWait(wx.page, 4);
+        await wx.page.evaluate(() => { const e = sandboxState.world.entities.find((x) => x.kind === 'house'); sandboxScene.select(e.id); });
+        await sWait(wx.page, 45);
+        await sShot(wx.page, `${tier}-weather-${forced}`);
+        r.weather = await wx.page.evaluate(() => sandboxScene.stats().weather);
+        report.errors.push(...wx.errors.map((e) => `sandbox ${tier} ${forced}: ${e}`));
+        await wx.context.close();
+      }
       console.log('sandbox', tier, JSON.stringify(r));
     }
   } finally { await new Promise((r) => server.close(r)); __setSandboxViewerStore(null); }
