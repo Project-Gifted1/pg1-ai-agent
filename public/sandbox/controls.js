@@ -6,6 +6,9 @@ export function createControls(THREE, canvas, camera, { onTap } = {}) {
   const c = {
     target: new THREE.Vector3(), goalTarget: new THREE.Vector3(),
     theta: 0.8, phi: 1.05, dist: 3000, goalDist: 3000, goalTheta: 0.8, goalPhi: 1.05,
+    // How far below the horizon the camera may look up from (in space it may
+    // go under a planet and look up at it, with the stars behind).
+    maxPhi: 1.52,
     minDist: 4, maxDist: 60000, autoRotate: 0, userActive: 0, panScale: 1, ease: 5
   };
   const pointers = new Map();
@@ -36,7 +39,7 @@ export function createControls(THREE, canvas, camera, { onTap } = {}) {
     if (pointers.size === 1 && down) {
       down.moved += Math.abs(dx) + Math.abs(dy);
       if (down.pan) pan(-dx, -dy);
-      else { c.goalTheta += dx * 0.006; c.goalPhi = Math.min(1.52, Math.max(0.08, c.goalPhi - dy * 0.005)); }
+      else { c.goalTheta += dx * 0.006; c.goalPhi = Math.min(c.maxPhi, Math.max(0.08, c.goalPhi - dy * 0.005)); }
     } else if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -104,7 +107,7 @@ export function createControls(THREE, canvas, camera, { onTap } = {}) {
       if (keys.has('a') || keys.has('arrowleft')) pan(-sp, 0);
       if (keys.has('d') || keys.has('arrowright')) pan(sp, 0);
       if (keys.has('q')) c.goalTheta -= dt; if (keys.has('e')) c.goalTheta += dt;
-      if (keys.has('r')) c.goalPhi = Math.max(0.08, c.goalPhi - dt * 0.6); if (keys.has('f')) c.goalPhi = Math.min(1.52, c.goalPhi + dt * 0.6);
+      if (keys.has('r')) c.goalPhi = Math.max(0.08, c.goalPhi - dt * 0.6); if (keys.has('f')) c.goalPhi = Math.min(c.maxPhi, c.goalPhi + dt * 0.6);
       if (keys.has('+') || keys.has('=')) c.goalDist = Math.max(c.minDist, c.goalDist * Math.exp(-dt * 1.2));
       if (keys.has('-') || keys.has('_')) c.goalDist = Math.min(c.maxDist, c.goalDist * Math.exp(dt * 1.2));
     }

@@ -48,7 +48,7 @@ import { setModelDetail } from './models.js';
 import { buildSurface, surfaceKind } from './surface.js';
 import { createControls } from './controls.js';
 import { createEffects } from './effects.js';
-import { TIERS, TIER_SETTINGS, QUALITY_KEY, pickTier, createGovernor, deviceSettings, createRenderScale } from './quality.js';
+import { TIERS, TIER_SETTINGS, QUALITY_KEY, createGovernor, deviceSettings, createRenderScale } from './quality.js';
 import { createPost } from './post.js';
 import { loadTextures, addSurfaceDetail } from './materials.js';
 import { buildWaterways, waterwaysSignature } from './waterways.js';
@@ -57,8 +57,23 @@ import { pickTourTarget, cycleFollow, TOUR_DWELL_MS, TOUR_DWELL_RECORDING_MS } f
 import { createCapture } from './capture.js';
 import { wayPoints, parseWaypoints, pointOnWay, VEHICLE_BODIES } from './vehicle-path.js';
 import { gait } from './gait.js';
+import { createProbe, startTier, tierFromProbe, overrideTier, readProbeCache, writeProbeCache, AUTO_TIERS } from './tier-probe.js';
+import { createDebugOverlay } from './debug-overlay.js';
 
 const MAX_ENTITIES = 1000;
+// The camera's angle from straight down in space: a little under the horizontal, looking up.
+export const SPACE_PHI = 1.66;
+// A glow (a star's halo, a world's haze) fades out as it grows past the
+// screen: seen from close by, it was a wash of colour over the whole view
+// (a planet inside its star's halo sat in a beige fog), not a glow.
+const glowAt = { x: 0, y: 0, z: 0 };
+export function glowFade(size, dist) { const k = size / Math.max(1e-6, dist); const t = Math.min(1, Math.max(0, (k - 0.8) / 1.6)); return 1 - t * t * (3 - 2 * t); }
+function fadeGlowUpClose(sprite, base) {
+  sprite.onBeforeRender = (r, sc, cam) => {
+    const e = sprite.matrixWorld.elements; glowAt.x = e[12] - cam.matrixWorld.elements[12]; glowAt.y = e[13] - cam.matrixWorld.elements[13]; glowAt.z = e[14] - cam.matrixWorld.elements[14];
+    sprite.material.opacity = base * glowFade(sprite.scale.x, Math.hypot(glowAt.x, glowAt.y, glowAt.z));
+  };
+}
 // Depth of field focuses on a followed thing nearer than this (metres); farther, all is sharp.
 const FOCUS_NEAR = 1500;
 const CLASS_COLOR = { person: 0xf3c623, animal: 0xff9b7a, plant: 0x3ddc84, building: 0xcfd8dc, structure: 0x9e9e9e, vehicle: 0x36d1c4, space: 0x8f86ff, celestial: 0xd98cff, thing: 0x7cc4ff };
@@ -296,7 +311,7 @@ export function catmull(p0, p1, p2, t, out, tan) {
 
 // --- the 3D scene --------------------------------------------------------------------------------
 
-async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', onTierChange = null }) {
+async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', onTierChange = null, probe = false, onProbe = null, tierSource = 'auto', probeMs = null }) {
   const THREE = await import(threeUrl);
   // The tier's settings, fitted to this device (quality.js deviceSettings).
   const nav = typeof navigator !== 'undefined' ? navigator : {};
@@ -316,7 +331,10 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   let renderer;
   // No logarithmic depth (ambient occlusion reads the depth buffer): the near
   // plane follows the camera's distance instead, which keeps depth precise.
-  try { renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.aa === 'none' && !coarse, alpha: false, powerPreference: tier === 'low' ? 'low-power' : 'high-performance', preserveDrawingBuffer: false }); } catch (e) { return null; }
+  // Low has no post-processing, so it takes the GPU's own multisampling, on
+  // phones too: a tile-based phone GPU (Mali, Adreno, Apple) resolves it on
+  // the chip, for little cost, and edges no longer crawl.
+  try { renderer = new THREE.WebGLRenderer({ canvas, antialias: settings.aa === 'none', alpha: false, powerPreference: tier === 'low' ? 'low-power' : 'high-performance', preserveDrawingBuffer: false }); } catch (e) { return null; }
   container.appendChild(canvas);
   container.dataset.renderer = 'webgl';
   container.dataset.tier = tier;
@@ -553,6 +571,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     if (e.base === 'star') {
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
       halo.scale.setScalar(size * 9);
+      fadeGlowUpClose(halo, 1);
       g.add(halo);
       const light = new THREE.PointLight(color, 3, 0, 0);
       g.add(light);
@@ -560,6 +579,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       // (Worlds with air have the rim glow instead: the two together wash a world out.)
       const atmo = new THREE.Sprite(new THREE.SpriteMaterial({ map: glow, color: e.base === 'planet' ? color : 0x888888, transparent: true, opacity: e.base === 'planet' ? 0.35 : 0.12, blending: THREE.AdditiveBlending, depthWrite: false }));
       atmo.scale.setScalar(size * 3);
+      fadeGlowUpClose(atmo, atmo.material.opacity);
       g.add(atmo);
     }
     if (e.props.clouds) { const cl = new THREE.Mesh(new THREE.SphereGeometry(size * 1.02, 40, 20), new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.25, roughness: 1, depthWrite: false })); cl.userData.spin = 0.05; g.add(cl); }
@@ -912,10 +932,16 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     if (mode === 'space') {
       const star = world.entities.find((e) => e.base === 'star') || world.entities.find((e) => e.base === 'space_station' || e.base === 'planet');
       const t = star ? toScene(star) : new THREE.Vector3(0, world.spaceAlt * 1.5, 0);
-      controls.flyTo({ target: t, dist: star && star.base === 'star' ? 2900 : 900, phi: 1.36 });
+      controls.flyTo({ target: t, dist: star && star.base === 'star' ? 2900 : 900, phi: SPACE_PHI });
     }
     // Close enough to see it: a station or colony fills the view; a planet sits in it.
-    if (mode === 'follow' && selectedId) { const se = world.entities.find((x) => x.id === selectedId); const close = se && ['space_station', 'colony', 'satellite'].includes(se.base); const person = se && se.cls === 'person'; const vehicle = se && se.cls === 'vehicle' && !AIR_KINDS.has(se.base); controls.flyTo({ dist: person ? 4.5 : vehicle ? Math.max(7, sizeOf(selectedId) * 1.8) : Math.max(14, sizeOf(selectedId) * (close ? 1.3 : 4.5)), phi: person ? 1.38 : vehicle ? 1.2 : close ? 1.05 : 1.18 }); }
+    // In space the camera looks at a body from a little below its level: the
+    // stars are behind it, never the world's ground far beneath.
+    const se0 = mode === 'follow' && selectedId ? world.entities.find((x) => x.id === selectedId) : null;
+    const inSpace = mode === 'space' || !!(se0 && se0.z > world.spaceAlt);
+    controls.maxPhi = inSpace ? 1.85 : 1.52;
+    if (se0 && inSpace && ['planet', 'moon', 'star', 'gas_giant', 'space_station', 'colony', 'satellite', 'asteroid'].includes(se0.base)) { const close = ['space_station', 'colony', 'satellite'].includes(se0.base); controls.flyTo({ dist: Math.max(14, sizeOf(selectedId) * (close ? 1.3 : 4.5)), phi: SPACE_PHI }); }
+    else if (mode === 'follow' && selectedId) { const se = world.entities.find((x) => x.id === selectedId); const close = se && ['space_station', 'colony', 'satellite'].includes(se.base); const person = se && se.cls === 'person'; const vehicle = se && se.cls === 'vehicle' && !AIR_KINDS.has(se.base); controls.flyTo({ dist: person ? 4.5 : vehicle ? Math.max(7, sizeOf(selectedId) * 1.8) : Math.max(14, sizeOf(selectedId) * (close ? 1.3 : 4.5)), phi: person ? 1.38 : vehicle ? 1.2 : close ? 1.05 : 1.18 }); }
     if (mode === 'tour') tourNext = 0;
     // Explore: down at eye height where the camera looks; drag to look
     // round, tap the ground to walk there, pinch to step back.
@@ -1094,7 +1120,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   let visible = true; let raf = 0; let last = performance.now(); let acc = 0;
   const io = typeof IntersectionObserver === 'function' ? new IntersectionObserver((entries) => { visible = entries.some((x) => x.isIntersecting); schedule(); }) : null;
   if (io) io.observe(container);
-  const onVis = () => schedule();
+  const onVis = () => { if (debug) debug.reset(); schedule(); };
   document.addEventListener('visibilitychange', onVis);
   function poseOf(m, e, now) {
     const q = e.props; const inn = m.inner;
@@ -1340,6 +1366,9 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     const effAlt = controls.target.y > world.spaceAlt * 0.5 ? camAlt : Math.min(camAlt, world.spaceAlt * 0.4);
     envIn.dayFraction = clk.fraction; envIn.cameraAlt = effAlt; envIn.spaceAlt = world.spaceAlt; envIn.camera = camera; envIn.target = controls.target; envIn.shadowSpan = controls.dist * 0.7; envIn.dt = step;
     const envState = env.update(envIn);
+    // Orbits are drawn in space only: from the ground they were lines across the sky.
+    const orbitK = Math.max(envState.space, mode === 'space' ? 1 : 0);
+    for (const l of orbitLines.values()) { l.material.opacity = 0.32 * orbitK; if (orbitK < 0.02) l.visible = false; }
     // Windows read as dark glass by day and warm light at night.
     const nt = Math.min(1, envState.night + envState.space * 0.4);
     matGlow.color.setRGB(0.22 + nt * 1.2, 0.27 + nt * 1.0, 0.36 + nt * 0.6);
@@ -1366,7 +1395,8 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     if (selectedId && marker.visible) {
       const p = entityPos(selectedId);
       if (p) {
-        const s = Math.max(0.25, Math.min(8, sizeOf(selectedId) * 0.1));
+        // Never more than ~2% of the camera's distance: close up it was a big yellow wedge over the head.
+        const s = Math.max(0.06, Math.min(8, sizeOf(selectedId) * 0.1, camera.position.distanceTo(p) * 0.02));
         marker.scale.setScalar(s);
         marker.position.copy(p).add(tmpA.set(0, sizeOf(selectedId) * 0.75 + s * 2 + Math.sin(now / 400) * s * 0.3, 0));
         proj.copy(marker.position).project(camera);
@@ -1394,14 +1424,35 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     const still = controls.userActive <= 0 && !controls.autoRotate && t0done(now);
     draw(still);
     container.dataset.frames = String((Number(container.dataset.frames) || 0) + 1);
+    if (debug) { debugInfo.calls = frameInfo.calls; debugInfo.triangles = frameInfo.triangles; debugInfo.tier = governor.tier; debugInfo.scale = renderScale && scaling() ? renderScale.scale : 1; debugInfo.probeMs = debugInfo.probeMs || (probeRun && probeRun.result ? probeRun.result.workMs : null); debug.frame(now, debugInfo); }
   }
+  // Per frame: every render pass counted (post-processing renders several).
+  renderer.info.autoReset = false;
+  const frameInfo = { calls: 0, triangles: 0 };
+  const probePx = new Uint8Array(4);
   function draw(still) {
     const sc = surface ? surface.scene : scene;
     if (sc !== drawnScene) { drawnScene = sc; if (post && post.setScene) post.setScene(sc); }
     if (!surface) env.beforeRender(camera);
+    renderer.info.reset();
+    const timing = probeRun && !probeRun.done;
+    const t0 = timing ? performance.now() : 0;
     if (post) post.render(still); else renderer.render(sc, camera);
+    if (timing) {
+      // A one-pixel read-back waits for the GPU to finish: the real cost of the frame.
+      const gl = renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, probePx);
+      const r = probeRun.sample(performance.now() - t0);
+      if (r) { container.dataset.probeMs = String(r.workMs); if (onProbe) onProbe(r); }
+    }
+    frameInfo.calls = renderer.info.render.calls; frameInfo.triangles = renderer.info.render.triangles;
     if (capture && capture.recording) capture.frame();
   }
+  // The automatic tier's probe starts once the world is drawn (an empty scene would flatter the device).
+  let probeRun = null;
+  const debug = createDebugOverlay(container);
+  // ?debug=1 only: the scene and camera, for looking into a frame from the console.
+  if (debug && typeof window !== 'undefined') window.__pg1Sandbox = { scene, camera, renderer, env };
+  const debugInfo = { calls: 0, triangles: 0, tier, source: tierSource, probeMs, scale: 1 };
   // A still of the view (a PNG data URL), stamped "Simulation" with the day and time.
   function screenshot() {
     draw(true);
@@ -1475,6 +1526,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       syncBelt();
       if (firstWorld) {
         firstWorld = false;
+        if (probe) probeRun = createProbe();
         const span = Math.max(world.size.x, world.size.y);
         controls.maxDist = Math.max(20000, span * 6);
         controls.jumpTo({ target: centre(), dist: Math.min(span * 0.85, spread() * 2.6), phi: 0.95, theta: 0.8 });
@@ -1525,7 +1577,10 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     selected: () => selectedId,
     clock: () => clockOf(world),
     screenshot,
+    // What the last frame drew (all passes), for the debug overlay and the tests.
+    stats: () => ({ tier: governor.tier, calls: frameInfo.calls, triangles: frameInfo.triangles, geometries: renderer.info.memory.geometries, textures: renderer.info.memory.textures, pixelRatio: renderer.getPixelRatio(), targetFps, probeMs: probeRun && probeRun.result ? probeRun.result.workMs : null }),
     destroy() {
+      if (debug) debug.destroy();
       cancelAnimationFrame(raf); raf = 0;
       if (io) io.disconnect(); if (ro) ro.disconnect();
       document.removeEventListener('visibilitychange', onVis);
@@ -1551,16 +1606,48 @@ function hasWebGL() {
 // The quality tier: a saved choice (this device), else from the device.
 function savedTier() { try { return localStorage.getItem(QUALITY_KEY); } catch (e) { return null; } }
 function saveTier(t) { try { if (t) localStorage.setItem(QUALITY_KEY, t); else localStorage.removeItem(QUALITY_KEY); } catch (e) { /* private mode */ } }
+// The automatic pick from the last probe on this device (tier-probe.js).
+export const PROBE_KEY = 'pg1_sandbox_probe';
+const store = () => { try { return localStorage; } catch (e) { return null; } };
+
+// How the starting tier is chosen, in order: the caller's (a test, a
+// recording), ?quality= in the address (the operator, this visit only), a
+// tier kept by hand from the Quality menu, the last probe's pick on this
+// device, else Low on a phone (Medium on a computer) and a probe.
+export function chooseStart({ tier = null, search = '', saved = null, cached = null, coarse = false, memory = 0 } = {}) {
+  if (tier) return { tier, source: 'caller', probe: false, auto: false };
+  const url = overrideTier(search, TIERS);
+  if (url) return { tier: url, source: 'address', probe: false, auto: false };
+  if (saved && saved !== 'auto' && TIERS.includes(saved)) return { tier: saved, source: 'manual', probe: false, auto: false };
+  if (cached && AUTO_TIERS.includes(cached)) return { tier: cached, source: 'probe (kept)', probe: false, auto: true };
+  return { tier: startTier({ coarse, memory }), source: 'probe', probe: true, auto: true };
+}
 
 export async function createSandboxScene(container, { reducedMotion = false, coarse = false, threeUrl = '/vendor/three/three.module.min.js', onSelect = null, tier = null, onQuality = null } = {}) {
   if (reducedMotion || !hasWebGL()) return create2d(container, { onSelect });
   const saved = savedTier();
-  let auto = !saved || saved === 'auto';
-  let current = tier || pickTier({ coarse, memory: (typeof navigator !== 'undefined' && navigator.deviceMemory) || 0, cores: (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 0, saved });
+  const memory = (typeof navigator !== 'undefined' && navigator.deviceMemory) || 0;
+  const st = store();
+  const start = chooseStart({ tier, search: typeof location !== 'undefined' ? location.search : '', saved, cached: st ? readProbeCache(st, PROBE_KEY) : null, coarse, memory });
+  let auto = start.auto;
+  let current = start.tier;
+  let tierSource = start.source; let probeMs = null; let probing = start.probe;
+  container.dataset.tierSource = tierSource;
+  // The probe's answer: keep it on this device and move to that tier (once).
+  const onProbe = (r) => {
+    probeMs = r.workMs; container.dataset.probeMs = String(r.workMs);
+    if (!probing) return;
+    probing = false;
+    const pick = tierFromProbe({ workMs: r.workMs, probed: current, coarse, memory });
+    if (st) writeProbeCache(st, PROBE_KEY, pick, Date.now(), r.workMs);
+    container.dataset.probePick = pick;
+    tierSource = 'probe';
+    if (auto && !recordingOn && pick !== current) switchTo(pick, { manual: false });
+  };
   let inner = null; let lastWorld = null; let lastDuration = 1200; let busy = null; let destroyed = false;
   // Recording: the tier stays as it is (a change rebuilds the view: a freeze on video).
   let recordingOn = false;
-  const opts = () => ({ coarse, threeUrl, onSelect, tier: current, onTierChange: (t) => { if (auto && !recordingOn) switchTo(t, { manual: false }); } });
+  const opts = () => ({ coarse, threeUrl, onSelect, tier: current, probe: probing, onProbe, tierSource, probeMs, onTierChange: (t) => { if (auto && !recordingOn) { tierSource = 'governor'; switchTo(t, { manual: false }); } } });
   async function build(state) {
     const s = await create3d(container, opts());
     if (!s) return null;
@@ -1571,9 +1658,9 @@ export async function createSandboxScene(container, { reducedMotion = false, coa
     return s;
   }
   // Rebuild in place at another tier, keeping the world, the camera and the selection.
-  function switchTo(t, { manual }) {
+  function switchTo(t, { manual, force = false }) {
     if (!TIERS.includes(t) || destroyed) return busy;
-    if (t === current && inner) return busy;
+    if (t === current && inner && !force) return busy;
     current = t;
     busy = (async () => {
       const state = inner ? inner.cameraState() : null;
@@ -1582,6 +1669,7 @@ export async function createSandboxScene(container, { reducedMotion = false, coa
       inner = await build(state);
       if (inner) { inner.setXray(xray); inner.setNames(names); }
       container.dataset.tier = current;
+      container.dataset.tierSource = tierSource;
       if (onQuality) onQuality({ tier: current, auto, manual });
       return inner;
     })();
@@ -1609,12 +1697,14 @@ export async function createSandboxScene(container, { reducedMotion = false, coa
     startCapture: (o) => !!call('startCapture', o),
     stopCapture: () => call('stopCapture') || Promise.resolve(null),
     screenshot: () => call('screenshot') || null,
-    quality: () => ({ tier: current, auto, tiers: TIERS.slice() }),
+    quality: () => ({ tier: current, auto, tiers: TIERS.slice(), source: tierSource, probeMs }),
+    stats: () => call('stats') || null,
     // 'auto', or a tier to keep (remembered on this device).
     async setQuality(t) {
-      if (t === 'auto') { auto = true; saveTier('auto'); const pick = pickTier({ coarse, memory: (typeof navigator !== 'undefined' && navigator.deviceMemory) || 0, cores: (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 0 }); await switchTo(pick, { manual: true }); if (inner) inner.governor.setAuto(true); if (onQuality) onQuality({ tier: current, auto, manual: true }); return; }
+      // Auto: probe again from the safe tier (the last pick is forgotten).
+      if (t === 'auto') { auto = true; saveTier('auto'); try { if (st) st.removeItem(PROBE_KEY); } catch (e) { /* none */ } probing = true; tierSource = 'probe'; await switchTo(startTier({ coarse, memory }), { manual: true, force: true }); if (inner) inner.governor.setAuto(true); if (onQuality) onQuality({ tier: current, auto, manual: true }); return; }
       if (!TIERS.includes(t)) return;
-      auto = false; saveTier(t);
+      auto = false; saveTier(t); probing = false; tierSource = 'manual';
       await switchTo(t, { manual: true });
       if (inner) inner.governor.setAuto(false);
       if (onQuality) onQuality({ tier: current, auto, manual: true });

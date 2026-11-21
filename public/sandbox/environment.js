@@ -43,6 +43,30 @@ void main() {
 // smears them).
 export const STAR_PX = 2;
 export const STAR_PEAK = 0.85;
+// The brightest stars are this many times STAR_PX across (a few; most are small).
+export const STAR_MAX_K = 1.9;
+
+// Round, soft-edged stars (a point sprite shaded as a disc with a bright
+// core), sized per star in CSS pixels times the render's pixel ratio, so they
+// stay crisp and round on a sharp phone screen instead of square blocks.
+// `opacity` is the material's own (set by the sky each frame).
+export function makeStarMaterial(THREE) {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uOpacity: { value: 0 }, uScale: { value: 1 } },
+    vertexShader: `attribute float aSize; attribute vec3 aColor; uniform float uScale; varying vec3 vColor; varying float vEdge;
+void main() { vColor = aColor; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); float px = aSize * uScale; gl_PointSize = px + 1.5; vEdge = px / (px + 1.5); }`,
+    fragmentShader: `uniform float uOpacity; varying vec3 vColor; varying float vEdge;
+void main() { float r = length(gl_PointCoord - 0.5) * 2.0; float a = 1.0 - smoothstep(vEdge * 0.55, vEdge, r); if (a <= 0.0) discard; float core = exp(-r * r * 5.0); gl_FragColor = vec4(vColor * (0.7 + 0.3 * core), a * uOpacity);
+#include <tonemapping_fragment>
+#include <colorspace_fragment>
+}`,
+    transparent: true, depthWrite: false, fog: false
+  });
+  mat.onBeforeRender = (renderer) => { mat.uniforms.uOpacity.value = mat.opacity; mat.uniforms.uScale.value = renderer.getPixelRatio(); };
+  return mat;
+}
+// Per star: a size in CSS pixels from its brightness t (0 faint .. 1 bright).
+export const starSize = (t, min = STAR_PX) => min * (1 + (STAR_MAX_K - 1) * Math.pow(t, 3));
 // What the sea reflects, and looks like, seen from space: dark, deep blue.
 export const SPACE_SEA_SKY = Object.freeze({ r: 0.0, g: 0.004, b: 0.012, isColor: true });
 export const SPACE_SEA = Object.freeze({ r: 0.01, g: 0.05, b: 0.12, isColor: true });
@@ -127,7 +151,7 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
   // Stars: visible at night and in space.
   const starGeo = new THREE.BufferGeometry();
   const N = coarse ? 1500 : 3500;
-  const sp = new Float32Array(N * 3); const sc = new Float32Array(N * 3);
+  const sp = new Float32Array(N * 3); const sc = new Float32Array(N * 3); const ss = new Float32Array(N);
   let s = 12345;
   const r = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
   for (let i = 0; i < N; i++) {
@@ -136,12 +160,17 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     const t = r(); const c = new THREE.Color().setHSL(0.55 + t * 0.15, 0.4 * t, 0.7 + r() * 0.3);
     // Just under bloom's threshold (post.js STAR_BLOOM_FLOOR): crisp points, no glow smear.
     const k = STAR_PEAK / Math.max(c.r, c.g, c.b, STAR_PEAK);
-    sc[i * 3] = c.r * k; sc[i * 3 + 1] = c.g * k; sc[i * 3 + 2] = c.b * k;
+    // Brighter stars are bigger and whiter; most are faint.
+    const mag = r();
+    const dim = 0.55 + 0.45 * mag;
+    sc[i * 3] = c.r * k * dim; sc[i * 3 + 1] = c.g * k * dim; sc[i * 3 + 2] = c.b * k * dim;
+    ss[i] = starSize(mag, coarse ? STAR_PX + 0.25 : STAR_PX);
   }
   starGeo.setAttribute('position', new THREE.BufferAttribute(sp, 3));
-  starGeo.setAttribute('color', new THREE.BufferAttribute(sc, 3));
+  starGeo.setAttribute('aColor', new THREE.BufferAttribute(sc, 3));
+  starGeo.setAttribute('aSize', new THREE.BufferAttribute(ss, 1));
   // At least STAR_PX pixels across: smaller points shimmer and vanish under anti-aliasing.
-  const starMat = new THREE.PointsMaterial({ size: coarse ? STAR_PX + 0.5 : STAR_PX, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: false });
+  const starMat = makeStarMaterial(THREE); starMat.opacity = 0;
   const stars = new THREE.Points(starGeo, starMat);
   stars.frustumCulled = false;
   stars.renderOrder = -9;
@@ -154,7 +183,7 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
   const galaxy = new THREE.Group();
   {
     const n = coarse ? 5000 : 12000;
-    const gp = new Float32Array(n * 3); const gc = new Float32Array(n * 3);
+    const gp = new Float32Array(n * 3); const gc = new Float32Array(n * 3); const gs = new Float32Array(n);
     const tilt = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(1.05, 0.4, 0.2));
     const v = new THREE.Vector3(); const col = new THREE.Color();
     const gauss = () => (r() + r() + r() + r() - 2) / 2;
@@ -165,10 +194,12 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
       col.setHSL(0.08 + r() * 0.55, 0.25 + r() * 0.25, 0.55 + r() * 0.35);
       const kk = STAR_PEAK / Math.max(col.r, col.g, col.b, STAR_PEAK);
       gc[i * 3] = col.r * kk; gc[i * 3 + 1] = col.g * kk; gc[i * 3 + 2] = col.b * kk;
+      gs[i] = STAR_PX * (1 + r() * 0.25);
     }
     const gg = new THREE.BufferGeometry();
-    gg.setAttribute('position', new THREE.BufferAttribute(gp, 3)); gg.setAttribute('color', new THREE.BufferAttribute(gc, 3));
-    const band = new THREE.Points(gg, new THREE.PointsMaterial({ size: STAR_PX, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: false }));
+    gg.setAttribute('position', new THREE.BufferAttribute(gp, 3)); gg.setAttribute('aColor', new THREE.BufferAttribute(gc, 3)); gg.setAttribute('aSize', new THREE.BufferAttribute(gs, 1));
+    const bandMat = makeStarMaterial(THREE); bandMat.opacity = 0;
+    const band = new THREE.Points(gg, bandMat);
     band.frustumCulled = false;
     galaxy.add(band);
     // Nebulae: soft sprites along the band.
@@ -615,10 +646,11 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     galaxy.visible = starMat.opacity > 0.01;
     sun.intensity = lerp(0.0, 2.1, day) * (1 - dusk * 0.35) + sp * 1.6;
     sun.color.setRGB(1, lerp(0.6, 0.96, day), lerp(0.4, 0.88, day));
-    hemi.intensity = lerp(0.12, 0.62, day) + sp * 0.1;
-    hemi.color.setRGB(lerp(0.25, 0.8, day), lerp(0.3, 0.9, day), lerp(0.6, 1, day));
+    // A moonlit night: blue and dim, but land, sea and buildings still read apart on a phone.
+    hemi.intensity = lerp(0.2, 0.62, day) + sp * 0.1;
+    hemi.color.setRGB(lerp(0.3, 0.8, day), lerp(0.38, 0.9, day), lerp(0.72, 1, day));
     hemi.groundColor.setRGB(lerp(0.05, 0.29, day), lerp(0.06, 0.35, day), lerp(0.1, 0.23, day));
-    moonLight.intensity = env.night * 0.3 * (1 - sp);
+    moonLight.intensity = env.night * 0.45 * (1 - sp);
     if (csm) {
       // The cascades carry the sunlight; the plain sun stays dark.
       csm.lightDirection.copy(sunDir).negate();

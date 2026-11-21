@@ -16,6 +16,8 @@ export const TIER_LABEL = Object.freeze({ low: 'Low', medium: 'Medium', high: 'H
 
 // What each tier turns on:
 //   pixelRatio, cascades, shadowMapSize   resolution and cascaded shadows
+//             (Low draws at 1.5x on a sharp phone screen, with multisampling;
+//             on a phone the render scale lowers it while frames run slow)
 //   gtao, bloom, aa                       post-processing (post.js)
 //   water, sky, textures, grass, forest   the world's surfaces (environment.js)
 //   streets   detailed streets: markings, kerbs, pavements, crossings, lamps
@@ -31,7 +33,7 @@ export const TIER_LABEL = Object.freeze({ low: 'Low', medium: 'Medium', high: 'H
 //   foliage   grass tufts and flowers round the camera (foliage.js), and
 //             foliageRadius, how far out they grow (metres)
 export const TIER_SETTINGS = Object.freeze({
-  low: Object.freeze({ pixelRatio: 1, cascades: 0, shadowMapSize: 0, gtao: false, bloom: false, aa: 'none', water: false, sky: 'gradient', textures: false, grass: 0.35, forest: 0.4, targetFps: 30, streets: false, coast: false, ibl: false, lod: 30, reflect: 'sky', dof: false, ease: 5, foliage: 0, foliageRadius: 60 }),
+  low: Object.freeze({ pixelRatio: 1.5, cascades: 0, shadowMapSize: 0, gtao: false, bloom: false, aa: 'none', water: false, sky: 'gradient', textures: false, grass: 0.35, forest: 0.4, targetFps: 30, streets: false, coast: false, ibl: false, lod: 30, reflect: 'sky', dof: false, ease: 5, foliage: 0, foliageRadius: 60 }),
   medium: Object.freeze({ pixelRatio: 1.25, cascades: 2, shadowMapSize: 1024, gtao: false, bloom: true, aa: 'smaa', water: false, sky: 'physical', textures: true, grass: 0.7, forest: 0.7, targetFps: 60, streets: true, coast: true, ibl: true, lod: 45, reflect: 'sky', dof: false, ease: 5, foliage: 12000, foliageRadius: 45 }),
   high: Object.freeze({ pixelRatio: 1.75, cascades: 3, shadowMapSize: 2048, gtao: true, bloom: true, aa: 'smaa', water: true, sky: 'physical', textures: true, grass: 1, forest: 1, targetFps: 60, streets: true, coast: true, ibl: true, lod: 70, reflect: 'sky', dof: false, ease: 5, foliage: 30000, foliageRadius: 60 }),
   ultra: Object.freeze({ pixelRatio: 2, cascades: 4, shadowMapSize: 4096, gtao: true, bloom: true, aa: 'taa', water: true, sky: 'physical', textures: true, grass: 1.4, forest: 1.2, targetFps: 60, streets: true, coast: true, ibl: true, lod: 100, reflect: 'sky', dof: false, ease: 5, foliage: 60000, foliageRadius: 75 }),

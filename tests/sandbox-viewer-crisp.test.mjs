@@ -17,7 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { STAR_PX, STAR_PEAK } from '../public/sandbox/environment.js';
+import { STAR_PX, STAR_PEAK, STAR_MAX_K, starSize } from '../public/sandbox/environment.js';
 import { STAR_BLOOM_FLOOR } from '../public/sandbox/post.js';
 import { ATMOSPHERE, fogAmount, fogDensityFor } from '../public/sandbox/surface.js';
 import { TIER_SETTINGS, deviceSettings, createRenderScale, PHONE_SHADOW_MAP } from '../public/sandbox/quality.js';
@@ -44,12 +44,20 @@ test('1: in space, or with nothing nearby followed, there is no depth of field; 
   assert.match(scene, /post\.setFocus\(followNear \? controls\.dist : null\)/);
 });
 
-test('1: stars and the galaxy band are at least 2 px and just below bloom\'s threshold', () => {
+test('1: stars and the galaxy band are round, at least 2 px and just below bloom\'s threshold', () => {
   assert.ok(STAR_PX >= 2);
+  // Sizes: never under STAR_PX, a few bright ones up to STAR_MAX_K times it.
+  assert.equal(starSize(0), STAR_PX);
+  assert.ok(Math.abs(starSize(1) - STAR_PX * STAR_MAX_K) < 1e-9);
+  assert.ok(starSize(0.5) < STAR_PX * 1.2, 'most stars are small');
   assert.ok(STAR_PEAK < STAR_BLOOM_FLOOR, 'the brightest star stays under the bloom threshold');
   const env = read('public/sandbox/environment.js');
-  assert.match(env, /const starMat = new THREE\.PointsMaterial\(\{ size: coarse \? STAR_PX \+ 0\.5 : STAR_PX, sizeAttenuation: false/);
-  assert.match(env, /const band = new THREE\.Points\(gg, new THREE\.PointsMaterial\(\{ size: STAR_PX, sizeAttenuation: false/);
+  // Round discs with a soft edge (not square points), sized by the pixel ratio.
+  assert.match(env, /const starMat = makeStarMaterial\(THREE\)/);
+  assert.match(env, /const bandMat = makeStarMaterial\(THREE\)/);
+  assert.match(env, /float r = length\(gl_PointCoord - 0\.5\) \* 2\.0;/);
+  assert.match(env, /mat\.uniforms\.uScale\.value = renderer\.getPixelRatio\(\)/);
+  assert.match(env, /gs\[i\] = STAR_PX \* \(1 \+ r\(\) \* 0\.25\)/);
   assert.equal((env.match(/STAR_PEAK \/ Math\.max\(/g) || []).length, 2, 'stars and the band capped');
   assert.match(read('public/sandbox/surface.js'), /new THREE\.PointsMaterial\(\{ color: 0xd9d9d9, size: 2, sizeAttenuation: false/);
 });
