@@ -1,0 +1,34 @@
+{
+  "tag": "after",
+  "at": "2026-11-21T05:10:46.344Z",
+  "renderer": "SwiftShader (software)",
+  "viewport": {
+    "width": 360,
+    "height": 800
+  },
+  "sandbox": {
+    "low": {
+      "weather": {
+        "state": "rain",
+        "rain": 0.68,
+        "dark": 0.59
+      }
+    },
+    "medium": {
+      "weather": {
+        "state": "snow",
+        "rain": 0,
+        "dark": 0.3
+      }
+    },
+    "cinematic": {
+      "weather": {
+        "state": "storm",
+        "rain": 0.99,
+        "dark": 0.81
+      }
+    }
+  },
+  "city": {},
+  "errors": []
+}
