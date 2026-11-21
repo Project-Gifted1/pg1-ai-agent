@@ -504,7 +504,7 @@ export function createTraffic({ density = 1, seed = 11, cols = 6, rowsNorth = 4,
     // People on a zebra inside a vehicle's body (the tests: never).
     pedHits() {
       const hits = [];
-      for (const p of peds) { if (p.state !== 'cross') continue; for (const v of vehicles) { const fp = footprint(v.x, v.z, Math.sin(v.heading), Math.cos(v.heading), v.len, v.wid); if (boxesOverlap(fp, footprint(p.x, p.z, 1, 0, 0.5, 0.5))) hits.push(v.id); } }
+      for (const p of peds) { if (p.state !== 'cross') continue; for (const v of vehicles) { if (Math.abs(v.x - p.x) > v.len + 2 || Math.abs(v.z - p.z) > v.len + 2) continue; const fp = footprint(v.x, v.z, Math.sin(v.heading), Math.cos(v.heading), v.len, v.wid); if (boxesOverlap(fp, footprint(p.x, p.z, 1, 0, 0.5, 0.5))) hits.push(v.id); } }
       return hits;
     },
     get time() { return t; },

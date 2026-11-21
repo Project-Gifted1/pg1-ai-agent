@@ -39,6 +39,8 @@ import { loadBrand, BRAND_SVG_URL } from './kingdom-emblem.js';
 import { dublinSun, daylight, pickDirectorEvent, normalizeState, windowRatios, dublinHour, weatherLook, GADGET_META } from './kingdom-data.js';
 import { createWeatherFx } from './kingdom-weather.js';
 import { mergeStatic, simplifyInstances, createLegacyWatch } from './kingdom-legacy.js';
+import { createProbe, startTier, tierFromProbe, readProbeCache, writeProbeCache } from '../sandbox/tier-probe.js';
+import { createDebugOverlay } from '../sandbox/debug-overlay.js';
 
 // The hero look: golden hour, the sun low in the west behind the tower.
 export const DUSK_SUN = Object.freeze({ elevation: 0.035, azimuth: (262 * Math.PI) / 180 });
@@ -71,7 +73,35 @@ export const HOME_VIEW_PHONE = Object.freeze({ target: [0, 150, 0], dist: 570, t
 export const EMBLEM_CLEARANCE = 150;
 
 export const KINGDOM_TIERS = Object.freeze(['legacy', 'phone', 'balanced', 'cinematic']);
-export const KINGDOM_TIER_LABEL = Object.freeze({ legacy: 'Legacy phone', phone: 'Phone', balanced: 'Balanced', cinematic: 'Cinematic' });
+// On screen: Low, Medium, High (picked automatically) and Cinematic (by hand
+// only). The ids stay as they were (a choice kept on a device still holds).
+export const KINGDOM_TIER_LABEL = Object.freeze({ legacy: 'Low', phone: 'Medium', balanced: 'High', cinematic: 'Cinematic' });
+// The shared probe's tiers (tier-probe.js) and the city's.
+export const KINGDOM_FROM_AUTO = Object.freeze({ low: 'legacy', medium: 'phone', high: 'balanced' });
+export const KINGDOM_TO_AUTO = Object.freeze({ legacy: 'low', phone: 'medium', balanced: 'high', cinematic: 'high' });
+export const KINGDOM_PROBE_KEY = 'pg1_kingdom_probe';
+// ?quality= in the address (the operator): low, medium, high or cinematic (or a tier's id).
+export function kingdomTierFromParam(search) {
+  let q = null; try { q = new URLSearchParams(search || '').get('quality'); } catch (e) { q = null; }
+  if (!q) return null;
+  if (KINGDOM_TIERS.includes(q)) return q;
+  if (q === 'cinematic') return 'cinematic';
+  return KINGDOM_FROM_AUTO[q] || null;
+}
+// How the city's starting tier is chosen, in order: the caller's (a test, a
+// recording, a rebuild), ?quality= (the operator, this visit), a tier kept
+// by hand, Low for an iPhone 8-class device, the last probe's pick on this
+// device; else Low on a phone or a 4 GB device (Medium on a computer) and a
+// short probe of real frames that may step up (tier-probe.js).
+export function chooseKingdomStart({ forced = null, search = '', saved = null, cached = null, profile = {}, coarse = false, memory = 0 } = {}) {
+  if (forced) return { tier: forced, source: 'caller', probe: false, held: true };
+  const url = kingdomTierFromParam(search);
+  if (url) return { tier: url, source: 'address', probe: false, held: true };
+  if (KINGDOM_TIERS.includes(saved)) return { tier: saved, source: 'manual', probe: false, held: true };
+  if (detectLegacy(profile)) return { tier: 'legacy', source: 'device', probe: false, held: false };
+  if (cached && KINGDOM_FROM_AUTO[cached]) return { tier: KINGDOM_FROM_AUTO[cached], source: 'probe (kept)', probe: false, held: false };
+  return { tier: KINGDOM_FROM_AUTO[startTier({ coarse, memory })], source: 'probe', probe: true, held: false };
+}
 // The Legacy phone tier's budgets (an iPhone 8: A11 GPU, about 2 GB of RAM,
 // Safari on iOS 16), checked by tests/browser/kingdom-city.browser.test.mjs.
 export const LEGACY_BUDGET = Object.freeze({ drawCalls: 150, triangles: 150000, maxTexture: 1024, gpuMemoryMB: 300, targetFps: 30 });
@@ -93,24 +123,6 @@ export function detectLegacy({ userAgent = '', screenW = 0, screenH = 0, memory 
   return false;
 }
 
-// A quick GPU benchmark: a few draws of a busy fragment shader into a small
-// target, timed with a read-back (so the GPU really finished). ms, or -1.
-export function gpuBenchmark(THREE, renderer) {
-  try {
-    const rt = new THREE.WebGLRenderTarget(256, 256);
-    const mat = new THREE.ShaderMaterial({ vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }', fragmentShader: 'void main(){ vec2 p = gl_FragCoord.xy / 256.0; float a = 0.0; for (int i = 0; i < 48; i++){ a += sin(p.x * float(i) + cos(p.y * float(i) + a)); } gl_FragColor = vec4(vec3(fract(a)), 1.0); }' });
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat); mesh.frustumCulled = false;
-    const sc = new THREE.Scene(); sc.add(mesh); const cam = new THREE.Camera();
-    const px = new Uint8Array(4);
-    renderer.setRenderTarget(rt); renderer.render(sc, cam); renderer.readRenderTargetPixels(rt, 0, 0, 1, 1, px);
-    const t0 = performance.now();
-    for (let i = 0; i < 6; i++) renderer.render(sc, cam);
-    renderer.readRenderTargetPixels(rt, 0, 0, 1, 1, px);
-    const ms = performance.now() - t0;
-    renderer.setRenderTarget(null); rt.dispose(); mat.dispose(); mesh.geometry.dispose();
-    return ms;
-  } catch (e) { return -1; }
-}
 export const KINGDOM_QUALITY_KEY = 'pg1_kingdom_quality';
 export const DIRECTOR_CUT_MS = 6500;
 
@@ -229,29 +241,33 @@ function waterNormals(THREE) {
   return t;
 }
 
-async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: forced, onRebuild = null, onContextLost = null }) {
+async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: forcedTier, auto: rebuiltAuto = false, onRebuild = null, onContextLost = null }) {
   const THREE = await import(threeUrl);
   const canvas = document.createElement('canvas');
   canvas.className = 'kingdom-canvas';
   canvas.setAttribute('aria-hidden', 'true');
+  let saved = null;
+  try { saved = localStorage.getItem(KINGDOM_QUALITY_KEY); } catch (e) { saved = null; }
+  const memory = navigator.deviceMemory || 0;
+  let probeStore = null; try { probeStore = localStorage; } catch (e) { probeStore = null; }
+  const profile = { userAgent: navigator.userAgent, screenW: (window.screen && window.screen.width) || 0, screenH: (window.screen && window.screen.height) || 0, memory, touch: !!coarse };
+  // A rebuild the probe or the governor asked for stays automatic.
+  const begin = rebuiltAuto && forcedTier
+    ? { tier: forcedTier, source: 'auto', probe: !(probeStore && readProbeCache(probeStore, KINGDOM_PROBE_KEY)), held: false }
+    : chooseKingdomStart({ forced: forcedTier, search: location.search, saved, cached: probeStore ? readProbeCache(probeStore, KINGDOM_PROBE_KEY) : null, profile, coarse, memory });
+  let tier = begin.tier;
+  const forced = begin.held;
+  container.dataset.tierSource = begin.source;
+  let settings = kingdomSettings(tier, { coarse });
   let renderer;
   try {
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: false, alpha: false, powerPreference: 'high-performance' });
+    // Low and Medium have no post-processing, so they take the GPU's own
+    // multisampling: on a tile-based phone GPU (Mali, Adreno, Apple) it is
+    // resolved on the chip for little cost, and edges no longer crawl.
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: !settings.post, alpha: false, powerPreference: 'high-performance' });
   } catch (e) {
     return null;
   }
-  let saved = null;
-  try { saved = localStorage.getItem(KINGDOM_QUALITY_KEY); } catch (e) { saved = null; }
-  const viewerSaved = (() => { try { return localStorage.getItem(QUALITY_KEY); } catch (e) { return null; } })();
-  let tier = forced || (KINGDOM_TIERS.includes(saved) ? saved : null);
-  if (!tier) {
-    // An iPhone 8-class device starts on Legacy phone; the benchmark only runs when the profile alone does not decide it.
-    const profile = { userAgent: navigator.userAgent, screenW: (window.screen && window.screen.width) || 0, screenH: (window.screen && window.screen.height) || 0, memory: navigator.deviceMemory || 0, touch: !!coarse };
-    let legacy = detectLegacy(profile);
-    if (!legacy && coarse) legacy = detectLegacy({ ...profile, gpuMs: gpuBenchmark(THREE, renderer) });
-    tier = legacy ? 'legacy' : kingdomTierOf(pickTier({ coarse, memory: navigator.deviceMemory || 0, cores: navigator.hardwareConcurrency || 0, saved: viewerSaved }));
-  }
-  let settings = kingdomSettings(tier, { coarse });
   container.appendChild(canvas);
   container.dataset.renderer = 'webgl';
   container.dataset.tier = tier;
@@ -380,12 +396,12 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   // A lower tier in place: post-processing, shadows and resolution follow;
   // the crowds' size is kept (they were built for the starting tier) but
   // fewer new figures are staged per event.
-  async function applyTier(next, { manual = false } = {}) {
+  async function applyTier(next, { manual = false, probe = false } = {}) {
     if (!KINGDOM_TIERS.includes(next) || next === tier) return;
     // Into or out of Legacy: the city is rebuilt (density, textures, far plane).
     if ((next === 'legacy' || tier === 'legacy') && onRebuild) {
       if (manual) { try { localStorage.setItem(KINGDOM_QUALITY_KEY, next); } catch (e) { /* not remembered */ } }
-      onRebuild(next, { manual });
+      onRebuild(next, { manual, auto: probe });
       return;
     }
     tier = next; settings = kingdomSettings(tier, { coarse });
@@ -401,7 +417,21 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   const governor = createGovernor({ tier: VIEWER_TIER[tier], budgetMs: 1000 / settings.targetFps, onChange: (vt, { manual }) => { if (!manual) applyTier(kingdomTierOf(vt)); } });
   // A tier chosen by the caller (a test, a recording) holds.
   // A tier chosen by hand (remembered on this device) holds too.
-  if (forced || KINGDOM_TIERS.includes(saved)) governor.setAuto(false);
+  if (forced) governor.setAuto(false);
+  // The probe (automatic tiers only): render work timed over a few frames,
+  // then the tier it says this device can hold (tier-probe.js), kept on the
+  // device. Each frame's draw calls and triangles feed ?debug=1's overlay.
+  let probeRun = begin.probe ? createProbe() : null;
+  const probePx = new Uint8Array(4);
+  const debug = createDebugOverlay(container);
+  const debugInfo = { calls: 0, triangles: 0, tier, source: begin.source, probeMs: null, scale: 1 };
+  const onProbe = (r) => {
+    container.dataset.probeMs = String(r.workMs); debugInfo.probeMs = r.workMs;
+    const pick = KINGDOM_FROM_AUTO[tierFromProbe({ workMs: r.workMs, probed: KINGDOM_TO_AUTO[tier], coarse, memory })];
+    if (probeStore) writeProbeCache(probeStore, KINGDOM_PROBE_KEY, KINGDOM_TO_AUTO[pick], Date.now(), r.workMs);
+    container.dataset.probePick = pick;
+    if (pick !== tier && governor.auto !== false) applyTier(pick, { probe: true });
+  };
 
   // The loop: paused while hidden; frame listeners (the recorder) after each frame.
   const frameFns = new Set();
@@ -488,8 +518,17 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     camera.lookAt(controls.target);
     if (world.obstacles.hit(camera.position.x, camera.position.y, camera.position.z, 0)) camInside++;
     renderer.info.reset();
+    const timing = probeRun && !probeRun.done;
+    const pt0 = timing ? performance.now() : 0;
     if (post) post.render(false); else renderer.render(scene, camera);
+    if (timing) {
+      // A one-pixel read-back waits for the GPU to finish: the frame's real cost.
+      const gl = renderer.getContext(); gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, probePx);
+      const r = probeRun.sample(performance.now() - pt0);
+      if (r) onProbe(r);
+    }
     lastInfo.calls = renderer.info.render.calls; lastInfo.triangles = renderer.info.render.triangles;
+    if (debug) { debugInfo.calls = lastInfo.calls; debugInfo.triangles = lastInfo.triangles; debugInfo.tier = KINGDOM_TIER_LABEL[tier]; debug.frame(now, debugInfo); }
     container.dataset.attackers = String(actors.attackers);
     if ((Number(container.dataset.frames) || 0) % 5 === 0) {
       container.dataset.fired = JSON.stringify(actors.fired);
@@ -508,7 +547,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     raf = requestAnimationFrame(frame);
   };
   const start = () => { if (!raf && running) { last = 0; raf = requestAnimationFrame(frame); } };
-  const onVis = () => { if (document.hidden) { if (raf) cancelAnimationFrame(raf); raf = 0; container.dataset.paused = 'yes'; } else { container.dataset.paused = 'no'; start(); } };
+  const onVis = () => { if (document.hidden) { if (raf) cancelAnimationFrame(raf); raf = 0; container.dataset.paused = 'yes'; } else { container.dataset.paused = 'no'; if (debug) debug.reset(); start(); } };
   document.addEventListener('visibilitychange', onVis);
   start();
 
@@ -620,7 +659,13 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     cutTo(id) { if (!director) return; lastCut = performance.now(); lastLive = lastCut; focus(id); },
     setDirector, director: () => director,
     tier: () => tier,
-    setTier: (t) => applyTier(t, { manual: true }),
+    // A tier by hand (kept on this device), or 'auto': forget it and the
+    // last probe, and rebuild from the safe tier with a fresh probe.
+    setTier: (t) => {
+      if (t !== 'auto') return applyTier(t, { manual: true });
+      try { localStorage.removeItem(KINGDOM_QUALITY_KEY); if (probeStore) probeStore.removeItem(KINGDOM_PROBE_KEY); } catch (e) { /* private mode */ }
+      if (onRebuild) onRebuild(KINGDOM_FROM_AUTO[startTier({ coarse, memory })], { auto: true });
+    },
     // For the tests and the budget check: what the last frame cost.
     stats() {
       let texBytes = 0; let maxTex = 0; const seen = new Set();
@@ -636,7 +681,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       });
       const c = renderer.getContext(); const W = c.drawingBufferWidth; const H = c.drawingBufferHeight;
       const fbBytes = W * H * 4 * 3 + (settings.shadows ? settings.shadows * settings.shadows * 4 : 0);
-      return { tier, calls: lastInfo.calls, triangles: lastInfo.triangles, textures: seen.size, maxTexture: maxTex, gpuMemoryMB: Math.round((texBytes + geoBytes + fbBytes) / 1048576), targetFps: settings.targetFps, pixelRatio: renderer.getPixelRatio(), life: life.counts(), weather: wx.counts() };
+      return { tier, label: KINGDOM_TIER_LABEL[tier], source: begin.source, probeMs: debugInfo.probeMs, calls: lastInfo.calls, triangles: lastInfo.triangles, textures: seen.size, maxTexture: maxTex, gpuMemoryMB: Math.round((texBytes + geoBytes + fbBytes) / 1048576), targetFps: settings.targetFps, pixelRatio: renderer.getPixelRatio(), life: life.counts(), weather: wx.counts() };
     },
     // For screenshots: the junction with the longest queue now.
     busiestJunction: () => life.traffic.busiest(),
@@ -685,19 +730,19 @@ export async function createKingdomScene(container, { reducedMotion = false, coa
   const REPLAY = ['setThreat', 'setWeather', 'setState', 'setBillboards', 'setLight', 'setDirector', 'setToday', 'setDay', 'setPaused'];
   const frameFns = new Set();
   const showFallback = () => { if (!fallback) { fallback = create2d(container); container.dataset.renderer = 'webgl-lost'; for (const [k, a] of memo) if (fallback[k]) fallback[k](...a); } };
-  const build = async (t) => {
-    const s = await create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: t, onRebuild, onContextLost: showFallback });
+  const build = async (t, { auto = false } = {}) => {
+    const s = await create3d(container, { coarse, threeUrl, onFocus, onTier, onCaption, onGadget, tier: t, auto, onRebuild, onContextLost: showFallback });
     if (!s) return null;
     for (const [k, a] of memo) { try { s[k](...a); } catch (e) { /* the next poll sets it again */ } }
     for (const fn of frameFns) s.onFrame(fn);
     return s;
   };
-  async function onRebuild(next, { restored = false } = {}) {
+  async function onRebuild(next, { restored = false, auto = false } = {}) {
     if (rebuilding) return rebuilding;
     rebuilding = (async () => {
       const old = impl; impl = null;
       try { old.destroy(); } catch (e) { /* a lost context cannot be disposed cleanly */ }
-      const s = await build(next).catch(() => null);
+      const s = await build(next, { auto }).catch(() => null);
       if (s) { impl = s; if (fallback) { fallback.destroy(); fallback = null; } if (onTier) onTier(s.tier(), { manual: false, rebuilt: true, restored }); }
       else showFallback();
       container.dataset.rebuilds = String((Number(container.dataset.rebuilds) || 0) + 1);
