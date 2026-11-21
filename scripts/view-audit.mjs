@@ -27,6 +27,10 @@ const WHICH = process.argv[3] || 'all';
 const GL = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
 const VIEWPORT = { width: 360, height: 800 };
 const A07_UA = 'Mozilla/5.0 (Linux; Android 15; SM-A075F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36';
+// Tiers to shoot (AUDIT_TIERS=low,medium,high,cinematic); the device reports 4 GB, as the Galaxy A07 does.
+const ONLY = process.env.AUDIT_TIERS ? process.env.AUDIT_TIERS.split(',') : null;
+const SANDBOX_TIERS = ONLY || ['low', 'medium', 'high', 'cinematic'];
+const A07_MEMORY = (m) => { Object.defineProperty(navigator, 'deviceMemory', { get: () => m }); };
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.css': 'text/css; charset=utf-8' };
 mkdirSync(OUT, { recursive: true });
 const report = { tag: TAG, at: new Date().toISOString(), renderer: 'SwiftShader (software)', viewport: VIEWPORT, sandbox: {}, city: {}, errors: [] };
@@ -98,6 +102,7 @@ async function sandboxPage(browser, origin, tier) {
   const context = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: 'dark', userAgent: A07_UA });
   await routeReplyFont(context);
   await context.addInitScript(GL_COUNT);
+  await context.addInitScript(A07_MEMORY, 4);
   await context.addInitScript((t) => { try { localStorage.setItem('pg1_theme', 'dark'); localStorage.setItem('pg1_sandbox_quality', t); } catch (e) {} }, tier);
   const page = await context.newPage();
   const errors = [];
@@ -138,7 +143,7 @@ async function auditSandbox(browser) {
   const { server, origin } = await sandboxServer(store);
   try {
     // Auto: no tier kept, the A07 profile; which tier the probe picks (after only: main has no probe).
-    if (TAG !== 'before') {
+    if (TAG !== 'before' && !ONLY) {
       const { page, errors, context } = await sandboxPage(browser, origin, 'auto');
       await page.evaluate((w) => openSandboxScreen(w), uni.id);
       await page.waitForFunction(() => !!document.getElementById('sandbox-view').dataset.probePick, null, { timeout: 600000 }).catch(() => {});
@@ -148,7 +153,7 @@ async function auditSandbox(browser) {
       console.log('sandbox auto', JSON.stringify(report.sandbox.auto));
       await context.close();
     }
-    for (const tier of ['low', 'medium', 'high']) {
+    for (const tier of SANDBOX_TIERS) {
       const r = report.sandbox[tier] = {};
       const { page, errors, context } = await sandboxPage(browser, origin, tier);
       const open = async (id) => { await page.evaluate((w) => openSandboxScreen(w), id); await page.waitForFunction((t) => new RegExp(`^Step ${t} · `).test(document.getElementById('sandbox-tick').textContent), ticks[id], { timeout: 120000 }); await sWait(page, 4); };
@@ -203,15 +208,16 @@ async function auditCity(browser) {
   const control = {}; const feed = fixtureFeed(control);
   const { server, origin } = await startCommandCentreServer({ publicDir: PUBLIC_DIR, defenseFeed: async (url) => { const f = await feed(url); if (!url.searchParams.get('since')) f.weather = { state: 'partly_cloudy', source: 'open-meteo', cloud: 0.4, wind: 0.2 }; return f; } });
   try {
-    const TIERS = await (async () => { const m = await import('../public/kingdom/kingdom-scene.js'); return m.KINGDOM_TIERS.filter((t) => t !== 'cinematic'); })();
+    const TIERS = await (async () => { const m = await import('../public/kingdom/kingdom-scene.js'); return ONLY ? m.KINGDOM_TIERS.filter((t) => ONLY.includes(t) || (ONLY.includes('cinematic') && t === 'cinematic')) : m.KINGDOM_TIERS; })();
     // The city's light follows real Dublin time: shift the page clock to 13:00 and 22:30 (UTC = Dublin time in winter).
     const shiftTo = (h, m) => { const d = new Date(); d.setUTCHours(h, m, 0, 0); return d.getTime() - Date.now(); };
-    for (const tier of (TAG !== 'before' ? ['auto'] : []).concat(TIERS)) {
+    for (const tier of (TAG !== 'before' && !ONLY ? ['auto'] : []).concat(TIERS)) {
       const r = report.city[tier] = {};
       for (const [when, offset] of [['day', shiftTo(13, 0)], ['night', shiftTo(22, 30)]]) {
         const ctx = await browser.newContext({ viewport: VIEWPORT, deviceScaleFactor: 2, isMobile: true, hasTouch: true, colorScheme: 'dark', userAgent: A07_UA });
         await routeReplyFont(ctx);
         await ctx.addInitScript(GL_COUNT);
+        await ctx.addInitScript(A07_MEMORY, 4);
         await ctx.addInitScript(([off, t]) => { const n = Date.now; Date.now = () => n() + off; const D = Date; window.Date = class extends D { constructor(...a) { if (a.length) super(...a); else super(n() + off); } static now() { return n() + off; } }; try { localStorage.setItem('pg1_theme', 'dark'); if (t !== 'auto') localStorage.setItem('pg1_kingdom_quality', t); } catch (e) {} }, [offset, tier]);
         const page = await ctx.newPage();
         const errors = [];
@@ -252,5 +258,5 @@ try {
   if (WHICH === 'all' || WHICH === 'sandbox') await auditSandbox(browser);
   if (WHICH === 'all' || WHICH === 'city') await auditCity(browser);
 } finally { await browser.close(); }
-writeFileSync(join(OUT, `${TAG}-${WHICH}.json`), JSON.stringify(report, null, 2));
+writeFileSync(join(OUT, `${TAG}-${WHICH}${ONLY ? `-${ONLY.join('-')}` : ''}.json`), JSON.stringify(report, null, 2));
 console.log('done', join(OUT, `${TAG}-${WHICH}.json`));
