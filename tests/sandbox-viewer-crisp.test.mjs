@@ -118,7 +118,10 @@ test('3: Cinematic lowers its render scale when frames run over 33 ms, and raise
   assert.equal(phone.atMin, true);
   assert.equal(phone.scale, 0.65);
   assert.match(scene, /const scaling = \(\) => tier === 'cinematic' \|\| recording \|\| coarse;/);
-  assert.match(scene, /\* \(renderScale && scaling\(\) \? renderScale\.scale : 1\)/);
+  assert.match(scene, /\* \(renderScale && scaling\(\) && !fullShot \? renderScale\.scale : 1\)/);
+  // A still is taken at the tier's full resolution: the render scale is lifted for that frame and put back.
+  assert.match(scene, /if \(lifted\) \{ fullShot = true; resize\(\); \}/);
+  assert.match(scene, /if \(lifted\) \{ fullShot = false; resize\(\); \}/);
 });
 
 test('3: on a phone the shadow map is at most 4096 and foliage scales with the device', () => {
