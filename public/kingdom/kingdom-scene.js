@@ -28,7 +28,7 @@
 // prefers-reduced-motion, or no WebGL: a still 2D map of the kingdom with
 // today's count by each gadget; the text feed beside it carries the events.
 
-import { TIER_SETTINGS, pickTier, createGovernor, QUALITY_KEY } from '../sandbox/quality.js';
+import { TIER_SETTINGS, pickTier, createGovernor, createRenderScale, QUALITY_KEY } from '../sandbox/quality.js';
 import { createPost } from '../sandbox/post.js';
 import { createControls } from '../sandbox/controls.js';
 import { createWaterMaterial } from '../sandbox/water.js';
@@ -123,6 +123,7 @@ export function detectLegacy({ userAgent = '', screenW = 0, screenH = 0, memory 
   return false;
 }
 
+export const PHONE_CINEMATIC_CITY = Object.freeze({ shadows: 1024, post: Object.freeze({ gtaoScale: 0.5, gtaoSamples: 8 }), crowdCap: 300, perEvent: 30, targetFps: 30, pixelRatio: 1.5, lifeScale: 0.55, renderScale: true });
 export const KINGDOM_QUALITY_KEY = 'pg1_kingdom_quality';
 export const DIRECTOR_CUT_MS = 6500;
 
@@ -135,7 +136,7 @@ export function kingdomTierOf(viewerTier) {
 const VIEWER_TIER = { legacy: 'low', phone: 'low', balanced: 'high', cinematic: 'ultra' };
 
 // What each tier turns on (shadows: the shadow map's size, 0 for none).
-export function kingdomSettings(tier, { coarse = false } = {}) {
+export function kingdomSettings(tier, { coarse = false, memory = 0 } = {}) {
   const v = TIER_SETTINGS[VIEWER_TIER[tier] || 'high'];
   const base = {
     // The Legacy phone tier: no post-processing, shadows, reflections or
@@ -147,6 +148,14 @@ export function kingdomSettings(tier, { coarse = false } = {}) {
     balanced: { shadows: 1024, post: { aa: 'smaa', bloom: true, gtao: true, dof: false }, water: true, sky: 'physical', crowdCap: 400, perEvent: 30, shafts: false, rain: true, targetFps: 60, pixelRatio: 1.5 },
     cinematic: { shadows: coarse ? 1024 : 2048, post: { aa: 'smaa', bloom: true, gtao: true, dof: false }, water: true, sky: 'physical', crowdCap: 800, perEvent: 60, shafts: true, rain: true, targetFps: 60, pixelRatio: 2 }
   }[tier] || null;
+  // Cinematic on a phone (a Galaxy A07 class GPU): the same look at 30 fps.
+  // Kept: soft shadows, bloom, ambient occlusion, SMAA, the water shader and
+  // the physical sky. Changed: occlusion at half resolution with 8 samples,
+  // 1.5x pixels at most (the render scale lowers them while frames run
+  // slow), smaller crowds and a little less ambient life.
+  if (tier === 'cinematic' && coarse && base) Object.assign(base, PHONE_CINEMATIC_CITY, { post: { ...base.post, ...PHONE_CINEMATIC_CITY.post } });
+  // 4 GB or less (the Galaxy A07): no ambient occlusion (its pass draws the whole city again).
+  if (tier === 'cinematic' && coarse && memory && memory <= 4 && base) base.post = { ...base.post, gtao: false };
   return Object.freeze({ tier, ...base, ease: v ? v.ease : 5 });
 }
 
@@ -258,7 +267,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   let tier = begin.tier;
   const forced = begin.held;
   container.dataset.tierSource = begin.source;
-  let settings = kingdomSettings(tier, { coarse });
+  let settings = kingdomSettings(tier, { coarse, memory });
   let renderer;
   try {
     // Low and Medium have no post-processing, so they take the GPU's own
@@ -285,7 +294,9 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   // Legacy: a nearer far plane, hidden in thicker haze (distance culling).
   const fogBase = settings.legacy ? 0.0011 : 0.00055;
   const ADD = '/vendor/three/addons/';
-  const ReflectorMod = settings.tier === 'cinematic' ? await import(`${ADD}objects/Reflector.js`).catch(() => null) : null;
+  // The river's planar mirror draws the whole city a second time: a
+  // computer's Cinematic only (a phone's has the water shader, as High).
+  const ReflectorMod = settings.tier === 'cinematic' && !settings.renderScale ? await import(`${ADD}objects/Reflector.js`).catch(() => null) : null;
   const normals = settings.water ? waterNormals(THREE) : null;
   const waterMaterial = settings.water ? createWaterMaterial(THREE, normals, [], { offset: false }) : null;
   patchHeightFog(THREE);
@@ -380,15 +391,19 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   container.dataset.light = lightMode;
   let ambientAt = -Infinity;
 
-  // Size and quality.
+  // Size and quality. Cinematic on a phone draws fewer pixels while frames run
+  // over 30 fps's budget (down to half), and more again when they recover.
+  let renderScale = null;
   const resize = () => {
     const r = container.getBoundingClientRect();
     const w = Math.max(1, Math.round(r.width)); const h = Math.max(1, Math.round(r.height));
-    const pr = Math.min(settings.pixelRatio, window.devicePixelRatio || 1);
+    const pr = Math.min(settings.pixelRatio, window.devicePixelRatio || 1) * (settings.renderScale && renderScale ? renderScale.scale : 1);
     renderer.setPixelRatio(pr); renderer.setSize(w, h, false);
     camera.aspect = w / h; camera.updateProjectionMatrix();
     if (post) post.setSize(w, h, pr);
   };
+  const ensureScale = () => { if (settings.renderScale && !renderScale) renderScale = createRenderScale({ budgetMs: (1000 / settings.targetFps) * 1.15, min: 0.5, onChange: (sc) => { container.dataset.renderScale = String(sc); resize(); } }); if (!settings.renderScale) renderScale = null; };
+  ensureScale();
   const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(resize) : null;
   if (ro) ro.observe(container);
   resize();
@@ -404,11 +419,12 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       onRebuild(next, { manual, auto: probe });
       return;
     }
-    tier = next; settings = kingdomSettings(tier, { coarse });
+    tier = next; settings = kingdomSettings(tier, { coarse, memory });
     container.dataset.tier = tier;
     renderer.shadowMap.enabled = !!settings.shadows;
     world.sun.castShadow = !!settings.shadows;
     scene.traverse((o) => { if (o.material && o.material.needsUpdate !== undefined) o.material.needsUpdate = true; });
+    ensureScale();
     await buildPost();
     resize();
     if (manual) { try { localStorage.setItem(KINGDOM_QUALITY_KEY, tier); } catch (e) { /* not remembered */ } }
@@ -425,6 +441,8 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   const probePx = new Uint8Array(4);
   // Bottom right, above the caption, clear of the HUD.
   const debug = createDebugOverlay(container, { at: 'right:8px;bottom:92px' });
+  // ?debug=1 only: the renderer and scene, for looking into a frame from the console.
+  if (debug && typeof window !== 'undefined') { window.__kingdomRenderer = renderer; window.__kingdomScene = scene; }
   const debugInfo = { calls: 0, triangles: 0, tier, source: begin.source, probeMs: null, scale: 1 };
   const onProbe = (r) => {
     container.dataset.probeMs = String(r.workMs); debugInfo.probeMs = r.workMs;
@@ -455,7 +473,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     const budget = 1000 / settings.targetFps;
     if (now - last < budget - 2) { raf = requestAnimationFrame(frame); return; }
     const dt = Math.min(0.1, last ? (now - last) / 1000 : 0.016);
-    if (last) governor.sample(now - last, budget);
+    if (last) { if (renderScale) renderScale.sample(now - last); governor.sample(now - last, budget); }
     // Frames that stay slow on the lowest ordinary tier: drop to Legacy phone.
     if (last && tier === 'phone' && !forced && governor.auto !== false && legacyWatch.sample(now - last)) { container.dataset.autoDrop = 'legacy'; applyTier('legacy'); }
     last = now;
@@ -529,7 +547,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       if (r) onProbe(r);
     }
     lastInfo.calls = renderer.info.render.calls; lastInfo.triangles = renderer.info.render.triangles;
-    if (debug) { debugInfo.calls = lastInfo.calls; debugInfo.triangles = lastInfo.triangles; debugInfo.tier = KINGDOM_TIER_LABEL[tier]; debug.frame(now, debugInfo); }
+    if (debug) { debugInfo.calls = lastInfo.calls; debugInfo.triangles = lastInfo.triangles; debugInfo.tier = KINGDOM_TIER_LABEL[tier]; debugInfo.scale = renderScale ? renderScale.scale : 1; debug.frame(now, debugInfo); }
     container.dataset.attackers = String(actors.attackers);
     if ((Number(container.dataset.frames) || 0) % 5 === 0) {
       container.dataset.fired = JSON.stringify(actors.fired);

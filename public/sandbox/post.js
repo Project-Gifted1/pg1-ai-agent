@@ -32,7 +32,13 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     settings.dof ? import(`${ADDONS}BokehPass.js`) : null
   ]);
   const size = renderer.getSize(new THREE.Vector2());
-  const composer = new EffectComposer(renderer);
+  // Depth of field on a phone (settings.shareDepth, no ambient occlusion or
+  // temporal pass in between): the scene's own depth, kept with its colour,
+  // is read by the blur, instead of the whole scene drawn a second time.
+  const shareDepth = !!(settings.shareDepth && settings.dof && !settings.gtao && settings.aa !== 'taa');
+  let rt = null;
+  if (shareDepth) { rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType }); rt.depthTexture = new THREE.DepthTexture(1, 1); rt.depthTexture.type = THREE.UnsignedIntType; }
+  const composer = rt ? new EffectComposer(renderer, rt) : new EffectComposer(renderer);
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(size.x, size.y);
   let taa = null;
@@ -45,10 +51,15 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     composer.addPass(new RenderPass(scene, camera));
   }
   let gtao = null;
+  const aoScale = settings.gtaoScale > 0 && settings.gtaoScale <= 1 ? settings.gtaoScale : 1;
+  const aoSamples = settings.gtaoSamples || 12;
   if (gtaoMod) {
-    gtao = new gtaoMod.GTAOPass(scene, camera, size.x, size.y);
-    gtao.updateGtaoMaterial({ radius: 1.0, distanceExponent: 1.6, thickness: 0.8, scale: 1, samples: 12, distanceFallOff: 0.6, screenSpaceRadius: false });
-    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: 12 });
+    // On a phone (settings.gtaoScale 0.5) it is worked out at half the
+    // resolution with fewer samples, then blended over the full frame: soft
+    // contact shadows at a quarter of the cost.
+    gtao = new gtaoMod.GTAOPass(scene, camera, size.x * aoScale, size.y * aoScale);
+    gtao.updateGtaoMaterial({ radius: 1.0, distanceExponent: 1.6, thickness: 0.8, scale: 1, samples: aoSamples, distanceFallOff: 0.6, screenSpaceRadius: false });
+    gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2, samples: aoSamples });
     gtao.blendIntensity = 0.6;
     // Glow sprites and see-through shells (halos, atmospheres, nebulae, lamp
     // pools) are not surfaces: kept out of its depth and normals, or each
@@ -68,7 +79,15 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     bokeh = new bokehMod.BokehPass(scene, camera, { focus: 300, aperture: 0.00012, maxblur: 0.008 });
     // Its depth render leaves out the same glows (they are not where things are).
     const bokehRender = bokeh.render.bind(bokeh);
-    bokeh.render = (...a) => { const hidden = []; scene.traverse((o) => { if (o.visible && isFlat(o)) { o.visible = false; hidden.push(o); } }); try { bokehRender(...a); } finally { for (const o of hidden) o.visible = true; } };
+    if (shareDepth) {
+      bokeh.materialBokeh.defines.DEPTH_PACKING = 0; bokeh.materialBokeh.needsUpdate = true;
+      bokeh.render = (r, writeBuffer, readBuffer) => {
+        const u = bokeh.uniforms; u.tDepth.value = readBuffer.depthTexture; u.tColor.value = readBuffer.texture; u.nearClip.value = camera.near; u.farClip.value = camera.far;
+        const oldAuto = r.autoClear; r.autoClear = false;
+        r.setRenderTarget(bokeh.renderToScreen ? null : writeBuffer); if (!bokeh.renderToScreen) r.clear();
+        bokeh._fsQuad.render(r); r.autoClear = oldAuto;
+      };
+    } else bokeh.render = (...a) => { const hidden = []; scene.traverse((o) => { if (o.visible && isFlat(o)) { o.visible = false; hidden.push(o); } }); try { bokehRender(...a); } finally { for (const o of hidden) o.visible = true; } };
     composer.addPass(bokeh);
   }
   let smaa = null;
@@ -96,7 +115,7 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     get skyView() { return skyView; },
     // Draw another scene (a world's surface) through the same passes.
     setScene(sc) { for (const p of composer.passes) if ('scene' in p) p.scene = sc; },
-    setSize(w, h, pr) { composer.setPixelRatio(pr); composer.setSize(w, h); if (gtao) gtao.setSize(w * pr, h * pr); },
+    setSize(w, h, pr) { composer.setPixelRatio(pr); composer.setSize(w, h); if (gtao) gtao.setSize(Math.max(1, Math.round(w * pr * aoScale)), Math.max(1, Math.round(h * pr * aoScale))); },
     // Night makes the windows and lamps the brightest things on screen: a little more bloom.
     // (Never down to the stars' brightness: STAR_PEAK in environment.js.)
     setNight(n) { if (bloom) { bloom.strength = (0.22 + n * 0.35) * (skyView ? 0.5 : 1); bloom.threshold = Math.max(STAR_BLOOM_FLOOR, 0.95 - n * 0.2); } },
