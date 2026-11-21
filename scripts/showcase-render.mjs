@@ -378,7 +378,7 @@ async function renderShot(browser, origin, shot, opts, log) {
     const info = await page.evaluate(() => window.showcase.info());
     checkShowcaseFrame(info, opts);
     if (i === first) { infos.first = info; log(`${shot.id}: ${diagLine(info)}`); }
-    if (i === lastF) infos.lastF = info;
+    if (i === lastF) infos.last = info;
     if (i === first || (i + 1) % 15 === 0 || i === lastF) log(`${shot.id}: frame ${i + 1}/${total} (${((Date.now() - t0) / 1000 / (i - first + 1)).toFixed(1)} s a frame)`);
   }
   await ctx.close();

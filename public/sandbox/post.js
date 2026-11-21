@@ -138,7 +138,7 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     // Night makes the windows and lamps the brightest things on screen: a little more bloom.
     // (Never down to the stars' brightness: STAR_PEAK in environment.js.)
     // Showcase: bloom on lights only (a high threshold), a little stronger.
-    setNight(n) { if (bloom) { bloom.strength = (0.22 + n * 0.35) * (skyView ? 0.5 : 1) * (settings.grade ? 1.25 : 1); bloom.threshold = settings.grade ? 0.97 : Math.max(STAR_BLOOM_FLOOR, 0.95 - n * 0.2); bloom.radius = settings.grade ? 0.6 : 0.45; } },
+    setNight(n) { if (bloom) { bloom.strength = (0.22 + n * 0.35) * (skyView ? 0.5 : 1); bloom.threshold = Math.max(STAR_BLOOM_FLOOR, 0.95 - n * 0.2); if (settings.grade) { bloom.strength *= 1.25; bloom.threshold = 0.97; bloom.radius = 0.6; } } },
     dispose() { for (const p of composer.passes) if (p.dispose) p.dispose(); composer.dispose(); }
   };
 }

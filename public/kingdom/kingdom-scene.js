@@ -169,7 +169,7 @@ export function kingdomShowcaseSettings({ coarse = false } = {}) {
   if (coarse) return null;
   const c = kingdomSettings('cinematic', { coarse: false });
   const S = SHOWCASE_SETTINGS;
-  return Object.freeze({ ...c, shadows: S.shadowMapSize, post: Object.freeze({ aa: 'taa', taaSamples: S.taaSamples, settle: true, bloom: true, gtao: true, gtaoSamples: S.gtaoSamples, gtaoScale: 1, dof: true, grade: 'night' }), fogScale: S.fogScale, targetFps: S.targetFps, pixelRatio: S.pixelRatio, renderScale: false, profile: SHOWCASE, ease: S.ease });
+  return Object.freeze({ ...c, shadows: S.shadowMapSize, post: Object.freeze({ aa: 'taa', taaSamples: S.taaSamples, settle: true, bloom: true, gtao: true, gtaoSamples: S.gtaoSamples, gtaoScale: 1, dof: true, grade: 'night' }), fogScale: 0.45, targetFps: S.targetFps, pixelRatio: S.pixelRatio, renderScale: false, profile: SHOWCASE, ease: S.ease });
 }
 
 // Height fog: the scene's exponential fog, thicker low down (blue hour),

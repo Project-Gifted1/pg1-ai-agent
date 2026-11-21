@@ -18,6 +18,10 @@ import { createWaterMaterial } from './water.js';
 import { applyTerrain } from './materials.js';
 import { roadMesh, roadCells } from './road-graph.js';
 
+// The offline Showcase (quality.js SHOWCASE_SETTINGS, never a tier): fog at
+// less than half its live density, so it only softens the distance.
+const SHOWCASE_FOG = 0.45;
+
 const SKY_VERT = `
 varying vec3 vDir;
 void main() {
@@ -723,7 +727,7 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
       // Mist, rain and snow close the distance in (only near the ground).
       const low = 1 - smooth(200, 2500, Math.max(cameraAlt, camera.position.y));
       scene.fog.density += (W.fog * 0.0026 + W.rain * 0.00045 + W.snow * 0.0006) * wk * low;
-      scene.fog.density *= qual.fogScale || 1;
+      if (qual.offline) scene.fog.density *= SHOWCASE_FOG;
       if (W.dark > 0.01 || W.fog > 0.01) { const sg = 1 - W.dark * 0.45; scene.fog.color.lerp(tmpCol.setRGB(lerp(0.06, 0.6, day) * sg, lerp(0.065, 0.63, day) * sg, lerp(0.08, 0.66, day) * sg), Math.min(1, (W.dark + W.fog * 0.6) * wk)); }
     }
     // Water ripples and drifting clouds.

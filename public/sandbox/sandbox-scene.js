@@ -1120,7 +1120,9 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   // when that is not enough does the governor step the tier down (which
   // rebuilds the view). A Pixel-class phone keeps High's look.
   const renderScale = createRenderScale({ budgetMs: (1000 / targetFps) * 1.15, min: coarse && tier !== 'cinematic' ? 0.65 : 0.5, onChange: (sc) => { container.dataset.renderScale = String(sc); resize(); } });
-  const scaling = () => !offline && (tier === 'cinematic' || recording || coarse);
+  const scaling = () => tier === 'cinematic' || recording || coarse;
+  // Showcase: every frame at full size, whatever it costs (the scale never moves from 1).
+  if (offline) renderScale.sample = () => {};
   let fullShot = false;
   function resize() {
     const r = container.getBoundingClientRect();
@@ -1479,7 +1481,9 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
     // Depth of field only on something nearby that the camera follows;
     // otherwise everything is in focus (null).
     const followNear = selectedId && (mode === 'follow' || mode === 'tour') && controls.dist < FOCUS_NEAR;
-    if (post && post.setFocus) post.setFocus(showcasePose ? (showcasePose.focus === null ? null : showcasePose.focus || controls.dist) : followNear ? controls.dist : null);
+    // Showcase: the pose's own focus (null: everything sharp).
+    if (post && post.setFocus && showcasePose) post.setFocus(showcasePose.focus === null ? null : showcasePose.focus || controls.dist);
+    else if (post && post.setFocus) post.setFocus(followNear ? controls.dist : null);
 
     // The marker and label over what is picked.
     if (selectedId && marker.visible) {

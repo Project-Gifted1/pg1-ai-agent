@@ -154,7 +154,7 @@ export const SHOWCASE_SETTINGS = Object.freeze({
   pixelRatio: 1, cascades: 4, shadowMapSize: 4096, gtao: true, gtaoSamples: 32, gtaoScale: 1,
   bloom: true, aa: 'taa', taaSamples: 4, settle: true, water: true, reflect: 'planar', dof: true,
   grass: 1.6, forest: 1.4, foliage: 120000, foliageRadius: 95, lod: 160, targetFps: 30, ease: 1.6,
-  offline: true, grade: 'day', fogScale: 0.45
+  offline: true, grade: 'day'
 });
 export function showcaseSettings({ coarse = false } = {}) {
   return coarse ? null : SHOWCASE_SETTINGS;
