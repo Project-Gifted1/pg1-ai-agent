@@ -27,7 +27,7 @@ void main() {
   gl_Position.z = gl_Position.w; // always behind everything
 }`;
 const SKY_FRAG = `
-uniform vec3 uTop; uniform vec3 uHorizon; uniform vec3 uGround; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uSpace;
+uniform vec3 uTop; uniform vec3 uHorizon; uniform vec3 uGround; uniform vec3 uSunDir; uniform vec3 uSunColor; uniform float uSpace; uniform float uAlpha;
 varying vec3 vDir;
 void main() {
   float h = vDir.y;
@@ -35,7 +35,7 @@ void main() {
   float s = max(dot(vDir, normalize(uSunDir)), 0.0);
   col += uSunColor * (pow(s, 900.0) * 6.0 + pow(s, 24.0) * 0.35 + pow(s, 4.0) * 0.12);
   col = mix(col, vec3(0.0, 0.0, 0.004) + uSunColor * pow(s, 1200.0) * 8.0, uSpace);
-  gl_FragColor = vec4(col, 1.0);
+  gl_FragColor = vec4(col, uAlpha);
 }`;
 
 // Stars and the galaxy band: at least STAR_PX (CSS) pixels across, and no
@@ -43,6 +43,30 @@ void main() {
 // smears them).
 export const STAR_PX = 2;
 export const STAR_PEAK = 0.85;
+// The brightest stars are this many times STAR_PX across (a few; most are small).
+export const STAR_MAX_K = 1.9;
+
+// Round, soft-edged stars (a point sprite shaded as a disc with a bright
+// core), sized per star in CSS pixels times the render's pixel ratio, so they
+// stay crisp and round on a sharp phone screen instead of square blocks.
+// `opacity` is the material's own (set by the sky each frame).
+export function makeStarMaterial(THREE) {
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uOpacity: { value: 0 }, uScale: { value: 1 } },
+    vertexShader: `attribute float aSize; attribute vec3 aColor; uniform float uScale; varying vec3 vColor; varying float vEdge;
+void main() { vColor = aColor; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); float px = aSize * uScale; gl_PointSize = px + 1.5; vEdge = px / (px + 1.5); }`,
+    fragmentShader: `uniform float uOpacity; varying vec3 vColor; varying float vEdge;
+void main() { float r = length(gl_PointCoord - 0.5) * 2.0; float a = 1.0 - smoothstep(vEdge * 0.55, vEdge, r); if (a <= 0.0) discard; float core = exp(-r * r * 5.0); gl_FragColor = vec4(vColor * (0.7 + 0.3 * core), a * uOpacity);
+#include <tonemapping_fragment>
+#include <colorspace_fragment>
+}`,
+    transparent: true, depthWrite: false, fog: false
+  });
+  mat.onBeforeRender = (renderer) => { mat.uniforms.uOpacity.value = mat.opacity; mat.uniforms.uScale.value = renderer.getPixelRatio(); };
+  return mat;
+}
+// Per star: a size in CSS pixels from its brightness t (0 faint .. 1 bright).
+export const starSize = (t, min = STAR_PX) => min * (1 + (STAR_MAX_K - 1) * Math.pow(t, 3));
 // What the sea reflects, and looks like, seen from space: dark, deep blue.
 export const SPACE_SEA_SKY = Object.freeze({ r: 0.0, g: 0.004, b: 0.012, isColor: true });
 export const SPACE_SEA = Object.freeze({ r: 0.01, g: 0.05, b: 0.12, isColor: true });
@@ -97,7 +121,11 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     uTop: { value: new THREE.Color('#2a6fd6') }, uHorizon: { value: new THREE.Color('#bcd9f2') }, uGround: { value: new THREE.Color('#5b6b52') },
     uSunDir: { value: new THREE.Vector3(0.3, 0.8, 0.2) }, uSunColor: { value: new THREE.Color('#fff2d6') }, uSpace: { value: 0 }
   };
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), new THREE.ShaderMaterial({ vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, uniforms: skyU, side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false }));
+  skyU.uAlpha = { value: 1 };
+  // Opaque on its own; over the physical sky (Medium and up) it is the overcast, faded in by the cloud.
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 16), new THREE.ShaderMaterial({ vertexShader: SKY_VERT, fragmentShader: SKY_FRAG, uniforms: skyU, side: THREE.BackSide, depthWrite: false, depthTest: false, fog: false, transparent: false, blending: THREE.CustomBlending, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor }));
+  // (Kept in the opaque pass, drawn first by its render order, with alpha blending: a
+  // transparent sky would be drawn after everything, over the whole scene.)
   sky.frustumCulled = false;
   sky.renderOrder = -10;
   sky.scale.setScalar(1000);
@@ -127,7 +155,7 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
   // Stars: visible at night and in space.
   const starGeo = new THREE.BufferGeometry();
   const N = coarse ? 1500 : 3500;
-  const sp = new Float32Array(N * 3); const sc = new Float32Array(N * 3);
+  const sp = new Float32Array(N * 3); const sc = new Float32Array(N * 3); const ss = new Float32Array(N);
   let s = 12345;
   const r = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
   for (let i = 0; i < N; i++) {
@@ -136,12 +164,17 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     const t = r(); const c = new THREE.Color().setHSL(0.55 + t * 0.15, 0.4 * t, 0.7 + r() * 0.3);
     // Just under bloom's threshold (post.js STAR_BLOOM_FLOOR): crisp points, no glow smear.
     const k = STAR_PEAK / Math.max(c.r, c.g, c.b, STAR_PEAK);
-    sc[i * 3] = c.r * k; sc[i * 3 + 1] = c.g * k; sc[i * 3 + 2] = c.b * k;
+    // Brighter stars are bigger and whiter; most are faint.
+    const mag = r();
+    const dim = 0.55 + 0.45 * mag;
+    sc[i * 3] = c.r * k * dim; sc[i * 3 + 1] = c.g * k * dim; sc[i * 3 + 2] = c.b * k * dim;
+    ss[i] = starSize(mag, coarse ? STAR_PX + 0.25 : STAR_PX);
   }
   starGeo.setAttribute('position', new THREE.BufferAttribute(sp, 3));
-  starGeo.setAttribute('color', new THREE.BufferAttribute(sc, 3));
+  starGeo.setAttribute('aColor', new THREE.BufferAttribute(sc, 3));
+  starGeo.setAttribute('aSize', new THREE.BufferAttribute(ss, 1));
   // At least STAR_PX pixels across: smaller points shimmer and vanish under anti-aliasing.
-  const starMat = new THREE.PointsMaterial({ size: coarse ? STAR_PX + 0.5 : STAR_PX, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: false });
+  const starMat = makeStarMaterial(THREE); starMat.opacity = 0;
   const stars = new THREE.Points(starGeo, starMat);
   stars.frustumCulled = false;
   stars.renderOrder = -9;
@@ -154,7 +187,7 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
   const galaxy = new THREE.Group();
   {
     const n = coarse ? 5000 : 12000;
-    const gp = new Float32Array(n * 3); const gc = new Float32Array(n * 3);
+    const gp = new Float32Array(n * 3); const gc = new Float32Array(n * 3); const gs = new Float32Array(n);
     const tilt = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(1.05, 0.4, 0.2));
     const v = new THREE.Vector3(); const col = new THREE.Color();
     const gauss = () => (r() + r() + r() + r() - 2) / 2;
@@ -165,10 +198,12 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
       col.setHSL(0.08 + r() * 0.55, 0.25 + r() * 0.25, 0.55 + r() * 0.35);
       const kk = STAR_PEAK / Math.max(col.r, col.g, col.b, STAR_PEAK);
       gc[i * 3] = col.r * kk; gc[i * 3 + 1] = col.g * kk; gc[i * 3 + 2] = col.b * kk;
+      gs[i] = STAR_PX * (1 + r() * 0.25);
     }
     const gg = new THREE.BufferGeometry();
-    gg.setAttribute('position', new THREE.BufferAttribute(gp, 3)); gg.setAttribute('color', new THREE.BufferAttribute(gc, 3));
-    const band = new THREE.Points(gg, new THREE.PointsMaterial({ size: STAR_PX, sizeAttenuation: false, vertexColors: true, transparent: true, opacity: 0, depthWrite: false, fog: false }));
+    gg.setAttribute('position', new THREE.BufferAttribute(gp, 3)); gg.setAttribute('aColor', new THREE.BufferAttribute(gc, 3)); gg.setAttribute('aSize', new THREE.BufferAttribute(gs, 1));
+    const bandMat = makeStarMaterial(THREE); bandMat.opacity = 0;
+    const band = new THREE.Points(gg, bandMat);
     band.frustumCulled = false;
     galaxy.add(band);
     // Nebulae: soft sprites along the band.
@@ -263,6 +298,10 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     }
   };
 
+  // The weather over where the camera looks (weather.js, eased by the
+  // scene): it dims the sun, greys the sky, thickens the cloud and haze.
+  // flash: a lightning flash (0..1), decaying in the scene.
+  env.weather = { cloud: 0.08, rain: 0, snow: 0, wind: 0.15, fog: 0, dark: 0, flash: 0 };
   env.sky = sky; env.sky2 = sky2; env.stars = stars; env.sun = sun; env.hemi = hemi; env.moonLight = moonLight; env.skyU = skyU;
   env.ground = null; env.lakes = []; env.clouds = null; env.grass = null; env.forest = null; env.roads = null;
 
@@ -582,7 +621,7 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
 
   // Time of day (0..1, 0.5 is noon) and the camera's altitude in metres
   // with the space altitude: sets the sky, lights, fog and stars.
-  const tmp = new THREE.Vector3();
+  const tmp = new THREE.Vector3(); const tmpCol = new THREE.Color(); const tmpCol2 = new THREE.Color();
   env.update = ({ dayFraction, cameraAlt, spaceAlt, camera, target, shadowSpan, dt }) => {
     const a = (dayFraction - 0.25) * Math.PI * 2;                    // sunrise at 0.25
     const sunDir = tmp.set(Math.cos(a) * 0.9, Math.sin(a), 0.35).normalize();
@@ -615,10 +654,29 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
     galaxy.visible = starMat.opacity > 0.01;
     sun.intensity = lerp(0.0, 2.1, day) * (1 - dusk * 0.35) + sp * 1.6;
     sun.color.setRGB(1, lerp(0.6, 0.96, day), lerp(0.4, 0.88, day));
-    hemi.intensity = lerp(0.12, 0.62, day) + sp * 0.1;
-    hemi.color.setRGB(lerp(0.25, 0.8, day), lerp(0.3, 0.9, day), lerp(0.6, 1, day));
+    // A moonlit night: blue and dim, but land, sea and buildings still read apart on a phone.
+    hemi.intensity = lerp(0.2, 0.62, day) + sp * 0.1;
+    hemi.color.setRGB(lerp(0.3, 0.8, day), lerp(0.38, 0.9, day), lerp(0.72, 1, day));
     hemi.groundColor.setRGB(lerp(0.05, 0.29, day), lerp(0.06, 0.35, day), lerp(0.1, 0.23, day));
-    moonLight.intensity = env.night * 0.3 * (1 - sp);
+    moonLight.intensity = env.night * 0.45 * (1 - sp);
+    // The weather (none in space): less sun under cloud, a greyer sky, a
+    // flash of lightning lighting everything for a moment.
+    const W = env.weather; const wk = 1 - sp;
+    // Cloud hides the stars and the galaxy (from below, not from space).
+    if (W.cloud > 0.3 && wk > 0) { const ck = 1 - Math.min(1, (W.cloud - 0.3) * 1.5) * wk; starMat.opacity *= ck; for (const o of galaxy.children) o.material.opacity *= ck; galaxy.visible = starMat.opacity > 0.01; }
+    const dim = 1 - W.dark * 0.85 * wk;
+    sun.intensity *= dim; moonLight.intensity *= 1 - W.dark * 0.6 * wk;
+    hemi.intensity = hemi.intensity * (1 - W.dark * 0.4 * wk) + W.flash * 2.2 * wk;
+    if (W.dark > 0.01 && wk > 0) {
+      const g = W.dark * 0.8 * wk; const grey = lerp(0.05, 0.56, day);
+      skyU.uTop.value.lerp(tmpCol.setRGB(grey * 0.92, grey * 0.95, grey), g);
+      skyU.uHorizon.value.lerp(tmpCol.setRGB(grey * 1.05, grey * 1.07, grey * 1.1), g);
+      skyU.uSunColor.value.multiplyScalar(1 - W.dark * 0.8 * wk);
+    }
+    // The sky's own light (image-based, Medium and up) dims under cloud too.
+    scene.environmentIntensity = 1 - W.dark * 0.7 * wk;
+    if (sky2) { sky.renderOrder = -9.5; skyU.uAlpha.value = Math.min(1, W.dark * 1.3 * wk); sky.visible = skyU.uAlpha.value > 0.02; }
+    if (sky2) { const u = sky2.material.uniforms; if (u.turbidity) u.turbidity.value = 2 + W.dark * 14 * wk; if (u.rayleigh) u.rayleigh.value = 1.2 - W.dark * 0.8 * wk; if (u.mieCoefficient) u.mieCoefficient.value = 0.005 + W.fog * 0.03 * wk; }
     if (csm) {
       // The cascades carry the sunlight; the plain sun stays dark.
       csm.lightDirection.copy(sunDir).negate();
@@ -642,6 +700,10 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
       // Haze thins as the camera climbs (its real height: a high overview of
       // the islands should read clearly, not through a wall of fog).
       scene.fog.density = 0.00009 * (1 - sp) * (1 - smooth(300, 5000, Math.max(cameraAlt, camera.position.y)) * 0.85) + 0.0000004;
+      // Mist, rain and snow close the distance in (only near the ground).
+      const low = 1 - smooth(200, 2500, Math.max(cameraAlt, camera.position.y));
+      scene.fog.density += (W.fog * 0.0026 + W.rain * 0.00045 + W.snow * 0.0006) * wk * low;
+      if (W.dark > 0.01 || W.fog > 0.01) { const sg = 1 - W.dark * 0.45; scene.fog.color.lerp(tmpCol.setRGB(lerp(0.06, 0.6, day) * sg, lerp(0.065, 0.63, day) * sg, lerp(0.08, 0.66, day) * sg), Math.min(1, (W.dark + W.fog * 0.6) * wk)); }
     }
     // Water ripples and drifting clouds.
     const t = performance.now() / 1000;
@@ -656,18 +718,22 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
         u.uZenith.value.copy(skyU.uTop.value).lerp(SPACE_SEA_SKY, sp); u.uHorizon.value.copy(skyU.uHorizon.value).lerp(SPACE_SEA_SKY, sp);
         u.uDeep.value.setRGB(lerp(0.005, 0.03, day), lerp(0.01, 0.17, day), lerp(0.03, 0.27, day));
         u.uShallow.value.setRGB(lerp(0.01, 0.12, day), lerp(0.03, 0.58, day), lerp(0.05, 0.6, day));
+        if (W.dark > 0.01) { const wd = 1 - W.dark * 0.5 * wk; u.uDeep.value.multiplyScalar(wd); u.uShallow.value.lerp(u.uDeep.value, W.dark * 0.5 * wk).multiplyScalar(wd); }
         continue;
       }
-      if (w.userData.sea) { w.material.color.setRGB(lerp(0.03, 0.12, day), lerp(0.07, 0.43, day), lerp(0.14, 0.62, day)).lerp(SPACE_SEA, sp); continue; }
+      // Under cloud the sea goes grey-green and darker (it reflects the sky).
+      if (w.userData.sea) { w.material.color.setRGB(lerp(0.03, 0.12, day), lerp(0.07, 0.43, day), lerp(0.14, 0.62, day)).lerp(tmpCol2.setRGB(lerp(0.03, 0.22, day), lerp(0.04, 0.27, day), lerp(0.05, 0.29, day)), W.dark * 0.8 * wk).lerp(SPACE_SEA, sp); continue; }
       const p = w.geometry.attributes.position; const b = w.userData.base;
       for (let i = 0; i < p.count; i++) p.array[i * 3 + 1] = Math.sin(b[i * 3] * 0.05 + t * 1.3) * 0.12 + Math.cos(b[i * 3 + 2] * 0.07 + t) * 0.1;
       p.needsUpdate = true;
-      w.material.color.setRGB(lerp(0.03, 0.18, day), lerp(0.08, 0.5, day), lerp(0.15, 0.69, day));
+      w.material.color.setRGB(lerp(0.03, 0.18, day), lerp(0.08, 0.5, day), lerp(0.15, 0.69, day)).multiplyScalar(1 - W.dark * 0.45 * wk);
     }
     if (env.clouds) {
-      for (const cl of env.clouds.children) { cl.position.x += cl.userData.speed * dt; if (cl.position.x > env.span * 1.2) cl.position.x = -env.span * 1.2; }
+      // Wind drives them; the cover decides how many there are; rain greys them.
+      const n = env.clouds.children.length; const windK = 0.5 + W.wind * 3;
+      env.clouds.children.forEach((cl, i) => { cl.position.x += cl.userData.speed * windK * dt; if (cl.position.x > env.span * 1.2) cl.position.x = -env.span * 1.2; cl.visible = i < Math.max(2, Math.round(n * (0.25 + W.cloud * 0.75))); });
       const cm = env.clouds.children[0] && env.clouds.children[0].children[0] && env.clouds.children[0].children[0].material;
-      if (cm) { cm.color.setRGB(lerp(0.2, 1, day) + dusk * 0.2, lerp(0.22, 1, day), lerp(0.3, 1, day) - dusk * 0.1); cm.opacity = 0.9 * (1 - sp); }
+      if (cm) { const gk = 1 - W.dark * 0.55; cm.color.setRGB((lerp(0.2, 1, day) + dusk * 0.2) * gk, lerp(0.22, 1, day) * gk, (lerp(0.3, 1, day) - dusk * 0.1) * gk); cm.opacity = 0.9 * (1 - sp); }
     }
     updateIbl(sunDir, sp);
     // With the sky's own light in the materials, the flat fill light is halved.

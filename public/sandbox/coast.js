@@ -89,7 +89,9 @@ export function buildCoast(THREE, islands, { seed = 1, heightAt = () => 0, setup
   }
   let stones = null;
   if (pebbles.length) {
-    const geo = new THREE.IcosahedronGeometry(1, 1);
+    // A phone: 20 triangles a stone instead of 80 (they are at most 1.5 m
+    // across, a few pixels on a phone screen; thousands line the coasts).
+    const geo = new THREE.IcosahedronGeometry(1, coarse ? 0 : 1);
     const p = geo.attributes.position;
     for (let i = 0; i < p.count; i++) { const y = p.getY(i); p.setY(i, y * (y > 0 ? 0.45 : 0.25)); }
     geo.computeVertexNormals();

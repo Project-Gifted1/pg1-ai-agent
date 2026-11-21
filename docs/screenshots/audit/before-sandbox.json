@@ -1,0 +1,124 @@
+{
+  "tag": "before",
+  "at": "2026-11-21T02:57:36.836Z",
+  "renderer": "SwiftShader (software)",
+  "viewport": {
+    "width": 360,
+    "height": 800
+  },
+  "sandbox": {
+    "low": {
+      "tierShown": "low",
+      "overview": {
+        "msPerFrame": 64,
+        "fps": 15.7,
+        "glDrawCalls": 78
+      },
+      "space": {
+        "msPerFrame": 48,
+        "fps": 21,
+        "glDrawCalls": 63
+      },
+      "planet": {
+        "msPerFrame": 52,
+        "fps": 19.1,
+        "glDrawCalls": 58
+      },
+      "ground": {
+        "msPerFrame": 47,
+        "fps": 21.2,
+        "glDrawCalls": 38
+      },
+      "night": {
+        "msPerFrame": 48,
+        "fps": 20.6,
+        "glDrawCalls": 42
+      },
+      "beninOverview": {
+        "msPerFrame": 75,
+        "fps": 13.3,
+        "glDrawCalls": 38
+      },
+      "ui": {
+        "overflowX": false
+      },
+      "errors": []
+    },
+    "medium": {
+      "tierShown": "medium",
+      "overview": {
+        "msPerFrame": 250,
+        "fps": 4,
+        "glDrawCalls": 88
+      },
+      "space": {
+        "msPerFrame": 206,
+        "fps": 4.9,
+        "glDrawCalls": 86
+      },
+      "planet": {
+        "msPerFrame": 205,
+        "fps": 4.9,
+        "glDrawCalls": 75
+      },
+      "ground": {
+        "msPerFrame": 257,
+        "fps": 3.9,
+        "glDrawCalls": 85
+      },
+      "night": {
+        "msPerFrame": 257,
+        "fps": 3.9,
+        "glDrawCalls": 58
+      },
+      "beninOverview": {
+        "msPerFrame": 158,
+        "fps": 6.3,
+        "glDrawCalls": 51
+      },
+      "ui": {
+        "overflowX": false
+      },
+      "errors": []
+    },
+    "high": {
+      "tierShown": "high",
+      "overview": {
+        "msPerFrame": 540,
+        "fps": 1.9,
+        "glDrawCalls": 158
+      },
+      "space": {
+        "msPerFrame": 456,
+        "fps": 2.2,
+        "glDrawCalls": 118
+      },
+      "planet": {
+        "msPerFrame": 443,
+        "fps": 2.3,
+        "glDrawCalls": 101
+      },
+      "ground": {
+        "msPerFrame": 479,
+        "fps": 2.1,
+        "glDrawCalls": 138
+      },
+      "night": {
+        "msPerFrame": 459,
+        "fps": 2.2,
+        "glDrawCalls": 93
+      },
+      "beninOverview": {
+        "msPerFrame": 357,
+        "fps": 2.8,
+        "glDrawCalls": 102
+      },
+      "ui": {
+        "overflowX": false
+      },
+      "errors": []
+    }
+  },
+  "city": {},
+  "errors": []
+}
