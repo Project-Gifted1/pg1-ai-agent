@@ -8,8 +8,11 @@
 //   node scripts/build-showcase-models.mjs
 //
 //   canoe.glb  a carved dugout canoe (Benin–Warri c. 1610): one trunk, a
-//              raised carved prow and stern, a rim, thwarts, and three
-//              paddlers in wrappers with leaf-bladed paddles. Length along x
+//              raised carved prow and stern, a rim, thwarts, three paddlers
+//              in wrappers with leaf-bladed paddles, and its cargo: fresh
+//              fish in a basket, salt cakes, a coiled net (sourced: fishing
+//              and the fish and salt trade by canoe, N1 and W14 in
+//              docs/sandbox-benin-warri.md). Length along x
 //              (7.4 m), waterline at y = 0. Nodes: hull, paddlers.
 //   car.glb    a saloon car for PG1 City: body (vertex coloured: paint white
 //              so the instance colour shows, tyres and trim dark), glass, lamps.
@@ -78,10 +81,12 @@ const BUILD = async () => {
   carving.name = 'carving';
   // Paddlers: kneeling, paddle in the water on alternate sides.
   function paddler(x, side, wrap) {
-    const skin = '#4a2e1f'; const p = [];
+    const skin = '#7a4c33'; const p = [];
     p.push(colour(at(new THREE.CylinderGeometry(0.17, 0.2, 0.32, 12), x, 0.62, 0), wrap));                 // wrapper round the hips
     p.push(colour(at(new THREE.CapsuleGeometry(0.15, 0.34, 4, 10), x + 0.04, 0.98, 0, 0, 0, -0.15), skin)); // torso
-    p.push(colour(at(new THREE.SphereGeometry(0.11, 12, 10), x + 0.1, 1.33, 0), skin));                      // head
+    p.push(colour(at(new THREE.SphereGeometry(0.105, 16, 12), x + 0.1, 1.33, 0, 0, 0, 0, [1, 1.12, 0.95]), skin)); // head
+    p.push(colour(at(new THREE.SphereGeometry(0.108, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.42), x + 0.09, 1.345, 0), '#1c1410')); // short hair
+    p.push(colour(at(new THREE.CylinderGeometry(0.045, 0.05, 0.08, 8), x + 0.08, 1.2, 0), skin));                // neck
     p.push(colour(at(new THREE.CapsuleGeometry(0.075, 0.42, 3, 8), x - 0.14, 0.5, side * 0.12, 0, 0, Math.PI / 2), wrap)); // legs, kneeling
     const ax = x + 0.2; const handY = 1.0;
     p.push(colour(at(new THREE.CapsuleGeometry(0.045, 0.34, 3, 6), ax, handY + 0.12, side * 0.18, side * 0.6, 0, 0.5), skin));
@@ -93,9 +98,27 @@ const BUILD = async () => {
     p.push(paddle);
     return p;
   }
+  // The cargo (docs/sandbox-benin-warri.md N1, W14: fishing and trade in fish
+  // and salt by canoe): a basket of fresh fish, salt cakes in a basket, a coiled net.
+  const cargo = [];
+  cargo.push(colour(at(new THREE.CylinderGeometry(0.34, 0.26, 0.26, 16, 1, true), -0.75, 0.42, 0), '#a8844a'));
+  cargo.push(colour(at(new THREE.TorusGeometry(0.34, 0.025, 6, 20), -0.75, 0.55, 0, Math.PI / 2), '#8a6a38'));
+  for (let i = 0; i < 9; i++) {
+    const a = i * 2.39; const r = 0.08 + (i % 3) * 0.07;
+    const fish = at(new THREE.SphereGeometry(0.06, 10, 8), 0, 0, 0, 0, 0, 0, [3.2, 0.8, 1.1]);
+    const tail = at(new THREE.ConeGeometry(0.05, 0.1, 4), -0.22, 0, 0, 0, 0, Math.PI / 2, [1, 1, 0.3]);
+    const f = mergeGeometries([prep(colour(fish, i % 2 ? '#aeb6ba' : '#8f9a9f')), prep(colour(tail, '#6f7a80'))]);
+    f.rotateY(a); f.rotateX(0.25 * (i % 2 ? 1 : -1)); f.translate(-0.75 + Math.cos(a) * r, 0.53 + (i % 3) * 0.035, Math.sin(a) * r * 0.8);
+    cargo.push(f);
+  }
+  cargo.push(colour(at(new THREE.CylinderGeometry(0.22, 0.18, 0.2, 14, 1, true), 1.05, 0.4, 0.05), '#b39056'));
+  for (let i = 0; i < 6; i++) cargo.push(colour(at(new THREE.CylinderGeometry(0.07, 0.07, 0.05, 10), 1.0 + (i % 3) * 0.06 - 0.06, 0.49 + Math.floor(i / 3) * 0.05, (i % 2 ? 0.06 : -0.06)), '#ece7dc'));
+  for (let i = 0; i < 5; i++) cargo.push(colour(at(new THREE.TorusGeometry(0.2 - i * 0.025, 0.018, 5, 18), 2.75, 0.4 + i * 0.03, 0, Math.PI / 2), '#8d7b5a'));
+  const load = new THREE.Mesh(merge(cargo), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.05 }));
+  load.name = 'cargo';
   const people = new THREE.Mesh(merge([...paddler(-1.6, 1, '#e8e0cc'), ...paddler(0.2, -1, '#2c3e6b'), ...paddler(1.9, 1, '#9b2c22')]), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 }));
   people.name = 'paddlers';
-  const canoe = new THREE.Group(); canoe.name = 'canoe'; canoe.add(hull, carving, people);
+  const canoe = new THREE.Group(); canoe.name = 'canoe'; canoe.add(hull, carving, load, people);
 
   // --- the car ---
   function carBody() {

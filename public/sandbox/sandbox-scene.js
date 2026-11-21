@@ -1665,7 +1665,7 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
       const nav = typeof navigator !== 'undefined' ? navigator : {};
       return { canvas: [canvas.width, canvas.height], drawingBuffer: [gl.drawingBufferWidth, gl.drawingBufferHeight], css: [window.innerWidth, window.innerHeight], dpr: window.devicePixelRatio || 1, tier: offline ? SHOWCASE : tier, tierSource: offline ? SHOWCASE : tierSource, profile: offline ? SHOWCASE : null, coarse: !!coarse, renderScale: scaling() ? renderScale.scale : 1, settingsPixelRatio: settings.pixelRatio, rendererPixelRatio: renderer.getPixelRatio(), governor: governor.auto ? 'on' : 'off', probe: probeRun && !probeRun.done ? 'on' : 'off', deviceMemory: nav.deviceMemory || 0, cores: nav.hardwareConcurrency || 0, touchPoints: nav.maxTouchPoints || 0, webglRenderer: unmasked, programs: renderer.info.programs ? renderer.info.programs.length : 0, textures: renderer.info.memory.textures };
     })(),
-    worldEntities: (base) => world.entities.filter((e) => !base || e.base === base || e.kind === base).map((e) => ({ id: e.id, kind: e.kind, base: e.base, x: e.x, y: e.y, z: e.z, size: sizeOf(e.id), scene: (() => { const p = toScene(e, new THREE.Vector3()); return [p.x, p.y, p.z]; })() })),
+    worldEntities: (base) => world.entities.filter((e) => !base || e.base === base || e.kind === base).map((e) => ({ id: e.id, kind: e.kind, base: e.base, x: e.x, y: e.y, z: e.z, size: sizeOf(e.id), inside: !!(e.props && e.props.inside), scene: (() => { const p = toScene(e, new THREE.Vector3()); return [p.x, p.y, p.z]; })() })),
     groundAt: (x, z) => (env.heightAt ? env.heightAt(x, z) : 0),
     spaceAlt: () => world.spaceAlt,
     // Recording: no automatic quality changes (the page keeps the tier), the

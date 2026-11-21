@@ -5,7 +5,11 @@
 //
 //   node scripts/showcase-render.mjs [--shots city-night,city-rain,...]
 //        [--size 1080x1920] [--out showcase-out] [--frames N] [--warmup 40]
-//        [--gpu] [--keep-frames] [--jobs N]
+//        [--gpu] [--keep-frames] [--jobs N] [--range FIRST:LAST]
+//
+// --range renders only those frames of one shot (numbered as in the whole
+// shot, the clock moved on to the first), keeps them and does not encode:
+// several processes can share a long shot, then ffmpeg encodes the folder.
 //
 // --jobs N renders N shots at once, each in its own browser (software 3D
 // draws on one core per browser).
@@ -54,7 +58,7 @@ const PUBLIC_DIR = join(ROOT, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.css': 'text/css; charset=utf-8', '.bin': 'application/octet-stream', '.ktx2': 'application/octet-stream' };
 
 export function parseArgs(argv) {
-  const o = { shots: SHOTS.map((s) => s.id), width: 1080, height: 1920, out: join(ROOT, 'showcase-out'), frames: null, warmup: 40, gpu: false, keepFrames: false, fps: SHOWCASE_FPS, jobs: 1 };
+  const o = { shots: SHOTS.map((s) => s.id), width: 1080, height: 1920, out: join(ROOT, 'showcase-out'), frames: null, warmup: 40, gpu: false, keepFrames: false, fps: SHOWCASE_FPS, jobs: 1, range: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]; const v = () => argv[++i];
     if (a === '--shots') o.shots = v().split(',').map((x) => x.trim()).filter(Boolean);
@@ -64,6 +68,7 @@ export function parseArgs(argv) {
     else if (a === '--warmup') o.warmup = Math.max(0, Number(v()) | 0);
     else if (a === '--gpu') o.gpu = true;
     else if (a === '--jobs') o.jobs = Math.max(1, Number(v()) | 0);
+    else if (a === '--range') { const m = /^(\d+):(\d+)$/.exec(v()); if (!m || Number(m[1]) < 1 || Number(m[2]) < Number(m[1])) throw new Error('--range FIRST:LAST (1-based)'); o.range = [Number(m[1]), Number(m[2])]; }
     else if (a === '--keep-frames') o.keepFrames = true;
     else throw new Error(`unknown option ${a}`);
   }
@@ -282,16 +287,17 @@ async function sceneContext(page, shot) {
     const spaceAlt = await page.evaluate(() => window.showcase.spaceAlt());
     // People in a town square: the person nearest a fountain (or a cafe).
     const squares = [...await find('fountain'), ...await find('cafe'), ...await find('hotel')];
-    const people = (await find('person')).filter((p) => p.z < 5);
     const sq = squares[0] ? squares[0].scene : [0, 0, 0];
-    const who = people.length ? nearest(people, sq) : null;
+    const blocks = [...await find('house'), ...await find('apartment'), ...await find('hotel'), ...await find('shop'), ...await find('cafe'), ...await find('school'), ...await find('tower'), ...await find('office'), ...await find('cabin'), ...await find('hospital'), ...await find('station')];
+    // Someone outdoors (not inside a building or a vehicle), well clear of buildings, nearest the square.
+    const outdoors = (await find('person')).filter((p) => p.z < 5 && !p.inside && !blocks.some((b) => Math.hypot(b.scene[0] - p.scene[0], b.scene[2] - p.scene[2]) < 22));
+    const who = outdoors.length ? nearest(outdoors, sq) : null;
     const g = who ? who.e.scene : sq;
     // The closing angle with a clear line to them: no building between the camera and the person.
-    const blocks = [...await find('house'), ...await find('apartment'), ...await find('hotel'), ...await find('shop'), ...await find('cafe'), ...await find('school'), ...await find('tower'), ...await find('office')];
     let endTheta = 1.05; let best = -1;
     for (let k = 0; k < 24; k++) {
       const th = (k / 24) * Math.PI * 2; let clear = Infinity;
-      for (let d = 4; d <= 40; d += 3) { const px = g[0] + Math.sin(1.44) * Math.cos(th) * d; const pz = g[2] + Math.sin(1.44) * Math.sin(th) * d; for (const b of blocks) clear = Math.min(clear, Math.hypot(b.scene[0] - px, b.scene[2] - pz) - (b.size || 10) * 0.6); }
+      for (let d = 4; d <= 40; d += 3) { const px = g[0] + Math.sin(1.3) * Math.cos(th) * d; const pz = g[2] + Math.sin(1.3) * Math.sin(th) * d; for (const b of blocks) clear = Math.min(clear, Math.hypot(b.scene[0] - px, b.scene[2] - pz) - (b.size || 10) * 0.6); }
       if (clear > best) { best = clear; endTheta = th; }
     }
     return { spaceAlt, endTheta, ground: [g[0], Math.max(0, await page.evaluate(([x, z]) => window.showcase.groundAt(x, z), [g[0], g[2]])), g[2]] };
@@ -315,7 +321,8 @@ async function sceneContext(page, shot) {
 
 async function renderShot(browser, origin, shot, opts, log) {
   const dir = join(opts.out, shot.id); const framesDir = join(dir, 'frames');
-  rmSync(dir, { recursive: true, force: true }); mkdirSync(framesDir, { recursive: true });
+  if (!opts.range) rmSync(dir, { recursive: true, force: true });
+  mkdirSync(framesDir, { recursive: true });
   // A desktop viewport (fine pointer, no touch): never the phone settings.
   const ctx = await browser.newContext({ viewport: { width: opts.width, height: opts.height }, deviceScaleFactor: 1, isMobile: false, hasTouch: false, colorScheme: 'dark', reducedMotion: 'no-preference' });
   await ctx.addInitScript(CLOCK_SCRIPT);
@@ -358,18 +365,22 @@ async function renderShot(browser, origin, shot, opts, log) {
   if (overlays) throw new Error(`${shot.id}: ${overlays} overlay element(s) visible`);
   if (shot.scene === 'city') { const n = await page.evaluate(() => window.showcase.stage()); log(`${shot.id}: ${n} real event(s) staged`); }
   const t0 = Date.now(); const infos = {};
-  for (let i = 0; i < total; i++) {
+  const [first, lastF] = opts.range ? [opts.range[0] - 1, Math.min(total, opts.range[1]) - 1] : [0, total - 1];
+  // A range starts where the whole shot would be at its first frame.
+  if (first > 0) await page.evaluate((ms) => { for (let k = 0; k < ms / 100; k++) window.__showcase.advance(100); }, first * step);
+  for (let i = first; i <= lastF; i++) {
     const t = total > 1 ? i / (total - 1) : 0;
     await page.evaluate(([p, ms]) => { window.showcase.pose(p); window.__showcase.advance(ms); }, [poseAt(plan, t), step]);
     await page.screenshot({ path: join(framesDir, `${String(i + 1).padStart(5, '0')}.png`), type: 'png', timeout: 600000 });
-    // Every frame's settings are checked; the first and last are kept for the record.
+    // Every frame's settings are checked; the first and lastF are kept for the record.
     const info = await page.evaluate(() => window.showcase.info());
     checkShowcaseFrame(info, opts);
-    if (i === 0) { infos.first = info; log(`${shot.id}: ${diagLine(info)}`); }
-    if (i === total - 1) infos.last = info;
-    if (i === 0 || (i + 1) % 15 === 0 || i === total - 1) log(`${shot.id}: frame ${i + 1}/${total} (${((Date.now() - t0) / 1000 / (i + 1)).toFixed(1)} s a frame)`);
+    if (i === first) { infos.first = info; log(`${shot.id}: ${diagLine(info)}`); }
+    if (i === lastF) infos.lastF = info;
+    if (i === first || (i + 1) % 15 === 0 || i === lastF) log(`${shot.id}: frame ${i + 1}/${total} (${((Date.now() - t0) / 1000 / (i - first + 1)).toFixed(1)} s a frame)`);
   }
   await ctx.close();
+  if (opts.range) return { id: shot.id, title: shot.title, frames: lastF - first + 1, seconds: (lastF - first + 1) / opts.fps, mp4: null, still: null, errors, plan: { move: shot.move }, diagnostics: infos, range: [first + 1, lastF + 1] };
   // The still: two thirds into the shot (the move well under way).
   const stillIdx = Math.min(total, Math.max(1, Math.round(total * 0.66)));
   const still = join(opts.out, `${shot.id}.png`);
@@ -414,7 +425,7 @@ export async function main(argv = process.argv.slice(2)) {
     } finally { await browser.close(); }
   };
   try { await Promise.all(Array.from({ length: Math.min(opts.jobs, opts.shots.length) }, worker)); } finally { server.close(); }
-  const manifest = { generated_at: new Date().toISOString(), size: `${opts.width}x${opts.height}`, fps: opts.fps, profile: 'showcase', encoder: 'H.264 (libx264), -preset veryfast, CRF 18, yuv420p', shots: results.map((r) => ({ id: r.id, title: r.title, frames: r.frames, seconds: r.seconds, move: r.plan.move, data: data.sources[r.id === 'city-night' || r.id === 'city-rain' ? 'city' : r.id === 'deep-space' ? 'space' : r.id], mp4: r.mp4.slice(opts.out.length + 1), still: r.still.slice(opts.out.length + 1), page_errors: r.errors, diagnostics: r.diagnostics })) };
+  const manifest = { generated_at: new Date().toISOString(), size: `${opts.width}x${opts.height}`, fps: opts.fps, profile: 'showcase', encoder: 'H.264 (libx264), -preset veryfast, CRF 18, yuv420p', shots: results.map((r) => ({ id: r.id, title: r.title, frames: r.frames, seconds: r.seconds, move: r.plan.move, data: data.sources[r.id === 'city-night' || r.id === 'city-rain' ? 'city' : r.id === 'deep-space' ? 'space' : r.id], mp4: r.mp4 && r.mp4.slice(opts.out.length + 1), still: r.still && r.still.slice(opts.out.length + 1), range: r.range || null, page_errors: r.errors, diagnostics: r.diagnostics })) };
   writeFileSync(join(opts.out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   log(`done: ${readdirSync(opts.out).filter((f) => /\.(mp4|png)$/.test(f)).join(', ')}`);
   return manifest;

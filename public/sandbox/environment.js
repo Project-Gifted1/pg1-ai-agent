@@ -571,6 +571,23 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
       { const k = new Kit(THREE); k.cyl(0.14, 0.2, 7, 6, '#e8e4dc', 0, 3.5, 0); for (let i = 0; i < 5; i++) k.box(0.3, 0.05, 0.05, '#3e3e3e', 0.12, 1 + i * 1.2, 0, { ry: i }); for (const [x, y, z, r2] of [[0, 6.5, 0, 1.5], [0.7, 5.6, 0.4, 1.1], [-0.6, 5.2, -0.3, 1.0], [0.2, 7.6, 0.1, 1.0]]) k.ico(r2, 1, '#7cb342', x, y, z, { jitter: 0.3 }); kinds.push(k.build().body); }
       { const k = new Kit(THREE); k.cyl(0.45, 0.7, 3, 7, '#5d4037', 0, 1.5, 0); for (const [x, z] of [[1, 0], [-0.8, 0.6], [0, -0.9]]) k.cyl(0.15, 0.25, 2.2, 5, '#5d4037', x * 0.6, 3.4, z * 0.6, { rz: -x * 0.5, rx: z * 0.5 }); for (const [x, y, z, r2] of [[0, 5.6, 0, 3.0], [1.8, 5.0, 0.8, 2.2], [-1.7, 5.2, -0.6, 2.2], [0.4, 6.8, -1.2, 2.0], [-0.5, 6.4, 1.4, 1.9]]) k.ico(r2, 1, '#2e5e1f', x, y, z, { jitter: 0.35 }); kinds.push(k.build().body); }
     }
+    // A wholly tropical world (tropical land, and coasts with no temperate or
+    // cold land anywhere, as the Niger Delta of Benin–Warri c. 1610): no
+    // pines, birches or oaks there, but rainforest trees with buttressed
+    // trunks and high crowns, and oil palms (native to West Africa). The same
+    // number of trees, so the same cost.
+    const climates = new Set(islands.map((i) => i.climate || 'temperate'));
+    const allTropical = islands.length > 0 && climates.has('tropical') && !climates.has('temperate') && !climates.has('cold');
+    const tropicalAt = (x, z) => { if (!allTropical) return false; const { isl } = landEdge(x, z); return !isl || isl.climate === 'tropical' || isl.climate === 'maritime'; };
+    if (allTropical) {
+      kinds.length = 0;
+      { const k = new Kit(THREE); k.cyl(0.35, 0.55, 11, 7, '#6b5a48', 0, 5.5, 0); for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2 + 0.4; k.box(1.6, 1.8, 0.14, '#5e4e3e', Math.cos(a) * 0.7, 0.9, Math.sin(a) * 0.7, { ry: -a }); }
+        for (const [x, y, z, r2] of [[0, 11.5, 0, 3.4], [2.2, 10.8, 1.0, 2.6], [-2.1, 11.0, -0.8, 2.7], [0.6, 12.6, -1.6, 2.3], [-0.8, 12.2, 1.8, 2.2]]) k.ico(r2, 1, '#24502a', x, y, z, { jitter: 0.3, sy: 0.55 }); kinds.push(k.build().body); }
+      { const k = new Kit(THREE); for (let i = 0; i < 6; i++) k.cyl(0.32 - i * 0.015, 0.36 - i * 0.015, 1.1, 7, i % 2 ? '#7a6550' : '#6a5643', i * i * 0.02, 0.55 + i * 1.05, 0);
+        for (let i = 0; i < 10; i++) { const a = (i / 10) * Math.PI * 2; k.box(3.6, 0.06, 0.8, i % 2 ? '#3f7a32' : '#356b2b', 1.7 * Math.cos(a), 6.6 - (i % 3) * 0.2, 1.7 * Math.sin(a), { ry: -a, rz: -0.55 }); }
+        k.sphere(0.45, '#8a3b1a', 0.25, 6.0, 0.2); kinds.push(k.build().body); }
+      { const k = new Kit(THREE); k.cyl(0.3, 0.45, 4, 6, '#6d4c2f', 0, 2, 0); for (const [x, y, z, r2] of [[0, 5.2, 0, 2.8], [1.4, 4.8, 0.8, 2.0], [-1.3, 4.9, -0.7, 2.1]]) k.ico(r2, 1, '#2f5f27', x, y, z, { jitter: 0.35 }); kinds.push(k.build().body); }
+    }
     const forest = new THREE.Group();
     const fm = env.setupMaterial(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 }));
     const per = Math.max(1, Math.round(((coarse ? 900 : 2600) * 2 / kinds.length) * (qual.forest ?? 1)));   // the same number of trees, shared between the species
@@ -585,6 +602,7 @@ export function createEnvironment(THREE, scene, { coarse = false, quality = null
         const y = heightAt(x, z);
         if (y > 620 || (islands.length && (y < 0.15 || landEdge(x, z).edge < 70))) continue;
         if (lakes.some((l) => Math.hypot(x - l.sx, z - l.sz) < l.radius + 30) || onRoad(x, z) || near(x, z, 45)) continue;
+        if (allTropical && !tropicalAt(x, z)) continue;
         e.set(0, rr2() * Math.PI * 2, 0); q.setFromEuler(e);
         const k = 0.8 + rr2() * 0.9;
         m.compose(p3.set(x, y - 0.2, z), q, sc3.set(k, k * (0.85 + rr2() * 0.4), k));
