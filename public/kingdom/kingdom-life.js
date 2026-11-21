@@ -412,7 +412,12 @@ export function createLife(THREE, scene, world, settings) {
       let fi = 0; let di = 0;
       const umbShare = Math.min(0.85, rain * 1.2 + (wet > 0.5 ? 0.15 : 0));
       const put = (x, y, z, ry, seed) => {
-        set(figures, fi, x, y, z, ry);
+        // A step: the stride's phase from the distance walked (about 0.75 m a
+        // step), so a walker rises a little mid-stride and sways side to side
+        // in time with their pace, and someone standing still stands still.
+        const ph = (Math.abs(x) + Math.abs(z)) * (Math.PI / 0.75) + seed;
+        const bob = Math.abs(Math.sin(ph)) * 0.045;
+        set(figures, fi, x, y + bob, z, ry, 1, 1, 1, 0, Math.sin(ph) * 0.035);
         if (((seed * 2654435761) >>> 0) / 4294967296 < umbShare) set(umbrellas, fi, x, y, z, ry); else hide(umbrellas, fi);
         fi++;
       };
