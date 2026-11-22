@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0b">
+  <meta name="color-scheme" content="dark">
+  <title>Free PG1 API key</title>
+  <meta name="description" content="Get a free PG1 API key: 500 checks a day of check_agent_message and check_repo_trap. Email only, shown once, deletable any time.">
+  <link rel="canonical" href="https://pg1-ai-agent.vercel.app/keys">
+  <link rel="icon" href="/brand/pg1-shield.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/plans/plans.css">
+  <script src="/plans/secret-once.js" defer></script>
+  <script src="/keys/keys.js" defer></script>
+</head>
+<body>
+<main>
+  <header class="top">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="169.76 -2 104 104" width="104" height="104" role="img" aria-label="PG1"><title>PG1</title><path d="M221.76 0L262.5 15.2V47.3C262.5 73.9 245.1 91.85 221.76 100C198.4 91.85 181 73.9 181 47.3V15.2Z" fill="#f3c623"/><path d="M220 20H233V72H220V37.5L208.5 43.5V31Z" fill="#0a0a0b"/></svg>
+    <div>
+      <h1>Free API key</h1>
+      <p class="sub">500 checks a day, free. Email only.</p>
+    </div>
+  </header>
+  <nav class="nav" aria-label="Related pages"><a href="/pricing">Pricing and plans</a><a href="/docs/agents">Docs for agents</a><a href="/about">About PG1</a></nav>
+
+  <p>A free key raises your daily allowance for <code>check_agent_message</code> and <code>check_repo_trap</code> from 25 checks a day to <strong>500 checks a day</strong> (the two tools share one quota). Send it in the <code>X-API-KEY</code> header on <code>/api/mcp</code>, <code>/api/a2a</code> or <code>/api/repo-trap</code>. Need more? See the <a href="/pricing">monthly plans</a>.</p>
+
+  <section aria-labelledby="get">
+    <h2 id="get">Get your key</h2>
+    <form id="signup-form" class="card" novalidate>
+      <label class="field" for="email">Email</label>
+      <input id="email" name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" required placeholder="you@example.com">
+      <label class="check"><input id="consent" name="consent" type="checkbox" required><span>I agree that PG1 stores my email, a one-way hash of my key and my usage counts, as described in the privacy notice below.</span></label>
+      <label class="check"><input id="marketing" name="marketing" type="checkbox"><span>Optional: email me occasional PG1 product news. (Without this, PG1 only emails about your key or changes to the service.)</span></label>
+      <div id="challenge" class="challenge hidden" aria-label="Bot check"></div>
+      <button id="signup-btn" type="submit">Create my free key</button>
+      <p id="signup-status" class="status" role="status" aria-live="polite"></p>
+    </form>
+    <p class="note">The key is shown once. PG1 keeps only a hash of it, so it cannot be shown again: copy it when it appears. One active free key per email.</p>
+    <pre><code>curl -s https://pg1-ai-agent.vercel.app/api/repo-trap \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-KEY: pg1_your_key_here' \
+  -d '{"files":[{"path":"README.md","text":"# Tool"}]}'</code></pre>
+  </section>
+
+  <section aria-labelledby="rotate">
+    <h2 id="rotate">Rotate a key</h2>
+    <p>Rotating gives you a new key and revokes the old one straight away. Your day's count carries over.</p>
+    <form id="rotate-form" class="card" novalidate>
+      <label class="field" for="rotate-key">Your current key</label>
+      <input id="rotate-key" name="key" type="password" autocomplete="off" spellcheck="false" placeholder="pg1_…">
+      <p></p>
+      <button type="submit" class="ghost">Rotate my key</button>
+      <p id="rotate-status" class="status" role="status" aria-live="polite"></p>
+    </form>
+  </section>
+
+  <section aria-labelledby="privacy">
+    <h2 id="privacy">Privacy notice</h2>
+    <p><strong>What is stored:</strong> your email address; a one-way hash of your key (never the key itself); the first 8 characters of the key, so you can tell keys apart; how many checks your key used each day; when you agreed to this notice; and whether you asked for product news.</p>
+    <p><strong>Why:</strong> to give your key its daily allowance, to stop abuse, and to contact you about your key or changes to the service. PG1 does not sell or share your email. You get product news only if you ticked the optional second box.</p>
+    <p><strong>What is not stored:</strong> the content you check. Checks are never stored; only a verdict and reason codes are logged, without your email.</p>
+    <p><strong>How long:</strong> until you delete it. Daily usage counts are removed after 62 days.</p>
+    <p><strong>Your rights:</strong> PG1 is run from Ireland and the GDPR applies. You can delete your key and email at any time below. For a copy of your data or a correction, write to the contact on the <a href="/about#contact">About page</a>. You can also complain to the Data Protection Commission (Ireland).</p>
+  </section>
+
+  <section aria-labelledby="delete">
+    <h2 id="delete">Delete my key and email</h2>
+    <p>Enter your key, or the email you signed up with. The email, every key for it and its usage counts are deleted. This cannot be undone; you can sign up again later.</p>
+    <form id="delete-form" class="card" novalidate>
+      <label class="field" for="delete-value">Your key or your email</label>
+      <input id="delete-value" name="value" type="text" autocomplete="off" spellcheck="false" placeholder="pg1_… or you@example.com">
+      <p></p>
+      <button type="submit" class="ghost">Delete my key and email</button>
+      <p id="delete-status" class="status" role="status" aria-live="polite"></p>
+    </form>
+  </section>
+
+  <footer>
+    <p>A clean result is <code>no_findings</code>: no findings, never &ldquo;safe&rdquo;. <a href="/pricing">Pricing</a> · <a href="/about">About</a></p>
+  </footer>
+</main>
+</body>
+</html>

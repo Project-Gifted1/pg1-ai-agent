@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0b">
+  <meta name="color-scheme" content="dark">
+  <title>PG1 pricing</title>
+  <meta name="description" content="PG1 plans for check_agent_message and check_repo_trap: 25 free checks a day, 500 with a free key, Builder and Team monthly plans by card, or pay per check.">
+  <link rel="canonical" href="https://pg1-ai-agent.vercel.app/pricing">
+  <link rel="icon" href="/brand/pg1-shield.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/plans/plans.css">
+</head>
+<body>
+<main>
+  <header class="top">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="169.76 -2 104 104" width="104" height="104" role="img" aria-label="PG1"><title>PG1</title><path d="M221.76 0L262.5 15.2V47.3C262.5 73.9 245.1 91.85 221.76 100C198.4 91.85 181 73.9 181 47.3V15.2Z" fill="#f3c623"/><path d="M220 20H233V72H220V37.5L208.5 43.5V31Z" fill="#0a0a0b"/></svg>
+    <div>
+      <h1>Pricing</h1>
+      <p class="sub">For check_agent_message and check_repo_trap</p>
+    </div>
+  </header>
+  <nav class="nav" aria-label="Related pages"><a href="/keys">Get a free key</a><a href="/docs/agents">Docs for agents</a><a href="/about">About PG1</a></nav>
+
+  <p>These plans cover two checks, which share one quota: <code>check_agent_message</code> (a message or skill.md checked before your model reads it) and <code>check_repo_trap</code> (a downloaded project checked before you run anything from it). Every other PG1 tool keeps its own pricing.</p>
+
+  <section aria-labelledby="plans">
+    <h2 id="plans">Plans</h2>
+    <div class="plans">
+      <article class="plan" id="plan-anonymous">
+        <h3>No key</h3>
+        <p class="price">Free</p>
+        <ul><li>25 checks a day per caller</li><li>No sign-up</li></ul>
+      </article>
+      <article class="plan" id="plan-free">
+        <h3>Free key</h3>
+        <p class="price">Free</p>
+        <ul><li>500 checks a day</li><li>Email only, deletable any time</li></ul>
+        <a class="cta" href="/keys">Get a free key</a>
+      </article>
+      <article class="plan featured" id="plan-builder">
+        <h3>Builder</h3>
+        <p class="price">9 USD <small>a month</small></p>
+        <ul><li>10,000 checks a month</li><li>1 key</li><li>Card payment, cancel any time</li></ul>
+        <a class="cta" href="/api/plans/subscribe?plan=builder">Subscribe by card</a>
+      </article>
+      <article class="plan" id="plan-team">
+        <h3>Team</h3>
+        <p class="price">49 USD <small>a month</small></p>
+        <ul><li>100,000 checks a month</li><li>Up to 5 keys sharing the quota</li><li>Card payment, cancel any time</li></ul>
+        <a class="cta" href="/api/plans/subscribe?plan=team">Subscribe by card</a>
+      </article>
+      <article class="plan" id="plan-partner">
+        <h3>Partner</h3>
+        <p class="price">By arrangement</p>
+        <ul><li>Unlimited checks</li><li>For integrations built with PG1</li></ul>
+        <a class="cta" href="/about#contact">Get in touch</a>
+      </article>
+      <article class="plan" id="plan-pay-per-check">
+        <h3>Pay per check</h3>
+        <p class="price">0.002 USD <small>a check</small></p>
+        <ul><li>No account: pay as you go once your free checks are used</li><li>USDC on Base, through the standard x402 payment flow</li></ul>
+      </article>
+    </div>
+    <p class="note">Daily allowances reset at 00:00 UTC; monthly quotas on the 1st of the month at 00:00 UTC. A licence over its monthly quota gets a clear error naming the quota and its reset date: results are never cut short or quietly degraded.</p>
+  </section>
+
+  <section aria-labelledby="count">
+    <h2 id="count">What counts as a check</h2>
+    <ul>
+      <li>One completed call to <code>check_agent_message</code> or <code>check_repo_trap</code>, over MCP (<code>/api/mcp</code>), A2A (<code>/api/a2a</code>) or REST (<code>/api/repo-trap</code>).</li>
+      <li>A call rejected for bad input (too large, malformed) is not counted.</li>
+      <li>A check that names domains or wallets runs PG1&rsquo;s own lookups for them inside the same check; those are not counted separately.</li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="keys-section">
+    <h2 id="keys-section">Keys</h2>
+    <p>Send your key in the <code>X-API-KEY</code> header. The same header carries a free key, a Builder or Team licence key from your card payment receipt, or a Team key. Over the limit without a licence, the response is an x402 payment challenge for 0.002 USD, with links to <a href="/keys">/keys</a> and this page.</p>
+    <p>Team keys: with your Team licence key in <code>X-API-KEY</code>, <code>POST /api/keys/team</code> creates a team key (up to 4, so 5 keys with the licence key), <code>GET</code> lists them and <code>DELETE ?id=</code> revokes one.</p>
+  </section>
+
+  <section aria-labelledby="results">
+    <h2 id="results">What a result means</h2>
+    <p>A clean result is <code>no_findings</code>: PG1&rsquo;s rules found nothing. It is never &ldquo;safe&rdquo;, and it does not prove the content or project is harmless.</p>
+  </section>
+
+  <footer>
+    <p><a href="/keys">Free key</a> · <a href="/docs/agents">Docs</a> · <a href="/about">About</a></p>
+  </footer>
+</main>
+</body>
+</html>

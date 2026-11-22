@@ -416,9 +416,9 @@ test('never "safe"; listed in the agent card, OpenAPI, llms.txt, README and /doc
   const skill = card.skills.find((s) => s.id === 'check_repo_trap');
   assert.ok(skill);
   assert.doesNotMatch(JSON.stringify(skill), SAFE);
-  assert.equal(card.version, '1.22.0');
+  assert.equal(card.version, '1.23.0');
   const openapi = JSON.parse(read('public/openapi.json'));
-  assert.equal(openapi.info.version, '1.22.0');
+  assert.equal(openapi.info.version, '1.23.0');
   assert.equal(openapi.paths['/api/repo-trap'].post.operationId, 'checkRepoTrap');
   assert.ok(read('public/llms.txt').includes('check_repo_trap'));
   const readme = read('README.md');
@@ -426,6 +426,6 @@ test('never "safe"; listed in the agent card, OpenAPI, llms.txt, README and /doc
   assert.ok(section.length > 500);
   assert.doesNotMatch(section, SAFE);
   assert.ok(read('public/docs/agents/index.html').includes('check_repo_trap'));
-  assert.equal(JSON.parse(read('server.json')).version, '1.22.0');
+  assert.equal(JSON.parse(read('server.json')).version, '1.23.0');
   assert.match(read('api/mcp.mjs'), /\* Version: 1\.22\.0 — ADD: new free tool check_repo_trap/);
 });
