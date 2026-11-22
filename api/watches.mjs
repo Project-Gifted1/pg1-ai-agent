@@ -41,7 +41,7 @@
 //
 // Failures are neutral: no Supabase detail reaches the page.
 
-import { createOperatorStore } from '../lib/operator/store.mjs';
+import { createOperatorStore, reportCardFromRow } from '../lib/operator/store.mjs';
 import { decideTask } from '../lib/operator/tasks.mjs';
 import { createOperatorGithub } from '../lib/operator/merge.mjs';
 import { approvedMerger } from '../lib/operator/run.mjs';
@@ -160,7 +160,10 @@ async function autonomousOp(body, res, store, opStore = null) {
     // each with its card and the items waiting for approval.
     if (opStore) {
       try {
-        for (const r of await opStore.undeliveredReports(5)) reports.push({ id: r.id, at: r.created_at, kind: 'operator_report', title: r.title, body: `${r.title}\nThe full report is in the card below and in the media library as a PDF.`, card: { ...(r.card || {}), approvals: Array.isArray(r.approvals) ? r.approvals : [] } });
+        for (const r of await opStore.undeliveredReports(5)) {
+          const { card, damaged } = reportCardFromRow(r);
+          reports.push({ id: r.id, at: r.created_at, kind: 'operator_report', title: r.title, body: damaged ? String(r.markdown || r.title) : `${r.title}\nThe full report is in the card below and in the media library as a PDF.`, card });
+        }
       } catch (e) { /* the reports table may not be set up yet */ }
     }
     return res.status(200).json({ ok: true, reports });

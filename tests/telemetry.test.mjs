@@ -77,7 +77,8 @@ function setup(t, { telemetryBehaviour = 'ok', otherFetch } = {}) {
   global.fetch = async (url, opts) => {
     const u = String(url);
     if (u === TELEMETRY_URL) {
-      rows.push(JSON.parse(opts.body));
+      // 1.23.x: rows recorded together are inserted as one array.
+      rows.push(...[].concat(JSON.parse(opts.body)));
       if (telemetryBehaviour === 'reject') throw new Error('network down');
       if (telemetryBehaviour === 'http_error') return { ok: false, status: 500, json: async () => ({}) };
       return { ok: true, status: 201, json: async () => ({}) };
@@ -242,6 +243,7 @@ test('failed settlement (header payment) records settlement failed and tool_call
   rows.length = 0;
 
   const res = await callTool('get_threat_actor_profile', { actor_name: 'APT29' }, { headers: { 'payment-signature': encodePaymentSignatureHeader(payment) } });
+  await new Promise((r) => setImmediate(r)); // the queue flushes on the next turn
 
   assert.equal(res.body.result.isError, true);
   const settlement = rows.find((r) => r.event_type === 'settlement');
@@ -258,6 +260,7 @@ test('throwing settle records settlement status error', async (t) => {
   rows.length = 0;
 
   await callTool('get_threat_actor_profile', { actor_name: 'APT29' }, { meta: { 'x402/payment': payment } });
+  await new Promise((r) => setImmediate(r)); // the queue flushes on the next turn
 
   assert.equal(rows.find((r) => r.event_type === 'settlement').status, 'error');
   assert.equal(rows.find((r) => r.event_type === 'tool_call').status, 'settlement_failed');
