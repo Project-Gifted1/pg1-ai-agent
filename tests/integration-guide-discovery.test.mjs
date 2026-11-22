@@ -80,8 +80,9 @@ test('openapi.json externalDocs points to the guide', () => {
   assert.equal(OPENAPI.info.version, '1.23.0');
 });
 
-test('package version is unchanged; server version is the 1.17.0 release', () => {
-  assert.equal(JSON.parse(read('package.json')).version, '1.0.3');
+// 1.23.0: package.json follows the release version (it had stayed at 1.0.3).
+test('package and server versions are the 1.23.0 release', () => {
+  assert.equal(JSON.parse(read('package.json')).version, '1.23.0');
   assert.equal(JSON.parse(read('server.json')).version, '1.23.0');
 });
 

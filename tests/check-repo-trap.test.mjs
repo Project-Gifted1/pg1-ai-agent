@@ -427,5 +427,6 @@ test('never "safe"; listed in the agent card, OpenAPI, llms.txt, README and /doc
   assert.doesNotMatch(section, SAFE);
   assert.ok(read('public/docs/agents/index.html').includes('check_repo_trap'));
   assert.equal(JSON.parse(read('server.json')).version, '1.23.0');
-  assert.match(read('api/mcp.mjs'), /\* Version: 1\.22\.0 — ADD: new free tool check_repo_trap/);
+  assert.match(read('api/mcp.mjs'), /\* 1\.22\.0 — ADD: new free tool check_repo_trap/);
+  assert.match(read('api/mcp.mjs'), /\* Version: 1\.23\.0 — PLANS/);
 });
