@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex">
+  <meta name="color-scheme" content="dark">
+  <title>Licence hash</title>
+  <link rel="icon" href="/brand/pg1-shield.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/plans/plans.css">
+  <script src="/keys/licence-hash.js" defer></script>
+</head>
+<body>
+<main>
+  <h1>Licence hash</h1>
+  <p class="note">For the operator. Turns a licence key into the SHA-256 hash that goes in <code>PG1_PARTNER_LICENCE_HASHES</code>. It is worked out in this browser: the key is never sent anywhere, stored or logged. Close the tab when done.</p>
+  <form id="hash-form" class="card" novalidate>
+    <label class="field" for="licence">Licence key</label>
+    <input id="licence" type="password" autocomplete="off" spellcheck="false">
+    <p></p>
+    <button type="submit">Make the hash</button>
+    <p id="hash-out" class="status" role="status" aria-live="polite"></p>
+  </form>
+</main>
+</body>
+</html>

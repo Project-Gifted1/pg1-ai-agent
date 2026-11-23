@@ -55,7 +55,8 @@ function installFetch(routes = []) {
     const u = String(url);
     calls.push({ url: u, method: options.method || 'GET', headers: options.headers || {} });
     if (u.endsWith('/rest/v1/agent_telemetry') && options.method === 'POST') {
-      rows.push(JSON.parse(options.body));
+      // Rows recorded while an insert is in flight go out together as an array.
+      rows.push(...[].concat(JSON.parse(options.body)));
       return new Response(null, { status: 201 });
     }
     for (const [needle, handler] of routes) {
@@ -338,10 +339,11 @@ test('before the migration the read falls back to the old columns and the report
     : Response.json([init('c', 'Claude Desktop'), call('c', 'check_domain_age')]))]]);
   const stats = await getUsageStats({ period: '7d', now: NOW });
   const reads = calls.filter((c) => c.url.includes('/rest/v1/agent_telemetry'));
-  assert.equal(reads.length, 3, 'current, then without caller_kind, then legacy');
-  assert.ok(reads[0].url.includes('mcp_method,requested_tool,amount_usd,caller_kind'));
-  assert.ok(reads[1].url.includes('mcp_method,requested_tool,amount_usd') && !reads[1].url.includes('caller_kind'));
-  assert.ok(!reads[2].url.includes('mcp_method'));
+  assert.equal(reads.length, 4, 'current, then without plan (1.23.0), then without caller_kind, then legacy');
+  assert.ok(reads[0].url.includes('mcp_method,requested_tool,amount_usd,caller_kind,plan'));
+  assert.ok(reads[1].url.includes('mcp_method,requested_tool,amount_usd,caller_kind') && !reads[1].url.includes(',plan'));
+  assert.ok(reads[2].url.includes('mcp_method,requested_tool,amount_usd') && !reads[2].url.includes('caller_kind'));
+  assert.ok(!reads[3].url.includes('mcp_method'));
   assert.equal(stats.schema, 'legacy');
   assert.equal(stats.summary.real_tool_calls, 1);
   assert.match(formatUsageReport(stats), /predates the latest migration/);
