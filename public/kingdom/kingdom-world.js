@@ -992,8 +992,9 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       if (sun.shadow) sun.shadow.radius = 1.5 + 5 * (1 - sunny);
       sun.color.setRGB(1, 0.6 + 0.32 * (1 - dusk) * light, 0.36 + 0.52 * (1 - dusk) * light).lerp(cool, moon * 0.8);
       // A night that still reads on a phone: moonlit blue fill, not black.
-      hemi.intensity = 0.3 + 0.35 * light * (1 - storm * 0.4) + (lookFlags.moon ? 0.18 * moon : 0);
-      moonFill.intensity = lookFlags.moon ? 0.55 * moon * (1 - storm * 0.35) : 0;
+      // Kept low: enough to separate the buildings from the sky, still night.
+      hemi.intensity = 0.3 + 0.35 * light * (1 - storm * 0.4) + (lookFlags.moon ? 0.08 * moon : 0);
+      moonFill.intensity = lookFlags.moon ? 0.32 * moon * (1 - storm * 0.35) : 0;
       moonFill.visible = moonFill.intensity > 0.001;
       gradU.uSunDir.value.copy(tmp);
       gradU.uTop.value.setRGB(0.04 + 0.16 * light * (1 - dusk), 0.07 + 0.3 * light * (1 - dusk), 0.17 + 0.55 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.5);
