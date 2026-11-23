@@ -96,7 +96,7 @@ export function applyFx(settings, look, fx) {
     else if (k === 'water') s.water = on;
     else if (k === 'fog') s.noFog = !on;
     else if (k === 'crowds') s.crowdCap = on ? s.crowdCap : 0;
-    else if (k === 'drones') s.noDrones = !on;
+    else if (k === 'drones') s.leanDrones = !on; // off: the lean drone (body, arms, light), to measure the full drone's cost
   }
   return { settings: s, look: l };
 }

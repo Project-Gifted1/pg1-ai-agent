@@ -41,6 +41,7 @@ const PUBLIC_DIR = resolve(arg('public', join(ROOT, 'public')));
 const TIERS = (arg('tiers', 'legacy,phone,balanced,cinematic')).split(',');
 const CONDITIONS = (arg('conditions', 'night-rain,night-clear,day-clear')).split(',');
 const COSTS = !!arg('costs', false);
+const ONLY_FX = arg('effects', null);
 
 export const A07 = Object.freeze({ width: 360, height: 800, deviceScaleFactor: 2, memory: 4, userAgent: 'Mozilla/5.0 (Linux; Android 15; SM-A075F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36' });
 const WHEN = { night: Date.UTC(2026, 10, 22, 23, 30), day: Date.UTC(2026, 10, 22, 12, 30) };
@@ -116,7 +117,7 @@ try {
     weatherNow = WEATHER.rain;
     const tier = 'cinematic';
     const base = rows.find((r) => r.condition === 'night-rain' && r.tier === tier);
-    for (const fx of EFFECTS) {
+    for (const fx of (ONLY_FX ? String(ONLY_FX).split(',') : EFFECTS)) {
       const { context, page } = await openCity(browser, origin, { tier, when: WHEN.night, fx: `-${fx}` });
       const m = await measure(page, FRAMES);
       rows.push({ condition: 'night-rain', effectOff: fx, ...m, savedMs: base ? base.msPerFrame - m.msPerFrame : null, savedCalls: base ? base.calls - m.calls : null, savedTriangles: base ? base.triangles - m.triangles : null });
