@@ -55,7 +55,8 @@ function installFetch(routes = []) {
     const u = String(url);
     calls.push({ url: u, method: options.method || 'GET', headers: options.headers || {} });
     if (u.endsWith('/rest/v1/agent_telemetry') && options.method === 'POST') {
-      rows.push(JSON.parse(options.body));
+      // Rows recorded while an insert is in flight go out together as an array.
+      rows.push(...[].concat(JSON.parse(options.body)));
       return new Response(null, { status: 201 });
     }
     for (const [needle, handler] of routes) {
