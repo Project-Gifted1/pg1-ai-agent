@@ -232,3 +232,29 @@ test('a slow or hanging telemetry insert never delays a tool response', async ()
     assert.ok(attempts.length >= 1, `${step}: the row was still sent`);
   }
 });
+
+test('a metered row with a plan (1.23.0): before the plan migration it is retried once without the plan and kept', async () => {
+  const attempts = []; const errors = [];
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url);
+    if (u === TELEMETRY_URL) {
+      const body = JSON.parse(opts.body); attempts.push(body);
+      const rows = [].concat(body);
+      if (rows.some((r) => 'plan' in r)) return new Response(JSON.stringify({ code: 'PGRST204', message: "Could not find the 'plan' column" }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+      return new Response(null, { status: 201 });
+    }
+    if (u.includes('/rest/v1/pg1_errors') && opts.method === 'POST') errors.push(JSON.parse(opts.body));
+    return Response.json([]);
+  };
+  await recordTelemetry({ endpoint: '/api/mcp', toolName: 'check_agent_message', status: 'ok', paymentType: 'free', plan: 'free' });
+  assert.equal(attempts.length, 2);
+  assert.equal(attempts[0].plan, 'free');
+  assert.equal(attempts[1].plan, undefined, 'retried without the plan');
+  assert.equal(attempts[1].tool_name, 'check_agent_message', 'the row is kept');
+  assert.deepEqual(errors, [], 'not a failure');
+  // For a while after, the plan is left off up front (one try, no 400).
+  attempts.length = 0;
+  await recordTelemetry({ endpoint: '/api/mcp', toolName: 'check_repo_trap', status: 'ok', plan: 'anonymous' });
+  assert.equal(attempts.length, 1);
+  assert.equal(attempts[0].plan, undefined);
+});

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "PG1 Sovereign Threat Intelligence API",
-    "version": "1.22.0",
+    "version": "1.23.0",
     "contact": {
       "email": "gikewun@gmail.com"
     },
@@ -857,7 +857,7 @@
         "operationId": "checkRepoTrap",
         "summary": "Check a downloaded project's file listing for the untrusted repo trap (free)",
         "security": [],
-        "description": "The REST mirror of the check_repo_trap MCP tool and A2A skill. Send the listing you already have; PG1 never fetches a URL and never unpacks, decodes, imports or runs anything from the project. Deterministic rules, no AI model. Nothing is stored: only the verdict and reason codes are logged. Always free, 60 calls/hour per caller (a Gumroad licence key in x-api-key lifts the limit). The result is signed (Ed25519) in a top-level signature. no_findings does not prove a project is harmless.",
+        "description": "The REST mirror of the check_repo_trap MCP tool and A2A skill. Send the listing you already have; PG1 never fetches a URL and never unpacks, decodes, imports or runs anything from the project. Deterministic rules, no AI model. Nothing is stored: only the verdict and reason codes are logged. Free to start, 60 calls/hour per caller; a key in x-api-key (a free key from https://pg1-ai-agent.vercel.app/keys gives 500 checks a day) or a licence lifts the limit. Plans: 25 free checks a day without a key, 500 a day with a free key from https://pg1-ai-agent.vercel.app/keys, monthly plans and pay per check at https://pg1-ai-agent.vercel.app/pricing (one quota shared with the other of check_agent_message and check_repo_trap). Over the free limit with plans on: HTTP 402 with an x402 challenge for 0.002 USD (PAYMENT-REQUIRED). The result is signed (Ed25519) in a top-level signature. no_findings does not prove a project is harmless.",
         "requestBody": {
           "required": true,
           "content": {

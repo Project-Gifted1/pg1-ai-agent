@@ -90,6 +90,7 @@ import { isFoundryCommand, handleFoundryCommand } from '../lib/foundry/admin.mjs
 import { isHostingCommand, handleHostingCommand } from '../lib/hosting/admin.mjs';
 import { isScreeningCommand, handleScreeningCommand } from '../lib/screeningAdmin.mjs';
 import { isReportCommand, handleReportCommand } from '../lib/operator/chat.mjs';
+import { isKeyDeletionCommand, handleKeyDeletionCommand } from '../lib/keysOperator.mjs';
 import { createJobStore } from '../lib/a2aJobs/store.mjs';
 import { getUsageStats } from '../lib/usageStats.mjs';
 import { verifyUsage, verifyReport, verifyLead, verifyCardView, verifyContextLines } from '../lib/usageVerify.mjs';
@@ -3304,6 +3305,13 @@ async function chatRequest(req, res) {
       // REPORTS (lib/operator/chat.mjs): /report today | week, and
       // /report approve | decline <id> for an item waiting in a report.
       // Operator only.
+      // Free-key deletion requests (lib/keysOperator.mjs): operator only.
+      if (isKeyDeletionCommand(promptText)) {
+        if (!isOperator) log401('KEYS', 'unauthenticated', supUrl, supKey);
+        var keyDelOut = await handleKeyDeletionCommand({ text: promptText, isOperator: isOperator, supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: function (u, o) { return fetch(u, o); } });
+        return sendJSON(res, keyDelOut.status || 200, { reply: keyDelOut.reply, traceId: requestTraceId });
+      }
+
       if (isReportCommand(promptText)) {
         if (!isOperator) log401('REPORT', 'unauthenticated', supUrl, supKey);
         var reportOut = await handleReportCommand({ text: promptText, isOperator: isOperator, env: process.env, supUrl: supabaseUrl, supKey: supabaseKey, fetchImpl: function (u, o) { return fetch(u, o); } });
