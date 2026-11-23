@@ -144,7 +144,8 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   await page.waitForFunction((txt) => document.getElementById('kingdom-badge').textContent === txt, BADGE.live, { timeout: 30000 });
   const N = await realN();
   assert.equal(Number(await page.locator('#kingdom-countries').getAttribute('data-n')), N, 'N matches the feed');
-  assert.equal(await page.locator('#kingdom-countries-text').textContent(), `Hostile traffic from ${N} countries · last 24 h`);
+  // The fixture feed's counted events are probes and checks, not blocked attacks (lib/defenseFeed.mjs originsKind).
+  assert.equal(await page.locator('#kingdom-countries-text').textContent(), `Probes and checks from ${N} countries · last 24 h`);
   const flagBox = await page.locator('#kingdom-flags').boundingBox();
   assert.ok(flagBox && flagBox.height >= 24, `flags ${flagBox && flagBox.height}px`);
   await page.waitForFunction(() => document.getElementById('kingdom-globe-intro').dataset.shown, null, { timeout: 30000 });
@@ -274,7 +275,7 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   let texts = (await status(page)).recTexts;
   assert.ok(texts.includes(BADGE.live), texts.join(' | '));
   const nNow = Number(await page.locator('#kingdom-countries').getAttribute('data-n'));
-  assert.ok(texts.some((x) => x.includes(`Hostile traffic from ${nNow} countries`)), texts.join(' | '));
+  assert.ok(texts.some((x) => x.includes(`Probes and checks from ${nNow} countries`)), texts.join(' | '));
   await page.waitForTimeout(3000);
   await page.click('#kingdom-record-go');
   await page.locator('#kingdom-record-file').waitFor({ state: 'visible', timeout: 30000 });
@@ -283,9 +284,9 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   await page.click('#kingdom-record-go');
   await page.waitForFunction(() => /time-lapsed/.test(window.kingdomUi.status().recTexts.join('|')), null, { timeout: 30000 });
   assert.equal(await page.locator('#kingdom-badge').textContent(), BADGE.replay);
-  await page.waitForFunction(() => /not a simulation · Hostile traffic from/.test(window.kingdomUi.status().recTexts.join('|')), null, { timeout: 60000, polling: 250 });
+  await page.waitForFunction(() => /not a simulation · Probes and checks from/.test(window.kingdomUi.status().recTexts.join('|')), null, { timeout: 60000, polling: 250 });
   texts = (await status(page)).recTexts;
-  assert.ok(texts.some((x) => /^Real PG1 events, \d{1,2} \w+ \d{4} — not a simulation · Hostile traffic from \d+ countr(y|ies) in 24 h$/.test(x)), texts.join(' | '));
+  assert.ok(texts.some((x) => /^Real PG1 events, \d{1,2} \w+ \d{4} — not a simulation · Probes and checks from \d+ countr(y|ies) in 24 h$/.test(x)), texts.join(' | '));
   assert.ok(texts.includes("Visualised live from PG1's logs. Location = traffic origin (IP geolocation), not attacker identity."));
   assert.ok(texts.some((x) => /IP geolocation at the network edge/.test(x)));
   assert.ok(texts.includes(BADGE.replay), 'the badge stays in frame on the end card');

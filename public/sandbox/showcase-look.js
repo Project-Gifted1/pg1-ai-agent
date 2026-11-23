@@ -34,6 +34,25 @@ export async function loadHdri(THREE, renderer, name) {
   return env;
 }
 
+// The same HDRI made small for a live tier on a phone (PG1 City, 1.23): drawn
+// once into a `width` x width/2 half-float target, then prefiltered from that
+// (a 128 px cube map instead of 512), and the full-size data dropped at once.
+export async function loadHdriSmall(THREE, renderer, name, width = 512) {
+  const { HDRLoader } = await import('/vendor/three/addons/loaders/HDRLoader.js');
+  const tex = await new HDRLoader().loadAsync(`${SHOWCASE_BASE}hdri/${name}.hdr`);
+  const rt = new THREE.WebGLRenderTarget(width, width / 2, { type: THREE.HalfFloatType });
+  const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({ uniforms: { t: { value: tex } }, vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }', fragmentShader: 'uniform sampler2D t; varying vec2 vUv; void main(){ gl_FragColor = texture2D(t, vUv); }', depthTest: false, depthWrite: false }));
+  const sc = new THREE.Scene(); sc.add(quad); const cam = new THREE.Camera();
+  const prev = renderer.getRenderTarget();
+  renderer.setRenderTarget(rt); renderer.render(sc, cam); renderer.setRenderTarget(prev);
+  tex.dispose(); quad.geometry.dispose(); quad.material.dispose();
+  rt.texture.mapping = THREE.EquirectangularReflectionMapping;
+  const pm = new THREE.PMREMGenerator(renderer);
+  const env = pm.fromEquirectangular(rt.texture).texture;
+  pm.dispose(); rt.dispose();
+  return env;
+}
+
 export async function loadPbr(THREE, name, repeat = 1) {
   const loader = new THREE.TextureLoader();
   const one = (suffix, srgb) => new Promise((resolve, reject) => loader.load(`${SHOWCASE_BASE}textures/${name}_${suffix}.jpg`, (t) => {

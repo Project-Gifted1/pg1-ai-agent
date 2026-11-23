@@ -14,7 +14,8 @@ test('Cinematic on a phone: shadows, bloom, occlusion, water and sky kept; 30 fp
   assert.ok(s.shadows >= 1024); assert.equal(s.water, true); assert.equal(s.sky, 'physical');
   assert.equal(s.post.bloom, true); assert.equal(s.post.gtao, true); assert.equal(s.post.aa, 'smaa');
   assert.equal(s.post.gtaoScale, 0.5); assert.equal(s.post.gtaoSamples, 8);
-  assert.equal(s.targetFps, 30); assert.equal(s.pixelRatio, 1.5); assert.equal(s.renderScale, true);
+  // 1.23: never under 0.8 of a 2x screen (kingdom-look.js PHONE_MIN_SCALE).
+  assert.equal(s.targetFps, 30); assert.equal(s.pixelRatio, 1.6); assert.equal(s.renderScale, true);
   assert.ok(s.crowdCap <= 300 && s.lifeScale < 1);
   // The Galaxy A07 (4 GB): no ambient occlusion; the rest of the look kept.
   const a07 = kingdomSettings('cinematic', { coarse: true, memory: 4 });
@@ -29,7 +30,8 @@ test('a computer keeps the full Cinematic', () => {
 
 test('the render scale follows the frames, and a switch to Cinematic in place gets one', () => {
   const src = readFileSync(new URL('../public/kingdom/kingdom-scene.js', import.meta.url), 'utf8');
-  assert.match(src, /if \(renderScale\) renderScale\.sample\(now - last\)/);
+  // 1.23: on a phone the effect ladder goes first, then the render scale.
+  assert.match(src, /else if \(renderScale\) \{ renderScale\.sample\(ms\)/);
   assert.match(src, /ensureScale\(\);\n    await buildPost\(\);/);
   // No planar river mirror on a phone (it draws the whole city twice).
   assert.match(src, /const ReflectorMod = settings\.tier === 'cinematic' && !settings\.renderScale \?/);

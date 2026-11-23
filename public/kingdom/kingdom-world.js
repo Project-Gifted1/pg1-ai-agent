@@ -181,11 +181,14 @@ function facadeMaterial(THREE, { reflective, envMap = null, detail = null }) {
         normal = normalize(normal + (viewMatrix * vec4(tilt, 0.0)).xyz);
       }
       #ifdef PG1_DETAIL
-      // Showcase: real masonry relief (a CC0 normal map in world metres) on stone, brick and podiums.
-      if (!glass && wall) {
+      // Real masonry relief (a CC0 normal map in world metres) on stone, brick
+      // and podiums: near buildings only (it fades out from 250 to 520 m, where
+      // it would only shimmer), so the live tiers pay for it close up.
+      float pg1Near = 1.0 - smoothstep(250.0, 520.0, distance(vWPos, cameraPosition));
+      if (!glass && wall && pg1Near > 0.01) {
         vec3 dn = texture2D(tDetail, vec2(u, vWPos.y) * 0.22).xyz * 2.0 - 1.0;
         vec3 t3 = alongZ ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
-        vec3 wn = normalize(vWNorm + (t3 * dn.x + vec3(0.0, 1.0, 0.0) * dn.y) * 0.55 * (1.0 - tiny));
+        vec3 wn = normalize(vWNorm + (t3 * dn.x + vec3(0.0, 1.0, 0.0) * dn.y) * 0.55 * pg1Near * (1.0 - tiny));
         normal = normalize((viewMatrix * vec4(wn, 0.0)).xyz);
       }
       #endif`)
@@ -807,7 +810,8 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   // --- rooftop beacons (reports and approvals) on the twelve tallest towers ---
   const beacons = [];
   // (Legacy phone: six, the most approvals that usually wait.)
-  for (const spot of tall.slice(0, legacy ? 6 : 12)) {
+  // Six on Low and on a phone's Medium (settings.leanCity), twelve elsewhere.
+  for (const spot of tall.slice(0, legacy || settings.leanCity ? 6 : 12)) {
     const fire = named(new THREE.Mesh(new THREE.SphereGeometry(2.2, 12, 10), new THREE.MeshStandardMaterial({ color: 0x2a1a10, emissive: 0xffb300, emissiveIntensity: 0, roughness: 1 })), 'rooftop-beacon');
     fire.position.set(spot.x - spot.w * 0.2, spot.y + 3, spot.z + spot.w * 0.2);
     root.add(fire);
@@ -864,7 +868,9 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
   })();
   const fog = named(new THREE.Group(), 'fog-bank');
-  for (let k = 0; k < (legacy ? 0 : phone ? 8 : 18); k++) {
+  // Not on a phone's Medium (settings.ambientSprites false): eight sprites,
+  // eight draw calls, for a haze the capped fog already gives.
+  for (let k = 0; k < (legacy || settings.ambientSprites === false ? 0 : phone ? 8 : 18); k++) {
     const s = named(new THREE.Sprite(new THREE.SpriteMaterial({ map: fogTex, color: 0x8c96aa, transparent: true, opacity: 0.3, depthWrite: false })), 'fog-puff');
     const p = at(fogBearing + (k / 18 - 0.5) * 0.5, 700 + (k % 3) * 60, 40 + (k % 4) * 14);
     s.position.set(p.x, p.y, p.z); s.scale.setScalar(140 + (k % 5) * 30);
@@ -883,6 +889,14 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     sun.shadow.bias = -0.0005; sun.shadow.normalBias = 1.2; sun.shadow.radius = 3;
   }
   scene.add(sun); scene.add(sun.target);
+  // Night (kingdom-look.js moon): a moonlit fill from the side opposite the
+  // sun, cool and soft, no shadows, so the city reads at night instead of
+  // going grey. Off by day.
+  const moonFill = new THREE.DirectionalLight(0xa9bfe8, 0);
+  moonFill.name = 'moon-fill';
+  moonFill.position.set(-500, 700, 400);
+  scene.add(moonFill);
+  const lookFlags = { moon: false, glow: false };
 
   // --- the sky: a dusk gradient (warm horizon to deep blue) with a sun glow ---
   const gradU = { uFog: { value: new THREE.Color(0x2a3550) }, uTop: { value: new THREE.Color(0x0e1a36) }, uMid: { value: new THREE.Color(0x3a4f86) }, uHorizon: { value: new THREE.Color(0xf09a5a) }, uSunDir: { value: new THREE.Vector3(-1, 0.05, 0) }, uGlow: { value: new THREE.Color(0xffc27a) } };
@@ -928,6 +942,10 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     emblemMeshes: emblems3d.map((e) => e.group),
     setBillboards(stats) { drawBillboards(stats); },
     // Windows follow the hour in Dublin (kingdom-data.js windowRatios).
+    // The look's night features (kingdom-look.js): { moon, glow }.
+    setLook(f = {}) { lookFlags.moon = !!f.moon; lookFlags.glow = !!f.glow; },
+    // Facade detail arriving after the city is built (loaded lazily).
+    setFacadeDetail(tex) { if (facade.userData.windows.tDetail) facade.userData.windows.tDetail.value = tex; },
     setWindowRatios({ office, home }) { facade.userData.windows.uOffice.value = office; facade.userData.windows.uHome.value = home; },
     // Shop fronts and their signs: lit while the shops are open, off late at night.
     setShopLights(v) { facade.userData.windows.uShops.value = Math.max(0, Math.min(1, Number(v) || 0)); },
@@ -974,7 +992,9 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       if (sun.shadow) sun.shadow.radius = 1.5 + 5 * (1 - sunny);
       sun.color.setRGB(1, 0.6 + 0.32 * (1 - dusk) * light, 0.36 + 0.52 * (1 - dusk) * light).lerp(cool, moon * 0.8);
       // A night that still reads on a phone: moonlit blue fill, not black.
-      hemi.intensity = 0.3 + 0.35 * light * (1 - storm * 0.4);
+      hemi.intensity = 0.3 + 0.35 * light * (1 - storm * 0.4) + (lookFlags.moon ? 0.18 * moon : 0);
+      moonFill.intensity = lookFlags.moon ? 0.55 * moon * (1 - storm * 0.35) : 0;
+      moonFill.visible = moonFill.intensity > 0.001;
       gradU.uSunDir.value.copy(tmp);
       gradU.uTop.value.setRGB(0.04 + 0.16 * light * (1 - dusk), 0.07 + 0.3 * light * (1 - dusk), 0.17 + 0.55 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.5);
       gradU.uMid.value.setRGB(0.18 + 0.4 * light * (1 - dusk), 0.25 + 0.45 * light * (1 - dusk), 0.45 + 0.4 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.45);
@@ -1001,7 +1021,8 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
         cu.uSunXZ.value.set(tmp.x, tmp.z);
         cu.uWarm.value.setRGB(1, 0.74 + 0.22 * (1 - dusk), 0.52 + 0.44 * (1 - dusk));
       }
-      facade.userData.windows.uNight.value = 0.15 + 1.6 * Math.max(dusk * 0.8, moon);
+      // Window glow: stronger at night with the look's glow (kingdom-look.js).
+      facade.userData.windows.uNight.value = (0.15 + 1.6 * Math.max(dusk * 0.8, moon)) * (lookFlags.glow ? 1 + 0.5 * moon : 1);
       facade.userData.windows.uSkyTop.value.copy(gradU.uTop.value).lerp(gradU.uMid.value, 0.5).multiplyScalar(1.15);
       facade.userData.windows.uSkyHor.value.copy(gradU.uMid.value).lerp(gradU.uHorizon.value, 0.45);
       facade.userData.windows.uGround.value.setRGB(0.1, 0.105, 0.115).multiplyScalar(0.4 + 0.6 * light);

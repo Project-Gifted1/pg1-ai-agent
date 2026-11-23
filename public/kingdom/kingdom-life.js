@@ -119,7 +119,7 @@ export function createLife(THREE, scene, world, settings) {
   root.add(glare);
   for (let i = 0; i < CAP; i++) carBodies.setColorAt(i, new THREE.Color(carPalette[i % carPalette.length]));
   for (const m of [carBodies, carCabs, vans, buses, heads, tails, spray]) root.add(m);
-  if (settings.legacy) carCabs.visible = false; // the cabin is the body's darker top on Legacy phone
+  if (settings.legacy || settings.leanCity) carCabs.visible = false; // the cabin is the body's darker top on Low and a phone's Medium
 
   // Signals at every junction of the simulated network: one head per approach.
   const juncs = traffic.net.junctions.filter((j) => !j.edge);
@@ -216,7 +216,8 @@ export function createLife(THREE, scene, world, settings) {
   const buskers = [{ x: -12, z: 46 }, { x: -10.6, z: 47.2 }, { x: 14, z: 47 }];
   const zebraPeds = traffic.peds;
   const nFig = people.length + zebraPeds.length + stopPeople.length + cafes.length * 2 + buskers.length + 4;
-  const personGeo = personGeometry(THREE, { low: !!settings.legacy });
+  // Low-poly figures on Low and on a phone's Medium (settings.lowFigures).
+  const personGeo = personGeometry(THREE, { low: !!settings.legacy || !!settings.lowFigures });
   personGeo.setAttribute('aSkin', personSkins(THREE, nFig));
   const figures = dyn(named(new THREE.InstancedMesh(personGeo, personMaterial(THREE), nFig), 'pedestrians'));
   for (let i = 0; i < nFig; i++) figures.setColorAt(i, new THREE.Color(LIFE_COLOURS.figure[i % LIFE_COLOURS.figure.length]));
@@ -257,12 +258,13 @@ export function createLife(THREE, scene, world, settings) {
 
   // --- rooftops: steam, a radar, a crane ---
   const spots = (world.roofSpots || []).filter((s) => Math.hypot(s.x, s.z) < 700);
-  const vents = settings.legacy ? [] : spots.slice(4, phone ? 10 : 20);
+  // No steam sprites on a phone's Medium (settings.ambientSprites false): 18 draw calls.
+  const vents = settings.legacy || settings.ambientSprites === false ? [] : spots.slice(4, phone ? 10 : 20);
   const steamMat = new THREE.SpriteMaterial({ map: softTex, color: LIFE_COLOURS.steam, transparent: true, opacity: 0.25, depthWrite: false });
   const steam = [];
   for (const v of vents) for (let j = 0; j < 3; j++) { const sp = named(new THREE.Sprite(steamMat.clone()), 'rooftop-steam'); sp.position.set(v.x, v.y + 2, v.z); root.add(sp); steam.push({ sp, base: v, ph: j / 3 }); }
   let radar = null;
-  if (spots[2] && !settings.legacy) {
+  if (spots[2] && !settings.legacy && !settings.leanCity) {
     radar = named(new THREE.Group(), 'rooftop-radar');
     const dish = named(new THREE.Mesh(new THREE.BoxGeometry(9, 2.2, 0.4), std(0xd8dde3, { metalness: 0.7 })), 'rooftop-radar-dish'); dish.position.y = 3; radar.add(dish);
     const post = named(new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.6, 3, 8), std(0x2b2f36)), 'rooftop-radar-post'); post.position.y = 1.5; radar.add(post);
@@ -270,7 +272,7 @@ export function createLife(THREE, scene, world, settings) {
   }
   let craneLight = null;
   const cs = spots.find((s) => s.ring === 'near' && s.h < 110) || spots[6];
-  if (cs && !settings.legacy) {
+  if (cs && !settings.legacy && !settings.leanCity) {
     const crane = named(new THREE.Group(), 'construction-crane');
     const cm = std(LIFE_COLOURS.crane, { metalness: 0.4 });
     const mast = named(new THREE.Mesh(new THREE.BoxGeometry(1.4, 46, 1.4), cm), 'construction-crane-mast'); mast.position.y = 23; crane.add(mast);
@@ -323,7 +325,7 @@ export function createLife(THREE, scene, world, settings) {
   // Plaza: two fountains and benches.
   const fountainMat = new THREE.MeshStandardMaterial({ color: 0x2c5a7a, roughness: 0.1, metalness: 0.3, emissive: 0x16304a, emissiveIntensity: 0.6 });
   const sprays = [];
-  for (const fx of (settings.legacy ? [-22] : [-22, 22])) {
+  for (const fx of (settings.legacy || settings.leanCity ? [-22] : [-22, 22])) {
     const basin = named(new THREE.Mesh(new THREE.CylinderGeometry(5, 5.3, 0.8, 24), std(0x9a9da3)), 'plaza-fountain'); basin.position.set(fx, 0.4, 32); root.add(basin);
     const water = named(new THREE.Mesh(new THREE.CircleGeometry(4.6, 24), fountainMat), 'plaza-fountain-water'); water.rotation.x = -Math.PI / 2; water.position.set(fx, 0.82, 32); root.add(water);
     const n = phone ? 40 : 120; const p = new Float32Array(n * 3);
@@ -342,9 +344,13 @@ export function createLife(THREE, scene, world, settings) {
   const lastSig = new Array(approaches.length).fill('');
   const tc = new THREE.Color();
 
+  let density = 1;
   return {
     root,
     traffic,
+    // Ambient people only (decoration): 1 all, less while frames run slow.
+    setDensity(k) { density = Math.max(0.2, Math.min(1, Number(k) || 1)); },
+    get density() { return density; },
     // For the tests: every colour the city's life uses.
     colours: colourOf,
     counts: () => ({ vehicles: traffic.vehicles.length, people: people.length + zebraPeds.length + stopPeople.length + cafes.length * 2 + buskers.length, boats: traffic.boats.length, planes: planes.length, birds: nBirds, gulls: nGulls, cyclists: nBikes, trams: traffic.trams.length, overlaps: traffic.overlaps().length }),
@@ -446,7 +452,9 @@ export function createLife(THREE, scene, world, settings) {
       // A few dogs on leads along the embankment.
       for (let n = 0; n < 6; n++) { const pos = ((t * 1.2 + n * 230) % 1400) - 700; set(dogs, di++, pos, 0.02, RIVER.z - RIVER.half - 1.4, Math.PI / 2); put(pos - 1.2, 0.05, RIVER.z - RIVER.half - 2, Math.PI / 2, n + 31); }
       dogs.count = di;
-      figures.count = fi; umbrellas.count = fi; umbrellas.visible = umbShare > 0.01; dogs.visible = di > 0;
+      // Fewer figures while frames run slow (setDensity; the frame-time ladder).
+      const shown = density < 1 ? Math.floor(fi * density) : fi;
+      figures.count = shown; umbrellas.count = shown; umbrellas.visible = umbShare > 0.01; dogs.visible = di > 0 && density >= 1;
       figures.instanceMatrix.needsUpdate = true; umbrellas.instanceMatrix.needsUpdate = true; dogs.instanceMatrix.needsUpdate = true;
       // Cyclists: ordered along their track, never through each other.
       for (const north of [true, false]) {
