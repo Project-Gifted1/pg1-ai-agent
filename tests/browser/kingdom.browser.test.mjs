@@ -145,7 +145,7 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   const N = await realN();
   assert.equal(Number(await page.locator('#kingdom-countries').getAttribute('data-n')), N, 'N matches the feed');
   // The fixture feed's counted events are probes and checks, not blocked attacks (lib/defenseFeed.mjs originsKind).
-  assert.equal(await page.locator('#kingdom-countries-text').textContent(), `Probes and checks from ${N} countries · last 24 h`);
+  assert.equal((await page.locator('#kingdom-countries-text').textContent()).replace(/\u00a0/g, ' '), `Probes and checks from ${N} countries · last 24 h`);
   const flagBox = await page.locator('#kingdom-flags').boundingBox();
   assert.ok(flagBox && flagBox.height >= 24, `flags ${flagBox && flagBox.height}px`);
   await page.waitForFunction(() => document.getElementById('kingdom-globe-intro').dataset.shown, null, { timeout: 30000 });
@@ -200,12 +200,12 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   assert.equal(Number(d.sentinels), listedTools({}).length);
   assert.equal(d.beacon, 'gold'); assert.equal(d.seal, 'bronze');
   assert.equal(Number(d.beaconsLit), FIXTURE_APPROVALS);
-  assert.match(await page.locator('#kingdom-hud').textContent(), new RegExp(`^Defences active: ${listedTools({}).length} checks live · \\d+ threats turned away today$`));
+  assert.match(await page.locator('#kingdom-hud').textContent(), new RegExp(`^Defences active: ${listedTools({}).length} checks live · \\d+ probes? turned away today$`));
 
   // The billboards: real numbers from the feed only (threats, no payments).
   await page.waitForFunction(() => /checks live/.test(document.getElementById('kingdom-view').dataset.billboard || ''), null, { timeout: 15000 });
   const day = await page.evaluate(() => window.kingdomUi.store.day.turned_away);
-  assert.equal((await view(page)).billboard, billboardLines({ countries: N, threats: day, checks: listedTools({}).length }).join(' | '));
+  assert.equal((await view(page)).billboard, billboardLines({ countries: N, threats: day, dayKind: await page.evaluate(() => window.kingdomUi.store.day.kind), checks: listedTools({}).length }).join(' | '));
   assert.ok(!/payment/.test((await view(page)).billboard));
   // Windows follow the hour in Dublin (Dublin time by default; dusk is 19:30).
   assert.equal((await view(page)).light, 'live');
@@ -237,7 +237,7 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   assert.ok(Date.now() - t0 <= 10000, 'within 10 s');
   await page.waitForFunction((b) => Number(document.getElementById('kingdom-view').dataset.attackers || 0) > b, before, { timeout: 10000 });
   await page.waitForFunction(() => /^LIVE · \d+ s ago$/.test(document.querySelector('#kingdom-caption .kd-cap-when').textContent), null, { timeout: 10000 });
-  await page.waitForFunction(() => /JP · Raiders · tool_router: unknown tool probe/.test(document.querySelector('#kingdom-ticker li').textContent), null, { timeout: 5000 }).catch(async () => { throw new Error(JSON.stringify({ st: await status(page), html: await page.locator('#kingdom-ticker').innerHTML(), errors })); });
+  await page.waitForFunction(() => /JP · Probe · tool_router: unknown tool probe/.test(document.querySelector('#kingdom-ticker li').textContent), null, { timeout: 5000 }).catch(async () => { throw new Error(JSON.stringify({ st: await status(page), html: await page.locator('#kingdom-ticker').innerHTML(), errors })); });
   // The burst grows: a second real row, the running count.
   control.addTelemetry({ event_type: 'tool_call', endpoint: '/api/mcp', status: 'unknown_tool', caller_hash: h.c, country_code: 'JP' });
   await page.waitForFunction(() => /×2/.test(document.querySelector('#kingdom-ticker li').textContent), null, { timeout: 12000 });
@@ -275,7 +275,7 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   await page.click('#kingdom-record-btn');
   await page.click('#kingdom-record-go');
   await page.waitForFunction(() => window.kingdomUi.status().recTexts.length > 0, null, { timeout: 30000 });
-  let texts = (await status(page)).recTexts;
+  let texts = (await status(page)).recTexts.map((x) => x.replace(/\u00a0/g, " "));
   assert.ok(texts.includes(BADGE.live), texts.join(' | '));
   const nNow = Number(await page.locator('#kingdom-countries').getAttribute('data-n'));
   assert.ok(texts.some((x) => x.includes(`Probes and checks from ${nNow} countries`)), texts.join(' | '));
@@ -288,7 +288,7 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   await page.waitForFunction(() => /time-lapsed/.test(window.kingdomUi.status().recTexts.join('|')), null, { timeout: 30000 });
   assert.equal(await page.locator('#kingdom-badge').textContent(), BADGE.replay);
   await page.waitForFunction(() => /not a simulation · Probes and checks from/.test(window.kingdomUi.status().recTexts.join('|')), null, { timeout: 60000, polling: 250 });
-  texts = (await status(page)).recTexts;
+  texts = (await status(page)).recTexts.map((x) => x.replace(/\u00a0/g, " "));
   assert.ok(texts.some((x) => /^Real PG1 events, \d{1,2} \w+ \d{4} — not a simulation · Probes and checks from \d+ countr(y|ies) in 24 h$/.test(x)), texts.join(' | '));
   assert.ok(texts.includes("Visualised live from PG1's logs. Location = traffic origin (IP geolocation), not attacker identity."));
   assert.ok(texts.some((x) => /IP geolocation at the network edge/.test(x)));
@@ -327,14 +327,14 @@ test('an empty feed: the claim and the counter are there, nothing plays, the tic
     assert.equal(d.shield, 'hidden', 'the shield is invisible until a gadget fires');
     assert.equal((await status(page)).live.length, 0, 'nothing is generated for a quiet period');
     assert.equal(await page.locator('#kingdom-badge').textContent(), BADGE.live);
-    assert.equal(await page.locator('#kingdom-countries-text').textContent(), 'Probes and checks from 0 countries · last 24 h', 'an empty feed has no blocked attacks to call hostile');
+    assert.equal((await page.locator('#kingdom-countries-text').textContent()).replace(/\u00a0/g, ' '), 'Probes and checks from 0 countries · last 24 h', 'an empty feed has no blocked attacks to call hostile');
     assert.match(await page.locator('#kingdom-ticker').textContent(), /^Quiet · /);
     assert.match(await page.locator('#kingdom-feed').textContent(), /No defence events in the last 24 hours/);
     // The city's life runs, and is never captioned or counted as a defence or an attack.
     const ins = await page.evaluate(() => window.kingdomUi.scene().inspect());
     assert.ok(ins.lifeCounts.vehicles > 50 && ins.lifeCounts.people > 100);
     assert.equal(await page.locator('#kingdom-caption').isHidden(), true, 'no caption without an event');
-    assert.equal((await view(page)).billboard, '0 countries · probes and checks, last 24 h | 0 threats turned away today | not read checks live');
+    assert.equal((await view(page)).billboard, '0 countries · probes and checks, last 24 h | 0 probes turned away today | not read checks live');
     await shot(page, `kingdom-city-default-${name}.png`);
     await context.close();
   }

@@ -102,7 +102,7 @@ test('Auto never picks a tier that cannot hold 30 fps at scale 1.0; on a phone n
   // In the scene: an automatic change to a tier Auto may not pick is refused; the menu marks Cinematic.
   assert.match(read('public/kingdom/kingdom-scene.js'), /if \(!manual && !autoAllowed\(next, \{ coarse \}\)\) return;/);
   assert.equal(CINEMATIC_PHONE_NOTE, 'may look softer on this phone');
-  assert.match(read('public/kingdom/kingdom-ui.js'), /cin\.textContent = `Cinematic \(\$\{CINEMATIC_PHONE_NOTE\}\)`/);
+  assert.match(read('public/kingdom/kingdom-ui.js'), /cin\.textContent = CINEMATIC_PHONE_LABEL; cin\.title = `Chosen by hand: \$\{CINEMATIC_PHONE_NOTE\}`/);
 });
 
 // --- haze ---------------------------------------------------------------------------------
@@ -190,8 +190,8 @@ test('banner wording: "Probes and checks" unless every counted event was a block
   assert.equal(originsKind([ev('payer_refused'), ev('payer_refused', 'US')]), 'blocked');
   assert.equal(originsKind([{ role: 'ally', kind: 'payment_settled', country_code: 'IE' }]), 'probes_and_checks', 'nothing counted');
   assert.equal(originsKind([{ role: 'attacker', kind: 'probe', country_code: null }, ev('payer_refused')]), 'blocked', 'events without a country are not counted');
-  assert.equal(countriesText(5), 'Probes and checks from 5 countries · last 24 h');
-  assert.equal(countriesText(5, 'blocked'), 'Hostile traffic from 5 countries · last 24 h');
+  assert.equal(countriesText(5).replace(/\u00a0/g, ' '), 'Probes and checks from 5 countries · last 24 h');
+  assert.equal(countriesText(5, 'blocked').replace(/\u00a0/g, ' '), 'Hostile traffic from 5 countries · last 24 h');
   assert.match(billboardLines({ countries: 3 })[0], /probes and checks/);
   const store = createEventStore();
   store.merge({ origins: [{ country_code: 'US', count: 2 }], origins_kind: 'blocked', events: [] });

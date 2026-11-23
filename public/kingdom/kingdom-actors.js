@@ -85,7 +85,9 @@ class Crowd {
         else if (p.swing === 'armL') rx = -stride * 0.8 - a.arms * 2.4; else if (p.swing === 'armR') rx = stride * 0.8 - a.arms * 2.6;
         const yaw = p.swing === 'spin' ? t * 30 + a.phase : p.swing === 'yaw45' ? Math.PI / 4 : p.swing === 'yaw-45' ? -Math.PI / 4 : 0;
         e.set(rx, yaw, 0); q.setFromEuler(e);
-        v.set(p.offset[0], p.offset[1], p.offset[2]); s.set(1, 1, 1);
+        // The white strobe: a short double flash, each drone on its own beat.
+        const on = p.swing !== 'strobe' || strobeOn(t, a.phase);
+        v.set(p.offset[0], p.offset[1], p.offset[2]); s.setScalar(on ? 1 : 1e-4);
         local.compose(v, q, s);
         p.mesh.setMatrixAt(i, local.premultiply(m));
       }
@@ -95,7 +97,46 @@ class Crowd {
 }
 
 // A quadcopter: body, four arms, four spinning rotors, a camera pod and a
-// light (red on an attacker's siege drone, cyan on PG1's patrols).
+// light (red on an attacker's drone, cyan on PG1's patrols).
+//
+// Readable on every tier (23 Nov, a Galaxy A07: drones drew as solid black
+// silhouettes): the body is a light, non-metal colour with a little light
+// of its own, so it never depends on an environment map (Low has none);
+// navigation lights (red on the left arm, green on the right, both in one
+// draw call) and a white strobe are unlit, so they show in any light; and a
+// faint underglow shows at night only (setNight).
+export const DRONE_LOOK = Object.freeze({ metalness: 0.12, roughness: 0.5, selfLight: 0.22, navRed: 0xff2a2a, navGreen: 0x2aff6a, strobe: 0xffffff, glowNight: 0.16 });
+export const ENEMY_BODY = 0x9aa1aa;
+export const PG1_BODY = 0xf5f7fa;
+export function strobeOn(t, phase = 0) { const k = (t * 0.9 + phase * 0.159) % 1; return k < 0.05 || (k > 0.12 && k < 0.17); }
+let navGeoQ = null; let strobeGeoQ = null; let underGeoQ = null; const underMats = [];
+function navGeo(THREE) {
+  if (navGeoQ) return navGeoQ;
+  const parts = [];
+  // Left (port) red, right (starboard) green, at the front arm tips (+z is forward).
+  for (const [x, col] of [[0.78, DRONE_LOOK.navRed], [-0.78, DRONE_LOOK.navGreen]]) { const g = new THREE.SphereGeometry(0.12, 8, 6).toNonIndexed(); g.translate(x, 0.1, 0.78); const c = new THREE.Color(col); const n = g.attributes.position.count; const cols = new Float32Array(n * 3); for (let i = 0; i < n; i++) { cols[i * 3] = c.r; cols[i * 3 + 1] = c.g; cols[i * 3 + 2] = c.b; } g.setAttribute('color', new THREE.BufferAttribute(cols, 3)); parts.push(g); }
+  const n = parts.reduce((k, g) => k + g.attributes.position.count, 0);
+  const pos = new Float32Array(n * 3); const col = new Float32Array(n * 3); let o = 0;
+  for (const g of parts) { pos.set(g.attributes.position.array, o * 3); col.set(g.attributes.color.array, o * 3); o += g.attributes.position.count; g.dispose(); }
+  navGeoQ = new THREE.BufferGeometry();
+  navGeoQ.setAttribute('position', new THREE.BufferAttribute(pos, 3)); navGeoQ.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return navGeoQ;
+}
+// The drone's lights, all unlit: nav lights, the strobe, the underglow.
+function droneLights(THREE, light) {
+  const strobe = strobeGeoQ || (strobeGeoQ = new THREE.SphereGeometry(0.11, 8, 6));
+  const under = underGeoQ || (underGeoQ = (() => { const g = new THREE.CircleGeometry(1.15, 20); g.rotateX(-Math.PI / 2); return g; })());
+  const um = new THREE.MeshBasicMaterial({ color: light, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  um.name = 'drone-underglow';
+  underMats.push(um);
+  return [
+    { geo: navGeo(THREE), mat: new THREE.MeshBasicMaterial({ vertexColors: true }), offset: [0, 0, 0], swing: null, flat: true, nav: true },
+    { geo: strobe, mat: new THREE.MeshBasicMaterial({ color: DRONE_LOOK.strobe }), offset: [0, 0.22, -0.42], swing: 'strobe', flat: true, nav: true },
+    { geo: under, mat: um, offset: [0, -0.5, 0], swing: null, flat: true, nav: true }
+  ];
+}
+// A lit drone material: light colour, little metal, a little light of its own.
+const droneMat = (M, color) => M(color, { metalness: DRONE_LOOK.metalness, roughness: DRONE_LOOK.roughness, emissive: color, emissiveIntensity: DRONE_LOOK.selfLight });
 let glowGeo = null; let trailGeoQ = null; let LEAN = false; let LEAN_DRONES = false;
 const GLOW_GEO = (THREE) => glowGeo || (glowGeo = new THREE.IcosahedronGeometry(1.15, 1));
 const TRAIL_GEO = (THREE) => { if (!trailGeoQ) { trailGeoQ = new THREE.CylinderGeometry(0.06, 0.45, 9, 6, 1, true); trailGeoQ.rotateX(Math.PI / 2); trailGeoQ.translate(0, 0, -5); } return trailGeoQ; };
@@ -113,20 +154,57 @@ function armsX(THREE) {
   armsGeoQ.setAttribute('position', new THREE.BufferAttribute(pos, 3)); armsGeoQ.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
   return armsGeoQ;
 }
-// lean (Low): the body, the arms and its light (three draw calls a crowd).
-function quadParts(THREE, M, light, body = 0x2a2e34, lean = LEAN || LEAN_DRONES) {
+// One geometry from several, each with its own colour and glow (per-vertex
+// "color" and "aGlow"), for the lean drone's single mesh.
+function mergeColoured(THREE, list) {
+  const gs = list.map((it) => { const g = it.geo.index ? it.geo.toNonIndexed() : it.geo.clone(); if (it.at) g.translate(...it.at); return { g, c: new THREE.Color(it.color), k: it.glow }; });
+  const n = gs.reduce((k, x) => k + x.g.attributes.position.count, 0);
+  const pos = new Float32Array(n * 3); const nor = new Float32Array(n * 3); const col = new Float32Array(n * 3); const glo = new Float32Array(n * 3); let o = 0;
+  for (const { g, c, k } of gs) {
+    const m = g.attributes.position.count;
+    pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3);
+    for (let i = 0; i < m; i++) { const j = (o + i) * 3; col[j] = c.r; col[j + 1] = c.g; col[j + 2] = c.b; glo[j] = c.r * k; glo[j + 1] = c.g * k; glo[j + 2] = c.b * k; }
+    o += m; g.dispose();
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3)); out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  out.setAttribute('color', new THREE.BufferAttribute(col, 3)); out.setAttribute('aGlow', new THREE.BufferAttribute(glo, 3));
+  return out;
+}
+// The lean drone's material: lit, light, little metal; each vertex adds its
+// own glow (the body a little, the lights fully), so the lights need no
+// draw call of their own and never go dark without an environment map.
+function glowMaterial(THREE) {
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: DRONE_LOOK.metalness, roughness: DRONE_LOOK.roughness });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 aGlow;\nvarying vec3 vGlow;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = aGlow;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vGlow;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGlow;');
+  };
+  m.customProgramCacheKey = () => 'pg1-drone-glow';
+  return m;
+}
+// lean (a phone's Medium, settings.leanDrones, and Low): one mesh for the
+// body, the arms (an X), its light and the nav lights (red left, green
+// right), then the strobe and the underglow: three draw calls a crowd, as
+// before the lights were added.
+function quadParts(THREE, M, light, body = ENEMY_BODY, lean = LEAN || LEAN_DRONES, arms = body) {
+  const bodyMat = droneMat(M, body);
   const parts = [
-    { geo: new THREE.BoxGeometry(0.9, 0.28, 0.9), mat: M(body, { metalness: 0.7, roughness: 0.35 }), offset: [0, 0, 0], swing: null },
-    { geo: new THREE.BoxGeometry(0.42, 0.3, 0.42), mat: M(0x15181c, { metalness: 0.5, roughness: 0.3 }), offset: [0, -0.3, 0.1], swing: null },
+    { geo: new THREE.BoxGeometry(0.9, 0.28, 0.9), mat: bodyMat, offset: [0, 0, 0], swing: null, look: { body, metalness: DRONE_LOOK.metalness, selfLight: DRONE_LOOK.selfLight } },
+    { geo: new THREE.BoxGeometry(0.42, 0.3, 0.42), mat: droneMat(M, 0x5c636d), offset: [0, -0.3, 0.1], swing: null },
     { geo: new THREE.SphereGeometry(0.1, 8, 6), mat: new THREE.MeshBasicMaterial({ color: light }), offset: [0, -0.1, 0.5], swing: null, flat: true }
   ];
-  // Low has no environment map: a metal body reflects nothing there and drew
-  // as a black blob. A rough, lit body and the arms (one baked X, one draw
-  // call) read as a drone at a glance.
-  // A phone's Medium (settings.leanDrones) uses the same three parts: body,
-  // arms and its light (three draw calls a crowd instead of eleven); the
-  // light still reads at night, and the final pass's grade lifts it.
-  if (lean) return [{ ...parts[0], mat: M(0x4a525c, { metalness: 0.15, roughness: 0.62 }) }, { geo: armsX(THREE), mat: M(0x3a4048, { metalness: 0.1, roughness: 0.7 }), offset: [0, 0.05, 0], swing: null }, parts[2]];
+  if (lean) {
+    const one = mergeColoured(THREE, [
+      { geo: parts[0].geo, color: body, glow: DRONE_LOOK.selfLight },
+      { geo: armsX(THREE), at: [0, 0.05, 0], color: arms, glow: DRONE_LOOK.selfLight },
+      { geo: parts[2].geo, at: [0, -0.1, 0.5], color: light, glow: 1.6 },
+      { geo: new THREE.SphereGeometry(0.12, 8, 6), at: [0.78, 0.1, 0.78], color: DRONE_LOOK.navRed, glow: 1.6 },
+      { geo: new THREE.SphereGeometry(0.12, 8, 6), at: [-0.78, 0.1, 0.78], color: DRONE_LOOK.navGreen, glow: 1.6 }
+    ]);
+    const [, strobe, under] = droneLights(THREE, light);
+    return [{ geo: one, mat: glowMaterial(THREE), offset: [0, 0, 0], swing: null, nav: true, look: parts[0].look }, strobe, under];
+  }
   const arm = new THREE.BoxGeometry(2.2, 0.08, 0.12);
   parts.push({ geo: arm, mat: parts[0].mat, offset: [0, 0.05, 0], swing: 'yaw45' });
   parts.push({ geo: arm, mat: parts[0].mat, offset: [0, 0.05, 0], swing: 'yaw-45' });
@@ -136,6 +214,7 @@ function quadParts(THREE, M, light, body = 0x2a2e34, lean = LEAN || LEAN_DRONES)
   // A soft glow and a light trail, so a drone reads as a moving light from afar.
   parts.push({ geo: GLOW_GEO(THREE), mat: new THREE.MeshBasicMaterial({ color: light, transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending, depthWrite: false }), offset: [0, 0, 0], swing: null, flat: true });
   parts.push({ geo: TRAIL_GEO(THREE), mat: new THREE.MeshBasicMaterial({ color: light, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }), offset: [0, 0, 0], swing: null, flat: true });
+  parts.push(...droneLights(THREE, light));
   return parts;
 }
 
@@ -167,10 +246,11 @@ export function createActors(THREE, scene, world, settings) {
   const phone = settings.tier === 'phone' || settings.tier === 'legacy';
   LEAN = !!settings.legacy;
   LEAN_DRONES = !!settings.leanDrones;
+  underMats.length = 0;
   const M = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.6, ...o });
   // The other side.
-  const scanners = new Crowd(THREE, root, quadParts(THREE, M, 0xff3d3d, 0x1a1c20), Math.round(settings.crowdCap / 2), { fly: 1 });
-  const swarm = new Crowd(THREE, root, quadParts(THREE, M, 0xff3d3d, 0x101114), Math.round(settings.crowdCap / 2), { fly: 1 });
+  const scanners = new Crowd(THREE, root, quadParts(THREE, M, 0xff3d3d, ENEMY_BODY), Math.round(settings.crowdCap / 2), { fly: 1 });
+  const swarm = new Crowd(THREE, root, quadParts(THREE, M, 0xff3d3d, ENEMY_BODY), Math.round(settings.crowdCap / 2), { fly: 1 });
   const wakeGeo = new THREE.PlaneGeometry(9, 30); wakeGeo.rotateX(-Math.PI / 2); wakeGeo.translate(0, 0, -21);
   const wakeTex = (() => { const cv = document.createElement('canvas'); cv.width = 64; cv.height = 128; const g = cv.getContext('2d'); for (let y = 0; y < 128; y++) { const k = 1 - y / 128; const half = 4 + (y / 128) * 26; g.fillStyle = `rgba(255,255,255,${0.5 * k})`; g.fillRect(32 - half, y, 3, 1); g.fillRect(32 + half - 3, y, 3, 1); g.fillStyle = `rgba(255,255,255,${0.12 * k})`; g.fillRect(32 - half, y, half * 2, 1); } const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const wakeMat = new THREE.MeshBasicMaterial({ map: wakeTex, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false });
@@ -192,7 +272,7 @@ export function createActors(THREE, scene, world, settings) {
   // seams) slung under a dark carrier drone. Red is theirs.
   const seamMat = new THREE.MeshBasicMaterial({ color: 0xff3d3d });
   const workspaces = new Crowd(THREE, root, [
-    ...quadParts(THREE, M, 0xff3d3d, 0x16181c),
+    ...quadParts(THREE, M, 0xff3d3d, ENEMY_BODY),
     { geo: new THREE.BoxGeometry(1.6, 1.1, 1.2), mat: M(0x1b1e24, { metalness: 0.5, roughness: 0.45 }), offset: [0, -1.5, 0], swing: null },
     { geo: new THREE.BoxGeometry(0.6, 0.14, 1.2), mat: M(0x1b1e24, { metalness: 0.5, roughness: 0.45 }), offset: [-0.45, -0.88, 0], swing: null },
     { geo: new THREE.BoxGeometry(1.64, 0.06, 1.24), mat: seamMat, offset: [0, -1.5, 0], swing: null, flat: true },
@@ -201,16 +281,17 @@ export function createActors(THREE, scene, world, settings) {
   ], 12, { fly: 1 });
   // PG1's side.
   const SENTINEL_CAP = 64;
-  const sentinelParts = quadParts(THREE, M, PG1_COLORS.cyan, 0xf5f7fa);
-  if (sentinelParts[4]) sentinelParts[3].mat = sentinelParts[4].mat = M(PG1_COLORS.gold, { metalness: 0.8, roughness: 0.3 });
-  else sentinelParts[0].mat = M(PG1_COLORS.gold, { metalness: 0.8, roughness: 0.3 });
+  // Gold arms, lit like the body: never a dark metal.
+  const sentinelParts = quadParts(THREE, M, PG1_COLORS.cyan, PG1_BODY, LEAN || LEAN_DRONES, PG1_COLORS.gold);
+  const goldArms = droneMat(M, PG1_COLORS.gold);
+  for (const p of sentinelParts) if (p.swing === 'yaw45' || p.swing === 'yaw-45') p.mat = goldArms;
   // PG1's shield on its own hulls (from the brand asset), never on an enemy.
   const hullMat = world.brandTex ? new THREE.MeshBasicMaterial({ map: world.brandTex, transparent: true, depthWrite: false, side: THREE.DoubleSide }) : null;
   const hullDecal = hullMat ? (() => { const g = new THREE.PlaneGeometry(0.8, 0.8); g.rotateX(-Math.PI / 2); return { geo: g, mat: hullMat, offset: [0, 0.16, 0], swing: null, flat: true }; })() : null;
   if (hullDecal && !LEAN && !LEAN_DRONES) sentinelParts.push(hullDecal);
   const sentinels = new Crowd(THREE, root, sentinelParts, SENTINEL_CAP, { fly: 1 });
-  const commander = new Crowd(THREE, root, hullDecal && !LEAN && !LEAN_DRONES ? [...quadParts(THREE, M, PG1_COLORS.gold, 0xf5f7fa), hullDecal] : quadParts(THREE, M, PG1_COLORS.gold, 0xf5f7fa), 1, { fly: 1 });
-  const repair = new Crowd(THREE, root, quadParts(THREE, M, PG1_COLORS.amber, 0xf5f7fa), 6, { fly: 1 });
+  const commander = new Crowd(THREE, root, hullDecal && !LEAN && !LEAN_DRONES ? [...quadParts(THREE, M, PG1_COLORS.gold, PG1_BODY), hullDecal] : quadParts(THREE, M, PG1_COLORS.gold, PG1_BODY), 1, { fly: 1 });
+  const repair = new Crowd(THREE, root, quadParts(THREE, M, PG1_COLORS.amber, PG1_BODY), 6, { fly: 1 });
   const pilotParts = boatParts(0xf5f7fa, 0x6fd8ff, PG1_COLORS.cyan).map((p, i) => (i === 0 ? { ...p, geo: new THREE.BoxGeometry(2.6, 1.2, 8) } : p));
   if (hullMat && !LEAN) { const g = new THREE.PlaneGeometry(1.6, 1.6); g.rotateY(Math.PI / 2); pilotParts.push({ geo: g, mat: hullMat, offset: [1.65, 2.3, -2], swing: null, flat: true }); }
   const pilots = new Crowd(THREE, root, pilotParts, 3);
@@ -499,6 +580,9 @@ export function createActors(THREE, scene, world, settings) {
     for (const l of labels) { l.ttl -= dt; l.sp.position.y = l.y0 + Math.min(4, (6 - l.ttl) * 0.6); l.sp.material.opacity = Math.min(1, Math.max(0, l.ttl)); }
     for (let i = labels.length - 1; i >= 0; i--) if (labels[i].ttl <= 0) { root.remove(labels[i].sp); labels[i].sp.material.map.dispose(); labels[i].sp.material.dispose(); labels.splice(i, 1); }
     for (const c of PG1_UNITS) for (const a of c.agents) { const rr = Math.hypot(a.x, a.z); if (rr > pg1MaxR) pg1MaxR = rr; }
+    // The underglow: faint, at night only.
+    const glow = DRONE_LOOK.glowNight * Math.max(0, Math.min(1, (world.env && world.env.night) || 0));
+    for (const m of underMats) m.opacity = glow;
     for (const c of crowds) c.write(t, camTmp);
   }
 
@@ -527,6 +611,8 @@ export function createActors(THREE, scene, world, settings) {
     setLanterns(n) { lanternsLit = Math.max(0, Math.min(world.lanterns.length, Number(n) || 0)); return lanternsLit; },
     commanderTo(p) { if (p) { cmd.mode = 'hover'; cmd.target = insideCity({ x: p.x, y: Math.max((p.y || 0) + 30, 50), z: p.z }, CITY_R - 40); cmd.until = performance.now() + 15000; } else if (cmd.mode === 'hover') { cmd.mode = 'docked'; cmd.target = { ...DOCK }; } },
     get commanderMode() { return cmd.mode; },
+    // The drones' look (tests): each flying crowd's body colour and metalness, its lights, and the underglow now.
+    droneLook() { return [scanners, swarm, workspaces, sentinels, commander, repair, partners].map((c) => ({ body: c.parts[0].look.body, metalness: c.parts[0].mat.metalness, emissive: c.parts[0].look.selfLight, lean: !!c.parts[0].mat.customProgramCacheKey, nav: c.parts.filter((p) => p.nav).length, underglow: (c.parts.find((p) => p.mat.name === 'drone-underglow') || {}).mat?.opacity ?? null })); },
     get fired() { return { ...fired }; },
     get pg1MaxR() { return pg1MaxR; },
     get sentinels() { return sentinels.live; },

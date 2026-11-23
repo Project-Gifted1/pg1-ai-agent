@@ -135,6 +135,10 @@ export function autoAllowed(tier, { coarse = false } = {}) {
   return ['legacy', 'phone', 'balanced', 'cinematic'].includes(tier);
 }
 export const CINEMATIC_PHONE_NOTE = 'may look softer on this phone';
+// The menu's own words for it on a phone: short enough to show whole in the
+// quality menu at 360 px ("Cinematic (manual)", never cut off); the note
+// above is the option's title.
+export const CINEMATIC_PHONE_LABEL = 'Cinematic (manual)';
 
 // When frames run slow, what is given up, in order: effects first, then
 // detail, resolution last (and never below minRenderScale on a phone).
