@@ -72,7 +72,7 @@ test('Command Centre: /help panel, error log timeline and check result card at 3
   await panel.locator('.cmd-search').fill('kill switch');
   assert.deepEqual(await panel.locator('.cmd-card:visible').evaluateAll((els) => els.map((e) => e.getAttribute('data-command'))), ['/auto off', '/autonomy'], 'found by description');
   await panel.locator('.cmd-search').fill('/keys');
-  assert.deepEqual((await panel.locator('.cmd-card:visible').evaluateAll((els) => els.map((e) => e.getAttribute('data-command')))).sort(), ['/keys', '/keys fresh']);
+  assert.deepEqual((await panel.locator('.cmd-card:visible').evaluateAll((els) => els.map((e) => e.getAttribute('data-command')))).sort(), ['/keys', '/keys delete-request', '/keys delete-requests', '/keys fresh']);
   await panel.locator('.cmd-search').fill('zzzz-nothing');
   assert.equal(await panel.locator('.cmd-none').isVisible(), true);
   await panel.locator('.cmd-search').fill('');
