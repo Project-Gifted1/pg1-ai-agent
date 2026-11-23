@@ -123,14 +123,10 @@ function quadParts(THREE, M, light, body = 0x2a2e34, lean = LEAN || LEAN_DRONES)
   // Low has no environment map: a metal body reflects nothing there and drew
   // as a black blob. A rough, lit body and the arms (one baked X, one draw
   // call) read as a drone at a glance.
-  // A phone's Medium (settings.leanDrones): the same three parts plus the
-  // soft glow, so a drone still reads as a light at night (four draw calls a
-  // crowd instead of eleven).
-  if (lean) {
-    const out = [{ ...parts[0], mat: M(0x4a525c, { metalness: 0.15, roughness: 0.62 }) }, { geo: armsX(THREE), mat: M(0x3a4048, { metalness: 0.1, roughness: 0.7 }), offset: [0, 0.05, 0], swing: null }, parts[2]];
-    if (LEAN_DRONES && !LEAN) out.push({ geo: GLOW_GEO(THREE), mat: new THREE.MeshBasicMaterial({ color: light, transparent: true, opacity: 0.13, blending: THREE.AdditiveBlending, depthWrite: false }), offset: [0, 0, 0], swing: null, flat: true });
-    return out;
-  }
+  // A phone's Medium (settings.leanDrones) uses the same three parts: body,
+  // arms and its light (three draw calls a crowd instead of eleven); the
+  // light still reads at night, and the final pass's grade lifts it.
+  if (lean) return [{ ...parts[0], mat: M(0x4a525c, { metalness: 0.15, roughness: 0.62 }) }, { geo: armsX(THREE), mat: M(0x3a4048, { metalness: 0.1, roughness: 0.7 }), offset: [0, 0.05, 0], swing: null }, parts[2]];
   const arm = new THREE.BoxGeometry(2.2, 0.08, 0.12);
   parts.push({ geo: arm, mat: parts[0].mat, offset: [0, 0.05, 0], swing: 'yaw45' });
   parts.push({ geo: arm, mat: parts[0].mat, offset: [0, 0.05, 0], swing: 'yaw-45' });
@@ -221,7 +217,7 @@ export function createActors(THREE, scene, world, settings) {
   const roverLight = new THREE.MeshBasicMaterial({ color: 0x6a6f75 });
   const rovers = new Crowd(THREE, root, [
     { geo: new THREE.BoxGeometry(3.2, 1.6, 4.8), mat: M(0xe9edf1, { metalness: 0.3, roughness: 0.4 }), offset: [0, 1.5, 0], swing: null },
-    ...(LEAN ? [] : [{ geo: new THREE.BoxGeometry(3.6, 0.8, 1.2), mat: M(0x22262c), offset: [0, 0.6, 1.6], swing: null },
+    ...(LEAN || settings.leanCity ? [] : [{ geo: new THREE.BoxGeometry(3.6, 0.8, 1.2), mat: M(0x22262c), offset: [0, 0.6, 1.6], swing: null },
       { geo: new THREE.BoxGeometry(3.6, 0.8, 1.2), mat: M(0x22262c), offset: [0, 0.6, -1.6], swing: null }]),
     { geo: new THREE.BoxGeometry(2.4, 0.4, 0.2), mat: roverLight, offset: [0, 1.8, 2.45], swing: null, flat: true }
   ], 6);

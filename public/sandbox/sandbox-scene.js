@@ -49,6 +49,7 @@ import { buildSurface, surfaceKind } from './surface.js';
 import { createControls } from './controls.js';
 import { createEffects } from './effects.js';
 import { TIERS, TIER_SETTINGS, QUALITY_KEY, createGovernor, deviceSettings, createRenderScale, showcaseSettings, SHOWCASE } from './quality.js';
+import { PHONE_MIN_SCALE } from '../kingdom/kingdom-look.js';
 import { createPost } from './post.js';
 import { loadTextures, addSurfaceDetail } from './materials.js';
 import { buildWaterways, waterwaysSignature } from './waterways.js';
@@ -1116,10 +1117,11 @@ async function create3d(container, { coarse, threeUrl, onSelect, tier = 'high', 
   // While recording, every tier adapts its pixels this way instead of
   // switching tier (a switch rebuilds the whole view: a freeze on video).
   // On a phone (coarse pointer) too, always: when frames run slow it first
-  // draws a few fewer pixels (down to 65%), keeping every effect, and only
+  // draws a few fewer pixels (down to 80% on a phone, 1.23: sharpness first,
+  // kingdom/kingdom-look.js PHONE_MIN_SCALE; 50% on a computer), and only
   // when that is not enough does the governor step the tier down (which
   // rebuilds the view). A Pixel-class phone keeps High's look.
-  const renderScale = createRenderScale({ budgetMs: (1000 / targetFps) * 1.15, min: coarse && tier !== 'cinematic' ? 0.65 : 0.5, onChange: (sc) => { container.dataset.renderScale = String(sc); resize(); } });
+  const renderScale = createRenderScale({ budgetMs: (1000 / targetFps) * 1.15, min: coarse ? PHONE_MIN_SCALE : 0.5, onChange: (sc) => { container.dataset.renderScale = String(sc); resize(); } });
   const scaling = () => tier === 'cinematic' || recording || coarse;
   // Showcase: every frame at full size, whatever it costs (the scale never moves from 1).
   if (offline) renderScale.sample = () => {};

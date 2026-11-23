@@ -27,7 +27,7 @@ export const PHONE_MIN_SCALE = 0.8;
 export const FOG_CLEAR_M = 400;
 // Fog never thicker than this (exp2 density per metre): the far city fades,
 // it never disappears into a grey wall.
-export const FOG_MAX_DENSITY = 0.0012;
+export const FOG_MAX_DENSITY = 0.001;
 // The live fog's share of the real weather's fog (the Showcase used 0.45).
 export const LIVE_FOG_SCALE = 0.6;
 
@@ -73,7 +73,11 @@ export function parseFx(search) {
   try { p = new URLSearchParams(search || ''); } catch (e) { return {}; }
   if (p.get('debug') !== '1') return {};
   const out = {};
-  for (const part of String(p.get('fx') || '').split(',')) {
+  // Read raw: URLSearchParams would turn a '+' into a space.
+  const raw = /[?&]fx=([^&]*)/.exec(String(search || ''));
+  let list = '';
+  try { list = raw ? decodeURIComponent(raw[1]) : ''; } catch (e) { list = ''; }
+  for (const part of list.split(',')) {
     const m = /^([+-])([a-z]+)$/.exec(part.trim());
     if (m && FX_NAMES.includes(m[2])) out[m[2]] = m[1] === '+';
   }

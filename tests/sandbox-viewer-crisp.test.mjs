@@ -110,13 +110,14 @@ test('3: Cinematic lowers its render scale when frames run over 33 ms, and raise
   assert.equal(rs.scale, 1);
   assert.ok(changes.length >= 3);
   const scene = read('public/sandbox/sandbox-scene.js');
-  assert.match(scene, /const renderScale = createRenderScale\(\{ budgetMs: \(1000 \/ targetFps\) \* 1\.15, min: coarse && tier !== 'cinematic' \? 0\.65 : 0\.5,/);
+  // 1.23: on a phone the scale never goes below 0.8 (kingdom-look.js PHONE_MIN_SCALE), on every tier.
+  assert.match(scene, /const renderScale = createRenderScale\(\{ budgetMs: \(1000 \/ targetFps\) \* 1\.15, min: coarse \? PHONE_MIN_SCALE : 0\.5,/);
   // On a phone: fewer pixels first (every effect kept); the tier steps down only once that is not enough.
   assert.match(scene, /if \(!scaling\(\) \|\| renderScale\.atMin\) governor\.sample\(ms\);/);
-  const phone = createRenderScale({ min: 0.65 });
+  const phone = createRenderScale({ min: 0.8 });
   for (let i = 0; i < 400; i++) phone.sample(120);
   assert.equal(phone.atMin, true);
-  assert.equal(phone.scale, 0.65);
+  assert.equal(phone.scale, 0.8);
   assert.match(scene, /const scaling = \(\) => tier === 'cinematic' \|\| recording \|\| coarse;/);
   assert.match(scene, /\* \(renderScale && scaling\(\) && !fullShot \? renderScale\.scale : 1\)/);
   // A still is taken at the tier's full resolution: the render scale is lifted for that frame and put back.
