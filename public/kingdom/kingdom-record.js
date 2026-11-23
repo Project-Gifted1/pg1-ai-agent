@@ -18,7 +18,7 @@
 // MP4 (H.264) where the browser records it, else WebM.
 
 import { pickMime, fileExtension } from '../sandbox/capture.js';
-import { eventLine, dublinTime, BADGE, countriesText } from './kingdom-data.js';
+import { eventLine, dublinTime, BADGE, countriesText, turnedAwayText } from './kingdom-data.js';
 
 export const RECORD_ASPECTS = Object.freeze({ '16:9': [16, 9], '9:16': [9, 16] });
 export const RECORD_SECONDS = Object.freeze([30, 60]);
@@ -70,7 +70,7 @@ export function endCardLines(day, { n = 0, now = Date.now(), kind = 'probes_and_
   const date = DATE_FMT ? DATE_FMT.format(new Date(now)) : new Date(now).toISOString().slice(0, 10);
   return [
     `Real PG1 events, ${date} — not a simulation · ${kind === 'blocked' ? 'Hostile traffic' : 'Probes and checks'} from ${n} ${n === 1 ? 'country' : 'countries'} in 24 h`,
-    `${t} ${t === 1 ? 'threat' : 'threats'} turned away today`,
+    turnedAwayText(t, d.kind),
     LOG_FOOTNOTE,
     GEO_FOOTNOTE
   ];

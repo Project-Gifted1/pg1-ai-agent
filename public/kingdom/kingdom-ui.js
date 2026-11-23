@@ -20,8 +20,8 @@
 // pulses only while the feed answers; when it stops answering the badge
 // says "Feed paused — showing last real events" and nothing new plays.
 
-import { CINEMATIC_PHONE_NOTE } from './kingdom-look.js';
-import { createEventStore, eventLine, enemyLine, defenceLine, dublinTime, verdictText, reasonLabel, replaySchedule, normalizeState, flagOf, originTag, plural, whenLabel, captionLine, tickerLine, countriesText, BADGE, GADGET_META } from './kingdom-data.js';
+import { CINEMATIC_PHONE_NOTE, CINEMATIC_PHONE_LABEL } from './kingdom-look.js';
+import { createEventStore, eventLine, enemyLine, defenceLine, dublinTime, verdictText, reasonLabel, replaySchedule, normalizeState, flagOf, originTag, plural, whenLabel, captionLine, tickerLine, countriesText, turnedAwayText, BADGE, GADGET_META } from './kingdom-data.js';
 
 export const KINGDOM_POLL_MS = 5000;
 export const MINI_POLL_MS = 30000;
@@ -62,7 +62,7 @@ export function hudText(state, day, { loaded = true } = {}) {
   if (!loaded) return 'Defences: loading…';
   const st = state || {};
   const checks = Number.isFinite(st.checks) ? plural(st.checks, 'check') + ' live' : 'checks live: not read';
-  return `Defences active: ${checks} · ${plural(Number(day && day.turned_away) || 0, 'threat')} turned away today`;
+  return `Defences active: ${checks} · ${turnedAwayText(Number(day && day.turned_away) || 0, day && day.kind)}`;
 }
 
 // The flag strip: the top origins, then "+M".
@@ -107,7 +107,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     const hud = $('kingdom-hud');
     if (hud) hud.textContent = hudText(pg1State, store.day, { loaded });
     renderCountries();
-    if (scene && scene.setBillboards) scene.setBillboards(loaded ? { countries: store.origins.length, kind: store.originsKind, threats: Number(store.day.turned_away) || 0, checks: pg1State && Number.isFinite(pg1State.checks) ? pg1State.checks : null } : {});
+    if (scene && scene.setBillboards) scene.setBillboards(loaded ? { countries: store.origins.length, kind: store.originsKind, dayKind: store.day.kind, threats: Number(store.day.turned_away) || 0, checks: pg1State && Number.isFinite(pg1State.checks) ? pg1State.checks : null } : {});
     const level = store.threat.level;
     const mode = $('kingdom-mode');
     if (mode) { mode.dataset.mode = level; mode.textContent = level === 'storm' ? 'Under attack' : level === 'watch' ? 'On watch' : 'Calm'; }
@@ -324,7 +324,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     // On a phone Cinematic is a choice by hand, never Auto's (kingdom-look.js autoAllowed).
     const cin = sel && sel.querySelector('option[value="cinematic"]');
     const onPhone = !!((globalThis.matchMedia && globalThis.matchMedia('(pointer: coarse)').matches) || globalThis.innerWidth < 768);
-    if (cin && onPhone) cin.textContent = `Cinematic (${CINEMATIC_PHONE_NOTE})`;
+    if (cin && onPhone) { cin.textContent = CINEMATIC_PHONE_LABEL; cin.title = `Chosen by hand: ${CINEMATIC_PHONE_NOTE}`; }
     if (sel && t) { sel.value = t; sel.disabled = t === 'still'; }
   }
 
