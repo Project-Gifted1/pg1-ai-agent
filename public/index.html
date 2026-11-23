@@ -9243,14 +9243,18 @@
       const sections = Array.isArray(view.sections) ? view.sections : [];
       const body = sections.map((sec) => `<div class="usage-sec" data-section="${escapeHTML(String(sec.id || ''))}"><div class="usage-h" role="heading" aria-level="4">${escapeHTML(String(sec.title || ''))}</div>${(Array.isArray(sec.groups) ? sec.groups : []).map(usageGroupHtml).join('')}</div>`).join('');
       return `<section class="usage-card" aria-label="${escapeHTML(String(view.title || 'Usage'))}"><div class="usage-head"><span class="usage-title">${escapeHTML(String(view.title || 'Usage'))}</span><span class="tool-chip is-report">Report</span></div>`
-        + body + reportApprovalsHtml(view.approvals) + (view.note ? `<p class="usage-note">${escapeHTML(String(view.note))}</p>` : '') + '</section>';
+        + body + reportApprovalsHtml(view.approvals, view) + (view.note ? `<p class="usage-note">${escapeHTML(String(view.note))}</p>` : '') + '</section>';
     }
     // THE OPERATOR REPORTS (lib/operator): each item waiting for approval
     // with its one-line reason and Approve / Decline. The decision goes to
     // the server as the signed-in operator's (op task_decide); nothing
     // approves itself.
-    function reportApprovalsHtml(list) {
+    function reportApprovalsHtml(list, view) {
       const items = Array.isArray(list) ? list.filter((a) => a && typeof a.id === 'string' && /^[0-9a-f-]{36}$/i.test(a.id)) : [];
+      // A report card says so when nothing is waiting, or when the approvals
+      // could not be read, instead of leaving the section out.
+      const status = view && (view.approvals_status === 'ok' || view.approvals_status === 'not_read') ? view.approvals_status : null;
+      if (!items.length && status) return `<div class="usage-sec" data-section="approvals"><div class="usage-h" role="heading" aria-level="4">Waiting for approval</div><p class="usage-empty">${status === 'ok' ? 'Nothing is waiting for your approval.' : escapeHTML(`Approvals not read (${String(view.approvals_reason || 'unavailable')}).`)}</p></div>`;
       if (!items.length) return '';
       return `<div class="usage-sec" data-section="approvals"><div class="usage-h" role="heading" aria-level="4">Waiting for approval</div><ul class="report-approvals">${items.map((a) => `<li class="report-approval" data-id="${escapeHTML(a.id)}" data-source="${a.source === 'action' ? 'action' : 'task'}"><div class="report-approval-title">${escapeHTML(String(a.title || ''))}</div>${a.reason ? `<div class="report-approval-reason">${escapeHTML(String(a.reason))}</div>` : ''}<div class="report-approval-actions">${a.approvable === false ? '<span class="report-approval-note">Cannot be approved as it stands</span>' : '<button type="button" class="report-approve" onclick="reportDecide(this, \'approve\')">Approve</button>'}<button type="button" class="report-decline" onclick="reportDecide(this, \'decline\')">Decline</button></div></li>`).join('')}</ul></div>`;
     }

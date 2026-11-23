@@ -31,7 +31,7 @@ const { aggregateUsage, isProbeToolName, POLL_LOOP_MIN_CALLS } = await import('.
 const { formatUsageReport } = await import('../lib/usageReport.mjs');
 const { usageCardView, usageLead, storageWarnings, STORAGE_WARN_PERCENT } = await import('../lib/usageCard.mjs');
 const { shapeStorageUsage } = await import('../lib/storageUsage.mjs');
-const { buildTelemetryRow, callerHash, sanitizeRequestedTool, sanitizeMcpMethod, toolErrorTelemetryStatus, outcomeTelemetryStatus } = await import('../lib/telemetry.mjs');
+const { buildTelemetryRow, callerHash, sanitizeRequestedTool, sanitizeMcpMethod, toolErrorTelemetryStatus, outcomeTelemetryStatus, telemetryIdle } = await import('../lib/telemetry.mjs');
 const { callerKindOf, ownCallerHashes, isOwnHash } = await import('../lib/ownTraffic.mjs');
 const { normalizeIndicator } = await import('../lib/iocContext.mjs');
 const { fetchAbuseIpdbCheck } = await import('../lib/abuseIpdb.mjs');
@@ -66,7 +66,8 @@ function installFetch(routes = []) {
   globalThis.fetch = async (url, options = {}) => {
     const u = String(url);
     if (u.endsWith('/rest/v1/agent_telemetry') && options.method === 'POST') {
-      rows.push(JSON.parse(options.body));
+      // Rows recorded while an insert is in flight go out together as an array.
+      rows.push(...[].concat(JSON.parse(options.body)));
       return new Response(null, { status: 201 });
     }
     for (const [needle, handler] of routes) if (u.includes(needle)) return handler(u, options);
@@ -76,7 +77,9 @@ function installFetch(routes = []) {
   return { rows };
 }
 
-const settle = () => new Promise((r) => setImmediate(r));
+// Every queued telemetry row written (lib/telemetry.mjs batches rows that
+// arrive while an insert is in flight).
+const settle = async () => { await new Promise((r) => setImmediate(r)); await telemetryIdle(); };
 
 function makeRes() {
   return {

@@ -42,6 +42,7 @@
       <li><a href="#what-status-means">What <code>status</code> means</a></li>
       <li><a href="#verify-a-result">Verify a result</a></li>
       <li><a href="#free-tier-and-rate-limits">Free tier and rate limits</a></li>
+      <li><a href="#plans-for-check_agent_message-and-check_repo_trap">Plans for check_agent_message and check_repo_trap</a></li>
     </ul>
   </nav>
 
@@ -263,7 +264,8 @@ def verify_pg1(result, sig, jwks_url=&quot;https://pg1-ai-agent.vercel.app/.well
 <tr><td><code>check_wallet_sanctions</code></td><td>Always free</td><td>120 calls/hour per caller</td></tr>
 <tr><td><code>check_domain_age</code>, <code>check_hostname_reputation</code>, <code>check_wallet_age</code>, <code>check_package</code></td><td>Always free</td><td>60 calls/hour per caller, per tool</td></tr>
 <tr><td><code>check_ip_abuse</code></td><td>Always free (your own AbuseIPDB quota)</td><td>60 calls/hour per caller</td></tr>
-<tr><td><code>check_x402_endpoint</code>, <code>check_agent_card</code>, <code>check_agent_message</code>, <code>check_repo_trap</code></td><td>Always free</td><td>60 calls/hour per caller, per tool</td></tr>
+<tr><td><code>check_x402_endpoint</code>, <code>check_agent_card</code></td><td>Always free</td><td>60 calls/hour per caller, per tool</td></tr>
+<tr><td><code>check_agent_message</code>, <code>check_repo_trap</code></td><td>Free to start, then plans (<a href="https://pg1-ai-agent.vercel.app/pricing">/pricing</a>)</td><td>60 calls/hour per caller, per tool; with plans on, 25 checks a day without a key, 500 with a free key from <a href="https://pg1-ai-agent.vercel.app/keys">/keys</a>, one quota for both tools</td></tr>
 <tr><td><code>verify_result</code></td><td>Always free</td><td>none</td></tr>
 <tr><td><code>preflight_check</code>, <code>hosting_advisor</code></td><td>Paid: 0.01 USD per call</td><td>5 free calls a day per caller, shared with the other paid tools, then x402</td></tr>
 <tr><td><code>get_usage_status</code></td><td>Always free</td><td>none</td></tr>
@@ -279,6 +281,25 @@ def verify_pg1(result, sig, jwks_url=&quot;https://pg1-ai-agent.vercel.app/.well
 <li>Send <code>X-Free-Tier: 0</code> to skip it and get the payment challenge straight away.</li>
 <li>A licence key in <code>X-API-KEY</code> lifts the hourly limits and pays for paid calls.</li>
 <li>A rate-limited call is a <code>rate_limited</code> error with <code>retry_after</code>.</li>
+</ul>
+<h2 id="plans-for-check_agent_message-and-check_repo_trap">Plans for check_agent_message and check_repo_trap</h2>
+<p>The two pre-read and pre-run checks share one quota per caller. Plans: <a href="https://pg1-ai-agent.vercel.app/pricing">/pricing</a>. A free key: <a href="https://pg1-ai-agent.vercel.app/keys">/keys</a>.</p>
+<div class="table-wrap" tabindex="0"><table>
+<thead><tr><th scope="col">Plan</th><th scope="col">Checks</th><th scope="col">Price</th></tr></thead>
+<tbody>
+<tr><td>No key</td><td>25 a day per caller</td><td>free</td></tr>
+<tr><td>Free key (email)</td><td>500 a day</td><td>free</td></tr>
+<tr><td>Builder</td><td>10,000 a month</td><td>9 USD a month, by card</td></tr>
+<tr><td>Team</td><td>100,000 a month, up to 5 keys</td><td>49 USD a month, by card</td></tr>
+<tr><td>Partner</td><td>unlimited</td><td>by arrangement</td></tr>
+<tr><td>Pay per check</td><td>one check</td><td>0.002 USD in USDC on Base (x402)</td></tr>
+</tbody>
+</table></div>
+<ul>
+<li>Every key goes in <code>X-API-KEY</code>: a free key, a Builder or Team licence key, a Team key or a Partner licence.</li>
+<li>Over the free limit without a licence, the call gets an x402 payment challenge for 0.002 USD; a licence over its monthly quota gets a <code>quota_exceeded</code> error naming the quota and the reset date. Both carry <code>keys_url</code> and <code>pricing_url</code>. Results are never cut short.</li>
+<li>Responses carry <code>X-PG1-Plan</code>, and where a quota applies <code>X-PG1-Quota</code>, <code>X-PG1-Quota-Remaining</code> and <code>X-PG1-Quota-Reset</code>.</li>
+<li>A clean result is <code>no_findings</code>: no findings, never &quot;safe&quot;.</li>
 </ul>
   </article>
 

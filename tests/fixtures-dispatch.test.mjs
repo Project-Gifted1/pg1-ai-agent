@@ -15,6 +15,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TEST_FIXTURES, FIXTURE_VALUES, FIXTURE_DELEGATE_ADDRESS, A2A_FIXTURE_SKILLS, FIXTURE_DOMAIN_FLAGGED_AGE_DAYS, fixtureDaysAgoMidnightUtc } from '../lib/fixtures.mjs';
+import { telemetryIdle, __resetTelemetryQueueForTests, __resetTelemetryFailureLogForTests } from '../lib/telemetry.mjs';
 
 // api/mcp.mjs reads X402_PAY_TO_ADDRESS at module load, and only then does a
 // paid call ever reach the facilitator - set it first so the facilitator spy
@@ -70,14 +71,21 @@ async function callA2a(skill, args, headers) {
 // those go to `calls.telemetry`, not `calls`, and every one must carry
 // is_fixture: true.
 function spyFetch(t) {
+  // Rows from the test before are written to that test's spy, not this one,
+  // and nothing pending from it (a drop record) reaches this one.
+  __resetTelemetryQueueForTests();
+  __resetTelemetryFailureLogForTests();
+  t.after(() => telemetryIdle());
   const calls = [];
   Object.defineProperty(calls, 'telemetry', { value: [], enumerable: false });
   const original = global.fetch;
   global.fetch = async (url, opts) => {
     if (String(url).endsWith('/rest/v1/agent_telemetry') && opts && opts.method === 'POST') {
-      const row = JSON.parse(opts.body);
-      assert.equal(row.is_fixture, true, 'a fixture call is recorded as a fixture');
-      calls.telemetry.push(row);
+      // Rows recorded while an insert is in flight go out together as an array.
+      for (const row of [].concat(JSON.parse(opts.body))) {
+        assert.equal(row.is_fixture, true, 'a fixture call is recorded as a fixture');
+        calls.telemetry.push(row);
+      }
       return { ok: true, status: 201 };
     }
     calls.push(String(url));
@@ -165,6 +173,7 @@ test('MCP: every fixture returns its expected result, with no key and no network
   }
 
   assert.deepEqual(calls, [], 'fixture calls must never call fetch (upstream, cache, licence, free tier, error log)');
+  await telemetryIdle();
   assert.equal(calls.telemetry.length, TEST_FIXTURES.length, 'one usage telemetry row per fixture call, flagged is_fixture');
   assert.ok(calls.telemetry.every((r) => r.endpoint === '/api/mcp' && r.event_type === 'tool_call'));
   assert.equal(facilitatorCalls, 0, 'fixture calls must never reach the x402 payment gate');
@@ -359,6 +368,7 @@ test('A2A: the 4 fixture skills return their expected result with no network act
       assertFixtureResultBody(data, fixture, pg1RequestId);
     }
   }
+  await telemetryIdle();
   assert.deepEqual(calls, []);
   assert.equal(calls.telemetry.length, TEST_FIXTURES.filter((f) => A2A_FIXTURE_SKILLS.includes(f.tool)).length);
   assert.ok(calls.telemetry.every((r) => r.endpoint === '/api/a2a' && r.is_fixture === true));

@@ -148,6 +148,39 @@
       "client": false
     },
     {
+      "command": "/keys delete-requests",
+      "area": "Keys & usage",
+      "description": "Free-key deletion requests made with only an email, waiting for you (due within 30 days)",
+      "args": [],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
+      "command": "/keys delete-request",
+      "area": "Keys & usage",
+      "description": "Carry out (approve) or close (decline) a free-key deletion request",
+      "args": [
+        {
+          "name": "id",
+          "placeholder": "request id (first 8 characters)",
+          "required": true
+        },
+        {
+          "name": "decision",
+          "placeholder": "approve or decline",
+          "required": true,
+          "choices": [
+            "approve",
+            "decline"
+          ]
+        }
+      ],
+      "operatorOnly": true,
+      "dangerous": false,
+      "client": false
+    },
+    {
       "command": "/usage",
       "area": "Keys & usage",
       "description": "Tool usage by agents (default 7 days)",

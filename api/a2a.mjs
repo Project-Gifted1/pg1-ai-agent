@@ -102,6 +102,8 @@ import {
   resolveTestFixture,
   requestCallerHash,
   runPricedX402Gate,
+  payPerCheckDescription,
+  withPlanLinks,
   runReadOnlyTool,
   internalRunTool,
   screenPaymentPayer
@@ -127,6 +129,7 @@ import { formatFixIt, invalidInputMessage } from '../lib/invalidInput.mjs';
 import { ABUSEIPDB_KEY_HEADER, readCustomerKey } from '../lib/abuseIpdb.mjs';
 import { suggestToolName } from '../lib/toolNames.mjs';
 import { X402_PRICE, x402PriceUsd } from '../lib/x402Config.mjs';
+import { isMeteredTool, isPaidChecksOn, PAY_PER_CHECK_USD, limitLinks } from '../lib/plans.mjs';
 import { queryOf } from '../lib/requestQuery.mjs';
 
 // Generic (never vendor-named) `checks[].source` labels for the 6 skills
@@ -213,7 +216,7 @@ const METHODS = {
   ]
 };
 
-async function runSkill(skill, args, identifier, licenseKey, req) {
+async function runSkill(skill, args, identifier, licenseKey, req, meter = {}) {
   switch (skill) {
     case 'get_usage_status':
       return handleUsageStatus(args, identifier);
@@ -230,10 +233,12 @@ async function runSkill(skill, args, identifier, licenseKey, req) {
       return handleCheckIpAbuse(args, { identifier, licenseKey, abuseIpdbKey: readCustomerKey(req.headers) });
     case 'check_package':
       return handleCheckPackage(args, identifier, licenseKey);
-    case 'check_x402_endpoint':
-    case 'check_agent_card':
     case 'check_agent_message':
     case 'check_repo_trap':
+      // Metered (lib/plans.mjs): the caller's plan, the shared quota.
+      return runReadOnlyTool(skill, args, { identifier, licenseKey, metered: true, paid: meter.paid === true, meterOut: meter.out });
+    case 'check_x402_endpoint':
+    case 'check_agent_card':
     case 'verify_result':
       return runReadOnlyTool(skill, args, { identifier, licenseKey });
     default:
@@ -384,7 +389,7 @@ function historyMessageMetadata(inboundMessage) {
 
 // A paid skill call that needs payment first (a2a-x402): an input-required
 // Task whose status message carries the PaymentRequired object.
-function paymentRequiredTask(skill, args, paymentRequired, version, inboundMessage, { failed = false } = {}) {
+function paymentRequiredTask(skill, args, paymentRequired, version, inboundMessage, { failed = false, plans = null } = {}) {
   const taskId = crypto.randomUUID();
   const contextId = (inboundMessage && inboundMessage.contextId) || crypto.randomUUID();
   const metadata = { [X402_META.status]: failed ? 'payment-failed' : 'payment-required', [X402_META.required]: paymentRequired };
@@ -394,6 +399,12 @@ function paymentRequiredTask(skill, args, paymentRequired, version, inboundMessa
     skill,
     message: `${skill} is a paid skill and today's 5 free calls (shared across /api/mcp, /api/ioc and /api/a2a) are used up or were declined with X-Free-Tier: 0. Pay per call with x402 (the PaymentPayload in message.metadata["${X402_META.payload}"]) or send a Gumroad licence key in X-API-KEY.`
   };
+  // check_agent_message / check_repo_trap over the free limit (lib/plans.mjs):
+  // their own message (the quota, its reset, /keys and /pricing) instead.
+  if (plans) {
+    note.message = `${paymentRequired && paymentRequired.error ? paymentRequired.error : 'Pay per check (0.002 USD).'} Send the x402 PaymentPayload in message.metadata["${X402_META.payload}"].`;
+    Object.assign(note, plans);
+  }
   const status = { state: stateValue('input-required', version), timestamp: new Date().toISOString(), message: buildMessage('agent', note, version, { contextId, taskId, metadata }) };
   const task = {
     id: taskId,
@@ -544,6 +555,7 @@ function recordSkillTelemetry(skillTelemetry, res) {
       callerHash: requestCallerHash(skillTelemetry.req),
       countryCode: requestCountry(skillTelemetry.req),
       callerKind: callerKindOf(skillTelemetry.req),
+      plan: skillTelemetry.plan,
       isFixture: skillTelemetry.isFixture === true
     });
   } catch {
@@ -996,12 +1008,45 @@ export default async function handler(req, res) {
       }
     }
 
+    // check_agent_message and check_repo_trap (lib/plans.mjs): with
+    // PG1_PAID_CHECKS on, a message carrying an x402 payment pays per check
+    // (0.002 USD); a caller over its free limit gets that payment challenge.
+    const metered = isMeteredTool(skill);
+    const meter = { out: {}, paid: false };
+    let checkGate = null;
+    if (metered && isPaidChecksOn()) {
+      const metaPayment = inboundMessage && inboundMessage.metadata && inboundMessage.metadata[X402_META.payload];
+      if (metaPayment || req.headers['payment-signature'] || req.headers['x-payment']) {
+        checkGate = await runPricedX402Gate(req, { payment: metaPayment || undefined, priceUsd: PAY_PER_CHECK_USD, description: payPerCheckDescription(skill) });
+        if (!checkGate.authorized) {
+          skillTelemetry.status = 'payment_required';
+          return res.status(200).json({ jsonrpc: '2.0', result: sendMessageResult(paymentRequiredTask(skill, args, withPlanLinks(checkGate.paymentRequired), version, inboundMessage, { plans: limitLinks() }), version), id: requestId });
+        }
+        const screened = await screenPaymentPayer(checkGate.payer, 'per-check /api/a2a');
+        if (!screened.allowed) {
+          skillTelemetry.status = screened.refused ? 'payer_refused' : 'server_error';
+          if (screened.unavailable) res.setHeader('Retry-After', '60');
+          return jsonRpcError(res, screened.refused ? 200 : 503, screened.refused ? PAYER_REFUSED_CODE : SERVICE_UNAVAILABLE_CODE, screened.message, requestId, { code: screened.refused ? 'payer_refused' : 'screening_unavailable' }, pg1RequestId);
+        }
+        meter.paid = true;
+        gate = checkGate;
+        skillTelemetry.paymentType = 'x402';
+      }
+    }
+
     let toolResult;
     try {
-      toolResult = gate
+      toolResult = gate && !checkGate
         ? await STANDARD_TOOL_HANDLERS[skill](args, paidResponseOptions())
-        : await runSkill(skill, args, identifier, licenseKey, req);
+        : await runSkill(skill, args, identifier, licenseKey, req, meter);
     } catch (err) {
+      if (meter.out.tier) skillTelemetry.plan = meter.out.tier;
+      if (meter.out.headers) for (const [k, v] of Object.entries(meter.out.headers)) res.setHeader(k, v);
+      if (metered && err.code === 'payment_required') {
+        skillTelemetry.status = 'free_limit_reached';
+        const challenge = await runPricedX402Gate(req, { priceUsd: PAY_PER_CHECK_USD, description: payPerCheckDescription(skill) });
+        return res.status(200).json({ jsonrpc: '2.0', result: sendMessageResult(paymentRequiredTask(skill, args, withPlanLinks(challenge.paymentRequired, err), version, inboundMessage, { plans: err.meter }), version), id: requestId });
+      }
       if (err.serviceUnavailable) {
         recordToolError(`/api/a2a:${skill}`, 503, `${skill}_upstream_unavailable`, 'upstream', pg1RequestId);
         return jsonRpcError(res, 503, SERVICE_UNAVAILABLE_CODE, err.message, requestId, undefined, pg1RequestId);
@@ -1020,7 +1065,7 @@ export default async function handler(req, res) {
         }
         skillTelemetry.status = toolErrorTelemetryStatus(err);
         const errorChecks = [buildCheck(SKILL_SOURCE_LABELS[skill] || skill, classifyToolErrorCheckResult(err))];
-        const errorData = { code: err.code, ...errorResponseMeta(errorChecks, pg1RequestId) };
+        const errorData = { code: err.code, ...errorResponseMeta(errorChecks, pg1RequestId), ...(metered && err.meter ? err.meter : {}) };
         if (err.retryAfter) {
           errorData.retry_after = err.retryAfter;
           res.setHeader('Retry-After', String(err.retryAfter));
@@ -1031,6 +1076,8 @@ export default async function handler(req, res) {
     }
     toolResult.request_id = pg1RequestId;
     if (skill === 'check_package') logPackageCheckFailures('/api/a2a', toolResult, pg1RequestId);
+    if (meter.out.tier) skillTelemetry.plan = meter.out.tier;
+    if (meter.out.headers) for (const [k, v] of Object.entries(meter.out.headers)) res.setHeader(k, v);
 
     let paymentMetadata;
     if (gate && gate.settle) {
@@ -1045,7 +1092,7 @@ export default async function handler(req, res) {
         failure = 'Settlement failed: ' + e.message;
       }
       const ok = !!(settled && settled.success);
-      recordTelemetry({ eventType: 'settlement', endpoint: '/api/a2a', toolName: skill, paymentType: 'x402', status: ok ? 'settled' : 'failed', latencyMs: Date.now() - settleStartedAt, callerHash: requestCallerHash(req), countryCode: requestCountry(req), callerKind: callerKindOf(req), amountUsd: ok ? x402PriceUsd(X402_PRICE) : null });
+      recordTelemetry({ eventType: 'settlement', endpoint: '/api/a2a', toolName: skill, paymentType: 'x402', status: ok ? 'settled' : 'failed', latencyMs: Date.now() - settleStartedAt, callerHash: requestCallerHash(req), countryCode: requestCountry(req), callerKind: callerKindOf(req), plan: skillTelemetry.plan, amountUsd: ok ? (checkGate ? PAY_PER_CHECK_USD : x402PriceUsd(X402_PRICE)) : null });
       if (!ok) {
         skillTelemetry.status = 'settlement_failed';
         const paymentRequired = await gate.settlementFailurePaymentRequired(failure);

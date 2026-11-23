@@ -10,6 +10,7 @@
 import { getSupabaseCreds } from '../../lib/supabase.mjs';
 import { purgeExpiredTelemetry } from '../../lib/telemetry.mjs';
 import { purgeExpiredFreeTierUsage } from '../../lib/freeTier.mjs';
+import { purgeExpiredCheckUsage } from '../../lib/apiKeys.mjs';
 import { checkCronAuth } from '../../lib/cronAuth.mjs';
 import { runRetentionJobs } from '../../lib/retention.mjs';
 
@@ -43,6 +44,8 @@ export default async function handler(req, res) {
   // The upgrade's own tables and files (lib/retention.mjs): documents and
   // later job outputs. Reported, never fatal to this job.
   var retention = await runRetentionJobs();
+  // Plan usage counters (lib/apiKeys.mjs, 62 days). Reported, never fatal.
+  var checkUsage = await purgeExpiredCheckUsage({ supUrl: creds.supUrl, supKey: creds.supKey });
 
   try {
     var deleteRes = await fetch(`${creds.supUrl}/rest/v1/pg1_errors?last_seen=lt.${encodeURIComponent(cutoffIso)}`, {
@@ -62,7 +65,7 @@ export default async function handler(req, res) {
     if (!freeTier.ok) {
       return res.status(502).json({ error: 'Free-tier retention delete failed', cutoff: cutoffIso, telemetry, free_tier: freeTier });
     }
-    return res.status(200).json({ ok: true, cutoff: cutoffIso, telemetry, free_tier: freeTier, retention });
+    return res.status(200).json({ ok: true, cutoff: cutoffIso, telemetry, free_tier: freeTier, retention, check_usage: checkUsage });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
