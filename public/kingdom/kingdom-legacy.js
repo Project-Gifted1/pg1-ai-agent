@@ -40,6 +40,10 @@ export function mergeGeometries(THREE, geos) {
 // Static instanced scenery that is expanded into plain geometry and merged too.
 export const STATIC_INSTANCED = Object.freeze(['street-lamp-posts', 'street-light-poles', 'street-lamps', 'street-lights', 'street-light-pools', 'tram-pillars', 'embankment-railing', 'lane-markings', 'kerbs', 'pavements', 'zebra-crossings', 'stop-lines', 'manhole-covers', 'rooftop-plant', 'rooftop-antennas', 'helipads', 'bus-shelters', 'tram-platforms', 'cafe-tables', 'cafe-parasols', 'flag-poles', 'traffic-light-poles', 'tree-trunks', 'plaza-benches', 'moored-boats-none']);
 
+// A phone's Medium (1.23, kingdom-scene.js leanCity): the facade and roof
+// detail never moves either, and shares materials with other scenery (steel,
+// dark steel, concrete, glass, grass): merged too, one draw call per material.
+export const PHONE_STATIC_INSTANCED = Object.freeze([...STATIC_INSTANCED, 'entrance-canopies', 'facade-fins', 'balconies', 'balcony-rails', 'rooftop-water-tanks', 'rooftop-water-tank-stands', 'roof-gardens', 'roof-terrace-rails']);
 // Two materials that draw the same (type, colours, finish, maps, blending).
 function materialKey(m) {
   const c = (x) => (x && x.getHexString ? x.getHexString() : '');

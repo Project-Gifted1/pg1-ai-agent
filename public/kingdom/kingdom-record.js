@@ -64,12 +64,12 @@ function wrap(g, text, maxW) {
 export const LOG_FOOTNOTE = "Visualised live from PG1's logs. Location = traffic origin (IP geolocation), not attacker identity.";
 export const GEO_FOOTNOTE = 'Countries come from IP geolocation at the network edge and are approximate. No IP addresses are stored.';
 const DATE_FMT = typeof Intl !== 'undefined' ? new Intl.DateTimeFormat('en-IE', { timeZone: 'Europe/Dublin', day: 'numeric', month: 'long', year: 'numeric' }) : null;
-export function endCardLines(day, { n = 0, now = Date.now() } = {}) {
+export function endCardLines(day, { n = 0, now = Date.now(), kind = 'probes_and_checks' } = {}) {
   const d = day || {};
   const t = Number(d.turned_away) || 0;
   const date = DATE_FMT ? DATE_FMT.format(new Date(now)) : new Date(now).toISOString().slice(0, 10);
   return [
-    `Real PG1 events, ${date} — not a simulation · Hostile traffic from ${n} ${n === 1 ? 'country' : 'countries'} in 24 h`,
+    `Real PG1 events, ${date} — not a simulation · ${kind === 'blocked' ? 'Hostile traffic' : 'Probes and checks'} from ${n} ${n === 1 ? 'country' : 'countries'} in 24 h`,
     `${t} ${t === 1 ? 'threat' : 'threats'} turned away today`,
     LOG_FOOTNOTE,
     GEO_FOOTNOTE
@@ -109,7 +109,7 @@ export function createRecording(scene, { aspect = '16:9', seconds = 30, mode = '
     const texts = [];
     // The country counter, top centre.
     const cc = countries() || { n: 0, strip: "" };
-    const ct = `${cc.strip ? `${cc.strip}  ` : ''}${countriesText(cc.n)}`;
+    const ct = `${cc.strip ? `${cc.strip}  ` : ''}${countriesText(cc.n, cc.kind)}`;
     g.font = `700 ${Math.round(u * 0.95)}px Inter, system-ui, "Noto Color Emoji", sans-serif`;
     const cw = g.measureText(ct).width;
     g.fillStyle = 'rgba(10,10,11,0.6)'; g.fillRect((w - cw) / 2 - u * 0.6, u * 3.2, cw + u * 1.2, u * 1.7);
@@ -132,7 +132,7 @@ export function createRecording(scene, { aspect = '16:9', seconds = 30, mode = '
     if ((now - started) / 1000 > seconds - END_CARD_S) {
       g.fillStyle = 'rgba(10,10,11,0.55)'; g.fillRect(0, h * 0.3, w, h * 0.4);
       g.fillStyle = '#f3c623'; g.font = `700 ${Math.round(u * 1.5)}px Inter, system-ui, sans-serif`;
-      const [l1, l2, f1, f2] = endCardLines(day(), { n: cc.n });
+      const [l1, l2, f1, f2] = endCardLines(day(), { n: cc.n, kind: cc.kind });
       g.font = `700 ${Math.round(u * 1.05)}px Inter, system-ui, sans-serif`;
       let y = h * 0.36;
       for (const l of wrap(g, l1, w - u * 4)) { g.fillText(l, (w - g.measureText(l).width) / 2, y); y += u * 1.4; }

@@ -88,12 +88,15 @@ export function createEventStore({ max = 800 } = {}) {
   let day = { turned_away: 0, countries: 0, settled: 0 };
   const origins = new Map();
   const dayCountries = new Set();
+  // What the countries count is made of (lib/defenseFeed.mjs originsKind).
+  let originsKind = 'probes_and_checks';
   return {
     get size() { return byId.size; },
     get today() { return { ...today }; },
     get threat() { return threat; },
     // Hostile traffic by country over 24 h, most first: [[cc, count]].
     get origins() { return [...origins.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)); },
+    get originsKind() { return originsKind; },
     get day() { return { ...day, countries: Math.max(day.countries, dayCountries.size) }; },
     list() { return [...byId.values()].sort((a, b) => b.time - a.time || (a.id < b.id ? 1 : -1)); },
     get(id) { return byId.get(id) || null; },
@@ -102,7 +105,7 @@ export function createEventStore({ max = 800 } = {}) {
       const events = Array.isArray(feed && feed.events) ? feed.events : [];
       if (feed && feed.today && typeof feed.today === 'object') today = Object.fromEntries(Object.entries(feed.today).filter(([k, v]) => Object.hasOwn(GADGET_META, k) && Number.isFinite(v)).map(([k, v]) => [k, Math.max(0, Math.round(v))]));
       const initial = !!(feed && feed.today);
-      if (feed && Array.isArray(feed.origins)) { origins.clear(); for (const o of feed.origins) if (o && /^[A-Z]{2}$/.test(o.country_code) && Number.isFinite(o.count)) origins.set(o.country_code, o.count); }
+      if (feed && Array.isArray(feed.origins)) { origins.clear(); for (const o of feed.origins) if (o && /^[A-Z]{2}$/.test(o.country_code) && Number.isFinite(o.count)) origins.set(o.country_code, o.count); originsKind = feed.origins_kind === 'blocked' ? 'blocked' : 'probes_and_checks'; }
       if (feed && feed.day && typeof feed.day === 'object') day = { turned_away: Math.max(0, Number(feed.day.turned_away) || 0), countries: Math.max(0, Number(feed.day.countries) || 0), settled: Math.max(0, Number(feed.day.settled) || 0) };
       for (const raw of events) {
         const e = normalizeEvent(raw);
@@ -113,7 +116,7 @@ export function createEventStore({ max = 800 } = {}) {
         if (!delta) continue;
         fresh.push({ event: e, delta });
         if (!initial) {
-          if (e.role === 'attacker') { day.turned_away += delta; if (e.country) { dayCountries.add(e.country); origins.set(e.country, (origins.get(e.country) || 0) + delta); } }
+          if (e.role === 'attacker') { day.turned_away += delta; if (e.country) { dayCountries.add(e.country); origins.set(e.country, (origins.get(e.country) || 0) + delta); if (e.kind !== 'payer_refused') originsKind = 'probes_and_checks'; } }
           if (e.verdict === 'SETTLED' || e.verdict === 'JOB_PAID') day.settled += delta;
           today[e.gadget] = (today[e.gadget] || 0) + delta;
           if (e.role === 'attacker' && !e.country && e.check !== 'operator_signin' && e.verdict !== 'SANCTIONS_MATCH') today.fog_wall = (today.fog_wall || 0) + delta;
@@ -257,10 +260,10 @@ export function weatherLook(raw) {
 
 // The billboards: real PG1 numbers from the feed only; "not read" when a
 // number is not there. Threats only (no payments).
-export function billboardLines({ countries = null, threats = null, checks = null } = {}) {
+export function billboardLines({ countries = null, threats = null, checks = null, kind = 'probes_and_checks' } = {}) {
   const n = (v) => (Number.isFinite(v) ? String(v) : 'not read');
   return [
-    `${n(countries)} ${countries === 1 ? 'country' : 'countries'} · hostile traffic, last 24 h`,
+    `${n(countries)} ${countries === 1 ? 'country' : 'countries'} · ${kind === 'blocked' ? 'hostile traffic' : 'probes and checks'}, last 24 h`,
     `${n(threats)} ${threats === 1 ? 'threat' : 'threats'} turned away today`,
     `${n(checks)} ${checks === 1 ? 'check' : 'checks'} live`
   ];
@@ -278,7 +281,9 @@ export function isEnemyColour(hex) {
 }
 
 // The HUD's country counter.
-export function countriesText(n) { return `Hostile traffic from ${plural(n, 'country', 'countries')} · last 24 h`; }
+// "Hostile" only when every event counted is a blocked attack
+// (lib/defenseFeed.mjs originsKind 'blocked'); otherwise probes and checks.
+export function countriesText(n, kind = 'probes_and_checks') { return `${kind === 'blocked' ? 'Hostile traffic' : 'Probes and checks'} from ${plural(n, 'country', 'countries')} · last 24 h`; }
 
 // What PG1 does about an event: which gadget answers and how. PG1 only
 // defends: block, scan, catch, turn back, repair, stamp, light or welcome;

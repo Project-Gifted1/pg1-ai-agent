@@ -97,7 +97,10 @@ test('tiers: the viewer\'s tiers map onto Phone, Balanced and Cinematic; Legacy 
   assert.deepEqual(['low', 'medium', 'high', 'ultra', 'cinematic'].map(kingdomTierOf), ['phone', 'phone', 'balanced', 'cinematic', 'cinematic']);
   const phone = kingdomSettings('phone');
   assert.equal(phone.shadows, 0, 'baked shadows only');
-  assert.equal(phone.post, null, 'no post-processing');
+  // 1.23: no heavy post-processing (no bloom, occlusion or SMAA); only the
+  // final grade-and-sharpen pass over a multisampled frame (kingdom-look.js).
+  assert.equal(phone.post.aa, 'msaa'); assert.equal(phone.post.bloom, false); assert.equal(phone.post.gtao, false); assert.ok(phone.post.finish);
+  assert.equal(kingdomSettings('legacy').post, null, 'Low: no post-processing at all');
   assert.equal(phone.shafts, false, 'no volumetrics');
   assert.equal(phone.targetFps, 30);
   assert.ok(kingdomSettings('cinematic').post.gtao && kingdomSettings('cinematic').shafts);
@@ -177,8 +180,11 @@ test('captions, ticker and the claim: flags and ISO codes, LIVE only for live ar
   assert.match(whenLabel(lens, { replay: true }), /^Earlier today · \d\d:\d\d$/);
   assert.ok(!/LIVE/.test(whenLabel(lens, { replay: true })), 'a replay is never LIVE');
   assert.equal(tickerLine(lens), '🇫🇷 FR · Mimic boat · check_hostname_reputation: flagged');
-  assert.equal(countriesText(1), 'Hostile traffic from 1 country · last 24 h');
-  assert.equal(countriesText(5), 'Hostile traffic from 5 countries · last 24 h');
+  // 1.23: probes and checks, unless every counted event was a blocked attack.
+  assert.equal(countriesText(1), 'Probes and checks from 1 country · last 24 h');
+  assert.equal(countriesText(5), 'Probes and checks from 5 countries · last 24 h');
+  assert.equal(countriesText(5, 'probes_and_checks'), 'Probes and checks from 5 countries · last 24 h');
+  assert.equal(countriesText(2, 'blocked'), 'Hostile traffic from 2 countries · last 24 h');
   assert.equal(BADGE.live, '● LIVE · Real PG1 events — not a simulation');
   assert.equal(BADGE.paused, 'Feed paused — showing last real events');
   assert.equal(BADGE.replay, 'Real PG1 events — time-lapsed replay, not a simulation');
@@ -192,7 +198,8 @@ test('Record mode: the badge and the end card (date, N, both footnotes); replays
   assert.equal(clipLabel('live'), '● LIVE · Real PG1 events — not a simulation');
   assert.equal(clipLabel('replay'), 'Real PG1 events — time-lapsed replay, not a simulation');
   const lines = endCardLines({ turned_away: 1, settled: 1 }, { n: 5, now: Date.parse('2026-11-05T20:00:00Z') });
-  assert.equal(lines[0], 'Real PG1 events, 5 November 2026 — not a simulation · Hostile traffic from 5 countries in 24 h');
+  assert.equal(lines[0], 'Real PG1 events, 5 November 2026 — not a simulation · Probes and checks from 5 countries in 24 h');
+  assert.equal(endCardLines({}, { n: 2, kind: 'blocked', now: Date.parse('2026-11-05T20:00:00Z') })[0], 'Real PG1 events, 5 November 2026 — not a simulation · Hostile traffic from 2 countries in 24 h');
   assert.equal(lines[1], '1 threat turned away today');
   assert.ok(!lines.some((l) => /payment/.test(l)), 'threats only');
   assert.equal(lines[2], "Visualised live from PG1's logs. Location = traffic origin (IP geolocation), not attacker identity.");
@@ -247,8 +254,9 @@ test('the city\'s own life: windows follow Dublin time, the real weather (not a 
   assert.equal(Math.floor(h), 13, 'Dublin summer time');
   assert.equal(Math.floor(dublinHour(Date.parse('2026-12-01T12:00:00Z'))), 12);
   assert.equal(weatherLook(null).state, 'clear', 'no weather read: a calm clear sky, never a made-up storm');
-  assert.deepEqual(billboardLines({ countries: 5, threats: 31, checks: 21 }), ['5 countries · hostile traffic, last 24 h', '31 threats turned away today', '21 checks live']);
-  assert.deepEqual(billboardLines({}), ['not read countries · hostile traffic, last 24 h', 'not read threats turned away today', 'not read checks live']);
+  assert.deepEqual(billboardLines({ countries: 5, threats: 31, checks: 21 }), ['5 countries · probes and checks, last 24 h', '31 threats turned away today', '21 checks live']);
+  assert.deepEqual(billboardLines({}), ['not read countries · probes and checks, last 24 h', 'not read threats turned away today', 'not read checks live']);
+  assert.equal(billboardLines({ countries: 2, kind: 'blocked' })[0], '2 countries · hostile traffic, last 24 h');
   assert.ok(!billboardLines({ countries: 1, threats: 1, checks: 1 }).some((l) => /payment/.test(l)));
   for (const c of Object.values(ENEMY_COLORS)) if (c !== ENEMY_COLORS.shadow) assert.ok(isEnemyColour(c), c.toString(16));
   for (const c of Object.values(PG1_COLORS)) assert.ok(!isEnemyColour(c), c.toString(16));

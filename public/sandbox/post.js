@@ -24,8 +24,16 @@ export const STAR_BLOOM_FLOOR = 0.9;
 // A glow, not a surface: sprites, and see-through things that write no depth.
 const isFlat = (o) => o.isSprite || o.isPoints || (o.material && !Array.isArray(o.material) && o.material.transparent && o.material.depthWrite === false);
 
+// settings.aa 'msaa' (PG1 City on a phone, 1.23): the scene is drawn into a
+// multisampled target (4 samples; resolved on the chip of a tile-based phone
+// GPU), so edges stay smooth through the passes without SMAA.
+// settings.finish (PG1 City): one last pass after tone mapping
+// (kingdom/kingdom-look.js finishShader): the live colour grade and
+// contrast-adaptive sharpening. It reads the frame at the render resolution
+// and writes the canvas at the output resolution (the renderer's own pixel
+// ratio, setSize's outPr), so the sharpening happens after the upscale.
 export async function createPost(THREE, renderer, scene, camera, settings) {
-  if (!settings || (settings.aa === 'none' && !settings.gtao && !settings.bloom && !settings.dof)) return null;
+  if (!settings || (settings.aa === 'none' && !settings.gtao && !settings.bloom && !settings.dof && !settings.finish)) return null;
   const [{ EffectComposer }, { RenderPass }, { OutputPass }, { SMAAPass }, { UnrealBloomPass }, gtaoMod, taaMod, bokehMod] = await Promise.all([
     import(`${ADDONS}EffectComposer.js`), import(`${ADDONS}RenderPass.js`), import(`${ADDONS}OutputPass.js`), import(`${ADDONS}SMAAPass.js`), import(`${ADDONS}UnrealBloomPass.js`),
     settings.gtao ? import(`${ADDONS}GTAOPass.js`) : null,
@@ -39,6 +47,7 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
   const shareDepth = !!(settings.shareDepth && settings.dof && !settings.gtao && settings.aa !== 'taa');
   let rt = null;
   if (shareDepth) { rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType }); rt.depthTexture = new THREE.DepthTexture(1, 1); rt.depthTexture.type = THREE.UnsignedIntType; }
+  else if (settings.aa === 'msaa') rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
   const composer = rt ? new EffectComposer(renderer, rt) : new EffectComposer(renderer);
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.setSize(size.x, size.y);
@@ -106,9 +115,21 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     grade.uniforms.uAspect.value = size.x / Math.max(1, size.y);
     composer.addPass(grade);
   }
+  // PG1 City: the live grade and sharpening, last (kingdom-look.js).
+  let finish = null;
+  if (settings.finish) {
+    const [{ ShaderPass }, look] = await Promise.all([import(`${ADDONS}ShaderPass.js`), import('../kingdom/kingdom-look.js')]);
+    finish = new ShaderPass(look.finishShader());
+    finish.uniforms.uGrade.value = settings.finish.grade ? 1 : 0;
+    finish.userData = { sharpen: !!settings.finish.sharpen, look };
+    composer.addPass(finish);
+  }
   let skyView = false;
   return {
-    composer, passes: { taa, gtao, bloom, bokeh, smaa, grade },
+    composer, passes: { taa, gtao, bloom, bokeh, smaa, grade, finish },
+    // PG1 City: the live grade's mood (kingdom-look.js LIVE_GRADES).
+    setMood(mood) { if (!finish) return; const g = finish.userData.look.LIVE_GRADES[mood]; if (!g) return; const u = finish.uniforms; u.uLift.value = g.shadows.slice(); u.uGain.value = g.highlights.slice(); u.uContrast.value = g.contrast; u.uSaturation.value = g.saturation; u.uVignette.value = g.vignette; },
+    setGradeOn(on) { if (finish) finish.uniforms.uGrade.value = on ? 1 : 0; },
     // Showcase: the grade's mood (GRADES) and the grain's frame.
     setGrade(mood, look) { if (!grade || !look) return; const g = look.GRADES[mood]; if (!g) return; const u = grade.uniforms; u.uLift.value = g.shadows.slice(); u.uGain.value = g.highlights.slice(); u.uContrast.value = g.contrast; u.uSaturation.value = g.saturation; u.uVignette.value = g.vignette; u.uGrain.value = g.grain; },
     setTime(t) { if (grade) grade.uniforms.uTime.value = t; },
@@ -134,7 +155,19 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     get skyView() { return skyView; },
     // Draw another scene (a world's surface) through the same passes.
     setScene(sc) { for (const p of composer.passes) if ('scene' in p) p.scene = sc; },
-    setSize(w, h, pr) { composer.setPixelRatio(pr); composer.setSize(w, h); if (grade) grade.uniforms.uAspect.value = w / Math.max(1, h); if (gtao) gtao.setSize(Math.max(1, Math.round(w * pr * aoScale)), Math.max(1, Math.round(h * pr * aoScale))); },
+    // outPr: the canvas's pixel ratio (the renderer's), when the finish pass
+    // upscales; the sharpening is on only when it is above pr.
+    setSize(w, h, pr, outPr = pr) {
+      composer.setPixelRatio(pr); composer.setSize(w, h);
+      if (grade) grade.uniforms.uAspect.value = w / Math.max(1, h);
+      if (gtao) gtao.setSize(Math.max(1, Math.round(w * pr * aoScale)), Math.max(1, Math.round(h * pr * aoScale)));
+      if (finish) {
+        const u = finish.uniforms; u.uAspect.value = w / Math.max(1, h);
+        u.uTexel.value = [1 / Math.max(1, Math.round(w * pr)), 1 / Math.max(1, Math.round(h * pr))];
+        u.uSharp.value = finish.userData.sharpen && outPr > pr * 1.01 ? Math.min(1, 0.35 + 0.65 * (outPr / pr - 1)) : 0;
+      }
+    },
+    get sharpening() { return finish ? finish.uniforms.uSharp.value : 0; },
     // Night makes the windows and lamps the brightest things on screen: a little more bloom.
     // (Never down to the stars' brightness: STAR_PEAK in environment.js.)
     // Showcase: bloom on lights only (a high threshold), a little stronger.

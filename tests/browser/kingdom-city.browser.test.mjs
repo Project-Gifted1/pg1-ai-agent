@@ -104,14 +104,24 @@ test('losing the WebGL context shows the still map with the feed, and the city c
 test('choosing Legacy phone rebuilds the city on that tier (the automatic drop takes the same path)', { skip, timeout: 600000 }, async (t) => {
   const { page, errors } = await openCity(t, { tier: 'phone', width: 412, height: 915 });
   assert.equal((await view(page)).tier, 'phone');
-  await frames(page, 2);
+  // Measure the whole city, after the globe intro has finished (it is drawn
+  // over a partly built city first).
+  await page.waitForFunction(() => { const cv = document.getElementById('kingdom-globe-intro'); return cv && cv.classList.contains('is-done') && cv.hidden; }, null, { timeout: 180000, polling: 200 }).catch(() => {});
+  await frames(page, 3);
   const before = await page.evaluate(() => window.kingdomUi.scene().stats());
   await page.evaluate(() => window.kingdomUi.setQuality('legacy'));
   await page.waitForFunction(() => document.getElementById('kingdom-view').dataset.tier === 'legacy' && Number(document.getElementById('kingdom-view').dataset.rebuilds || 0) >= 1, null, { timeout: 180000 });
   await frames(page, 3);
   const after = await page.evaluate(() => window.kingdomUi.scene().stats());
   t.diagnostic(`Phone ${before.calls} calls / ${before.triangles} triangles -> Legacy ${after.calls} / ${after.triangles}`);
-  assert.ok(after.calls < before.calls && after.triangles < before.triangles);
+  // Legacy is the lighter tier where an old phone is limited: geometry,
+  // pixels and memory. Since 1.23 a phone's Medium merges its scenery
+  // (kingdom-legacy.js PHONE_STATIC_INSTANCED), so it can need fewer draw
+  // calls than Legacy from some views; both stay inside Legacy's budget.
+  assert.ok(after.triangles < before.triangles, 'fewer triangles');
+  assert.ok(after.pixelRatio < before.pixelRatio, 'fewer pixels');
+  assert.ok(after.gpuMemoryMB < before.gpuMemoryMB, 'less GPU memory');
+  for (const s of [before, after]) assert.ok(s.calls < LEGACY_BUDGET.drawCalls, `${s.tier}: ${s.calls} draw calls`);
   assert.deepEqual(errors, []);
 });
 

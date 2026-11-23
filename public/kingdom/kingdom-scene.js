@@ -38,9 +38,10 @@ import { createLife } from './kingdom-life.js';
 import { loadBrand, BRAND_SVG_URL } from './kingdom-emblem.js';
 import { dublinSun, daylight, pickDirectorEvent, normalizeState, windowRatios, dublinHour, weatherLook, GADGET_META } from './kingdom-data.js';
 import { createWeatherFx } from './kingdom-weather.js';
-import { mergeStatic, simplifyInstances, createLegacyWatch } from './kingdom-legacy.js';
+import { mergeStatic, simplifyInstances, createLegacyWatch, STATIC_NAMES, PHONE_STATIC_INSTANCED } from './kingdom-legacy.js';
 import { createProbe, startTier, tierFromProbe, readProbeCache, writeProbeCache } from '../sandbox/tier-probe.js';
 import { createDebugOverlay } from '../sandbox/debug-overlay.js';
+import { lookFor, parseFx, applyFx, liveFog, fogFactorAt, FOG_CLEAR_M, minRenderScale, autoAllowed, createEffectLadder, liveMood, PHONE_MIN_SCALE } from './kingdom-look.js';
 
 // The hero look: golden hour, the sun low in the west behind the tower.
 export const DUSK_SUN = Object.freeze({ elevation: 0.035, azimuth: (262 * Math.PI) / 180 });
@@ -156,7 +157,34 @@ export function kingdomSettings(tier, { coarse = false, memory = 0 } = {}) {
   if (tier === 'cinematic' && coarse && base) Object.assign(base, PHONE_CINEMATIC_CITY, { post: { ...base.post, ...PHONE_CINEMATIC_CITY.post } });
   // 4 GB or less (the Galaxy A07): no ambient occlusion (its pass draws the whole city again).
   if (tier === 'cinematic' && coarse && memory && memory <= 4 && base) base.post = { ...base.post, gtao: false };
-  return Object.freeze({ tier, ...base, ease: v ? v.ease : 5 });
+  // 1.23 (kingdom-look.js): the look by tier, and on a phone sharpness first.
+  const look = lookFor(tier, { coarse });
+  if (base) {
+    // The final pass (grade, sharpen) wherever the look asks for it. Medium
+    // had no post-processing: it now draws into a 4x multisampled target
+    // (the same smooth edges as the GPU's own multisampling) then the pass.
+    if (look.grade || look.sharpen) base.post = { ...(base.post || { aa: 'msaa', bloom: false, gtao: false, dof: false }), finish: { grade: look.grade, sharpen: look.sharpen } };
+    if (coarse && tier !== 'legacy') {
+      // Never less than 0.8 of the screen's resolution (up to 2x): Medium
+      // drew at 1.25x on a 2x screen (0.63), Cinematic as low as 0.75x
+      // (0.38) once its render scale had dropped. The A07 is held back by
+      // effects, draw calls and geometry, not pixels.
+      base.pixelRatio = Math.max(base.pixelRatio, 2 * PHONE_MIN_SCALE);
+      base.outputPixelRatio = 2;
+      base.renderScale = true;
+    }
+    if (coarse && tier === 'phone') {
+      // The A07's default tier, on the Legacy model: fewer heavy effects,
+      // full sharpness. Lean drones (4 draw calls a crowd, not 11), low-poly
+      // figures, no steam or fog-puff sprites: under 150 draw calls and
+      // 400k triangles.
+      // Like Low (the iPhone 8's tier, the model here): six rooftop beacons,
+      // no rooftop crane or radar, car cabins drawn as the body's top, lean
+      // boats, one fountain spray.
+      Object.assign(base, { leanDrones: true, lowFigures: true, ambientSprites: false, leanCity: true });
+    }
+  }
+  return Object.freeze({ tier, ...base, look, ease: v ? v.ease : 5 });
 }
 
 // SHOWCASE (scripts/showcase-render.mjs): the offline profile, on a computer
@@ -191,6 +219,11 @@ function patchHeightFog(THREE) {
     #endif`);
   C.fog_pars_fragment = C.fog_pars_fragment.replace('#ifdef USE_FOG', '#ifdef USE_FOG\n#ifdef PG1_HEIGHT_FOG\nvarying float vPg1FogY;\n#endif');
   C.fog_fragment = C.fog_fragment.replace('gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );', `#ifdef PG1_HEIGHT_FOG
+      #if defined(FOG_EXP2) && defined(PG1_FOG_START)
+        // The foreground stays clear (kingdom-look.js FOG_CLEAR_M): fog only builds beyond it.
+        float pg1FogD = max(vFogDepth - PG1_FOG_START, 0.0);
+        fogFactor = 1.0 - exp(-fogDensity * fogDensity * pg1FogD * pg1FogD);
+      #endif
       fogFactor = clamp(fogFactor * (0.55 + 0.9 * exp(-max(vPg1FogY, 0.0) / 120.0)), 0.0, 1.0);
     #endif
     gl_FragColor.rgb = mix( gl_FragColor.rgb, fogColor, fogFactor );`);
@@ -285,6 +318,11 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   container.dataset.tierSource = begin.source;
   let settings = offline || kingdomSettings(tier, { coarse, memory });
   if (offline) container.dataset.profile = SHOWCASE;
+  // ?debug=1&fx=-name: one feature or effect off (or on), to measure its cost.
+  const fx = offline ? {} : parseFx(location.search);
+  const withFx = () => { const r = applyFx(settings, settings.look || {}, fx); settings = Object.freeze({ ...r.settings, look: Object.freeze(r.look) }); };
+  withFx();
+  if (Object.keys(fx).length) container.dataset.fx = JSON.stringify(fx);
   let renderer;
   try {
     // Low and Medium have no post-processing, so they take the GPU's own
@@ -327,7 +365,11 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     showLook.loadPbr(THREE, 'asphalt_02').catch(() => null),
     showLook.loadPbr(THREE, 'concrete_tile_facade').catch(() => null)
   ]) : [];
-  const world = buildWorld(THREE, scene, settings, { waterMaterial, Reflector: ReflectorMod ? ReflectorMod.Reflector : null, brand, detail: facadeDetail ? facadeDetail.normalMap : null });
+  // Live tiers with the facade detail: a flat placeholder now, the real
+  // normal map once it has loaded (lazily, after the first frames).
+  const flatNormal = !offline && settings.look && settings.look.facade ? (() => { const t = new THREE.DataTexture(new Uint8Array([128, 128, 255, 255]), 1, 1); t.needsUpdate = true; return t; })() : null;
+  const world = buildWorld(THREE, scene, settings, { waterMaterial, Reflector: ReflectorMod ? ReflectorMod.Reflector : null, brand, detail: facadeDetail ? facadeDetail.normalMap : flatNormal });
+  if (world.setLook) world.setLook(settings.look || {});
   // Mirrors drawn once a frame, not once per TAA sample.
   const mirrors = [];
   if (offline && world.mirror) mirrors.push(showLook.oncePerFrame(world.mirror));
@@ -351,7 +393,9 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   if (offline) for (const n of ['pg1-emblem-hologram', 'river-light-streaks']) { const o = scene.getObjectByName(n); if (o) o.removeFromParent(); }
   if (offline && world.toll) { world.toll.visible = false; world.toll.traverse((o) => { o.visible = false; }); world.toll.removeFromParent(); }
   // Blue-hour height fog on every material in the city (thicker low down).
-  const fogDefine = (o) => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []; for (const m of ms) if (!m.isShaderMaterial && !m.isSpriteMaterial && !m.isPointsMaterial && m.fog !== false && !(m.defines && m.defines.PG1_HEIGHT_FOG !== undefined)) { m.defines = { ...(m.defines || {}), PG1_HEIGHT_FOG: '' }; m.needsUpdate = true; } };
+  // The live tiers keep the first FOG_CLEAR_M metres clear (PG1_FOG_START); the Showcase keeps its own fog.
+  const fogStart = offline ? null : `${FOG_CLEAR_M.toFixed(1)}`;
+  const fogDefine = (o) => { const ms = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []; for (const m of ms) if (!m.isShaderMaterial && !m.isSpriteMaterial && !m.isPointsMaterial && m.fog !== false && !(m.defines && m.defines.PG1_HEIGHT_FOG !== undefined)) { m.defines = { ...(m.defines || {}), PG1_HEIGHT_FOG: '', ...(fogStart ? { PG1_FOG_START: fogStart } : {}) }; m.needsUpdate = true; } };
   scene.traverse(fogDefine);
   // The emblem's gold reflects a dusk sky on every tier (a small prefiltered
   // sky made in code; on Balanced and up the scene's sky also lights it).
@@ -368,6 +412,16 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   const actors = createActors(THREE, scene, world, settings);
   actors.onFire = (g, e) => { if (onGadget) onGadget(g, e); };
   const life = createLife(THREE, scene, world, settings);
+  if (settings.crowdDensity) life.setDensity(settings.crowdDensity);
+  // Wet streets without a mirror (kingdom-wet.js), on the tiers that have them.
+  let wetStreets = null;
+  if (!offline && settings.look && settings.look.wet) {
+    const pools = scene.getObjectByName('lamp-pools'); const lamps = [];
+    if (pools && pools.isInstancedMesh) { const m4 = new THREE.Matrix4(); const p = new THREE.Vector3(); for (let i = 0; i < pools.count; i++) { pools.getMatrixAt(i, m4); p.setFromMatrixPosition(m4); lamps.push({ x: p.x, z: p.z }); } }
+    const heads = scene.getObjectsByProperty('name', 'car-lights')[0] || null;
+    const { createWetStreets } = await import('./kingdom-wet.js');
+    wetStreets = createWetStreets(THREE, scene, { lamps, heads, banks: [{ width: 4400, depth: RIVER.z - RIVER.half - 2 + 2200, z: (-2200 + RIVER.z - RIVER.half - 2) / 2 }, { width: 4400, depth: 2200 - (RIVER.z + RIVER.half + 2), z: (RIVER.z + RIVER.half + 2 + 2200) / 2 }] });
+  }
   // Showcase: the hero car model (public/showcase/models/car.glb) in place of the box cars.
   if (offline) {
     const car = await showLook.loadHero('car').catch(() => null);
@@ -386,7 +440,8 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   // Image-based light from the sky (Balanced and up), refreshed every few minutes.
   let pmrem = null; let envRT = null; let envAt = -Infinity;
   const refreshEnv = () => {
-    if (!settings.post || !world.sky || hdri) return;
+    // High and up (Medium's post is only the final pass: no sky render every few minutes there).
+    if (!settings.post || settings.post.aa === 'msaa' || !world.sky || hdri) return;
     try {
       pmrem = pmrem || new THREE.PMREMGenerator(renderer);
       const envScene = new THREE.Scene(); const skyClone = world.sky.clone(); envScene.add(skyClone);
@@ -403,13 +458,14 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   // Legacy phone: static scenery merged by material, small high-poly instances as boxes.
   // Static scenery merged by material on every tier (fewer draw calls); on
   // Legacy phone, small high-poly instances are boxes too.
-  { const m = mergeStatic(THREE, scene, undefined, undefined, { shadows: !!settings.shadows }); container.dataset.merged = `${m.removed}->${m.added}`; }
+  { const m = mergeStatic(THREE, scene, STATIC_NAMES, settings.leanCity ? PHONE_STATIC_INSTANCED : undefined, { shadows: !!settings.shadows }); container.dataset.merged = `${m.removed}->${m.added}`; }
   if (settings.legacy) { const sv = simplifyInstances(THREE, scene); const m = mergeStatic(THREE, scene); container.dataset.legacyMerged = `${m.removed}->${m.added}`; container.dataset.legacySaved = String(sv.saved); }
 
   let post = null;
   const buildPost = async () => {
     if (post) { post.dispose(); post = null; }
     if (settings.post) post = await createPost(THREE, renderer, scene, camera, settings.post).catch(() => null);
+    container.dataset.finish = post && post.passes && post.passes.finish ? 'on' : 'off';
   };
   await buildPost();
 
@@ -458,12 +514,19 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   const resize = () => {
     const r = container.getBoundingClientRect();
     const w = Math.max(1, Math.round(r.width)); const h = Math.max(1, Math.round(r.height));
-    const pr = Math.min(settings.pixelRatio, window.devicePixelRatio || 1) * (settings.renderScale && renderScale ? renderScale.scale : 1);
-    renderer.setPixelRatio(pr); renderer.setSize(w, h, false);
+    const dpr = window.devicePixelRatio || 1;
+    const pr = Math.min(settings.pixelRatio, dpr) * (settings.renderScale && renderScale ? renderScale.scale : 1);
+    // The finish pass upscales to the screen (and sharpens): the canvas at
+    // the output resolution, the passes at the render resolution.
+    const outPr = post && post.passes && post.passes.finish && settings.outputPixelRatio ? Math.max(pr, Math.min(settings.outputPixelRatio, dpr)) : pr;
+    renderer.setPixelRatio(outPr); renderer.setSize(w, h, false);
     camera.aspect = w / h; camera.updateProjectionMatrix();
-    if (post) post.setSize(w, h, pr);
+    if (post) post.setSize(w, h, pr, outPr);
+    container.dataset.renderPixels = (pr / Math.min(2, dpr)).toFixed(2);
+    container.dataset.sharpen = post && post.sharpening ? post.sharpening.toFixed(2) : '0';
   };
-  const ensureScale = () => { if (settings.renderScale && !renderScale) renderScale = createRenderScale({ budgetMs: (1000 / settings.targetFps) * 1.15, min: 0.5, onChange: (sc) => { container.dataset.renderScale = String(sc); resize(); } }); if (!settings.renderScale) renderScale = null; };
+  // On a phone the render scale never goes below 0.8 (kingdom-look.js minRenderScale).
+  const ensureScale = () => { if (settings.renderScale && !renderScale) renderScale = createRenderScale({ budgetMs: (1000 / settings.targetFps) * 1.15, min: minRenderScale({ coarse }), onChange: (sc) => { container.dataset.renderScale = String(sc); resize(); } }); if (!settings.renderScale) renderScale = null; };
   ensureScale();
   const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(resize) : null;
   if (ro) ro.observe(container);
@@ -474,14 +537,17 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   // fewer new figures are staged per event.
   async function applyTier(next, { manual = false, probe = false } = {}) {
     if (!KINGDOM_TIERS.includes(next) || next === tier) return;
+    // Auto never picks a tier that cannot hold 30 fps at scale 1.0 (on a phone, never Cinematic).
+    if (!manual && !autoAllowed(next, { coarse })) return;
     // Into or out of Legacy: the city is rebuilt (density, textures, far plane).
     if ((next === 'legacy' || tier === 'legacy') && onRebuild) {
       if (manual) { try { localStorage.setItem(KINGDOM_QUALITY_KEY, next); } catch (e) { /* not remembered */ } }
       onRebuild(next, { manual, auto: probe });
       return;
     }
-    tier = next; settings = kingdomSettings(tier, { coarse, memory });
+    tier = next; settings = kingdomSettings(tier, { coarse, memory }); withFx();
     container.dataset.tier = tier;
+    if (world.setLook) world.setLook(settings.look || {});
     renderer.shadowMap.enabled = !!settings.shadows;
     world.sun.castShadow = !!settings.shadows;
     scene.traverse((o) => { if (o.material && o.material.needsUpdate !== undefined) o.material.needsUpdate = true; });
@@ -519,6 +585,36 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   const sunDir = new THREE.Vector3();
   let camLift = 0; let camInside = 0; let paused = false;
   const legacyWatch = createLegacyWatch(LEGACY_DROP);
+  // The effect ladder (kingdom-look.js EFFECT_LADDER), on a phone: what goes
+  // first when frames run slow. Each rung is undone when they recover.
+  const ladderOff = new Set();
+  const FAR_DETAIL = ['balconies', 'balcony-rails', 'facade-fins', 'rooftop-plant', 'rooftop-water-tanks', 'rooftop-water-tank-stands', 'shop-awnings'];
+  const ladder = coarse && !offline ? createEffectLadder({
+    budgetMs: (1000 / settings.targetFps) * 1.15,
+    available: (r) => (r === 'gtao' ? !!(post && post.passes && post.passes.gtao) : r === 'shadows' ? !!settings.shadows : r === 'hdri' ? !!(settings.look && settings.look.hdri) : true),
+    onStep: (rung, on) => {
+      if (on) ladderOff.delete(rung); else ladderOff.add(rung);
+      container.dataset.ladder = [...ladderOff].join(',') || 'none';
+      if (rung === 'gtao' && post && post.passes.gtao) post.passes.gtao.enabled = on;
+      if (rung === 'shadows') { renderer.shadowMap.enabled = on && !!settings.shadows; world.sun.castShadow = on && !!settings.shadows; }
+      if (rung === 'crowds') life.setDensity(on ? 1 : 0.5);
+      if (rung === 'drones' && actors.setLean) actors.setLean(!on);
+      if (rung === 'far') scene.traverse((o) => { if (FAR_DETAIL.includes(o.name)) o.visible = on; });
+      if (rung === 'hdri' && !on && nightEnv && scene.environment === nightEnv) scene.environment = envRT ? envRT.texture : null;
+    }
+  }) : null;
+  // Loaded after the first frames, so the city appears first: the small night
+  // HDRI and the facade normal detail (kingdom-look.js hdri, facade).
+  let nightEnv = null; let lazyStarted = false;
+  const loadLazy = async () => {
+    if (offline || !settings.look) return;
+    try {
+      const sl = await import('../sandbox/showcase-look.js');
+      if (settings.look.hdri && running) nightEnv = await sl.loadHdriSmall(THREE, renderer, 'modern_buildings_night', 512).catch(() => null);
+      if (settings.look.facade && flatNormal && running) { const pbr = await sl.loadPbr(THREE, 'concrete_tile_facade').catch(() => null); if (pbr && world.setFacadeDetail) { pbr.normalMap.anisotropy = 4; world.setFacadeDetail(pbr.normalMap); } }
+      container.dataset.lazy = `${nightEnv ? 'hdri' : ''}${settings.look.facade ? ' facade' : ''}`.trim() || 'none';
+    } catch (e) { /* the look without them */ }
+  };
   const lastInfo = { calls: 0, triangles: 0 };
   // WebGL context loss (a low-memory phone can lose it): stop drawing, show
   // the still map with the text feed, and rebuild one tier lower when the
@@ -536,7 +632,14 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     const budget = 1000 / settings.targetFps;
     if (now - last < budget - 2) { raf = requestAnimationFrame(frame); return; }
     const dt = Math.min(0.1, last ? (now - last) / 1000 : 0.016);
-    if (last) { if (renderScale) renderScale.sample(now - last); governor.sample(now - last, budget); }
+    if (last) {
+      const ms = now - last;
+      // Slow frames on a phone: effects go first (the ladder), then the render
+      // scale (never below 0.8), and only then a lower tier (the governor).
+      if (ladder && !ladder.atScale) ladder.sample(ms);
+      else if (renderScale) { renderScale.sample(ms); if (ladder && renderScale.scale >= 1) ladder.release(); }
+      if (!ladder || (ladder.atScale && (!renderScale || renderScale.atMin))) governor.sample(ms, budget);
+    }
     // Frames that stay slow on the lowest ordinary tier: drop to Legacy phone.
     if (last && tier === 'phone' && !forced && governor.auto !== false && legacyWatch.sample(now - last)) { container.dataset.autoDrop = 'legacy'; applyTier('legacy'); }
     last = now;
@@ -554,10 +657,18 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     world.update(dt, t, { sunDir, light, storm, cover: look.cover, wind: wx.state.wind, sunny: look.sun, dusk, fogColor: scene.fog.color });
     // Blue atmospheric haze, warmer at dusk, that fades the far city.
     scene.fog.color.setRGB(0.14 + 0.32 * light * (1 - dusk) + 0.08 * dusk, 0.19 + 0.36 * light * (1 - dusk) + 0.05 * dusk, 0.36 + 0.36 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.4);
-    scene.fog.density = (fogBase + storm * 0.0005 + look.fog * 0.0024) * (settings.fogScale || 1);
+    // The live fog follows the real weather, scaled and capped (kingdom-look.js
+    // liveFog); with PG1_FOG_START the first 400 m stay clear. The Showcase keeps its own.
+    scene.fog.density = settings.noFog ? 0 : offline ? (fogBase + storm * 0.0005 + look.fog * 0.0024) * (settings.fogScale || 1) : liveFog({ fogBase, storm, fog: look.fog });
     renderer.toneMappingExposure = 0.7 + 0.22 * light * (1 - dusk);
     wx.update(dt, t, look, { target: controls.target, sunDir, light, dusk });
     world.setWet(wx.state.wet);
+    if (wetStreets) wetStreets.update(wx.state.wet, Math.max(dusk, 1 - light));
+    // The live grade follows the hour and the weather (night teal and orange).
+    if (post && post.setMood && (Number(container.dataset.frames) || 0) % 30 === 0) { const mood = liveMood({ light, dusk, rain: look.rain }); if (mood !== container.dataset.grade) { post.setMood(mood); container.dataset.grade = mood; } }
+    // The night HDRI as the environment (loaded lazily, small) at night; the sky's by day.
+    if (nightEnv && !ladderOff.has('hdri')) { const night = Math.max(dusk, 1 - light) > 0.5; if (night && scene.environment !== nightEnv) { scene.environment = nightEnv; scene.environmentIntensity = 0.35; } else if (!night && scene.environment === nightEnv) { scene.environment = envRT ? envRT.texture : null; scene.environmentIntensity = 0.9; } }
+    if (!lazyStarted && (Number(container.dataset.frames) || 0) > 20) { lazyStarted = true; loadLazy(); }
     if (now - envAt > 180000) { envAt = now; refreshEnv(); if (post && post.setNight) post.setNight(Math.max(dusk, 1 - light)); }
     actors.update(dt, t, camera, { storm: alarm });
     life.update(dt, t, { dark: Math.max(dusk, 1 - light), dusk, light, hour: lightMode === 'dusk' ? 19.5 : dublinHour(Date.now()), wet: wx.state.wet, rain: wx.state.rain, wind: wx.state.wind, external: actors.riverBoats ? actors.riverBoats() : [] });
@@ -788,7 +899,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       });
       const c = renderer.getContext(); const W = c.drawingBufferWidth; const H = c.drawingBufferHeight;
       const fbBytes = W * H * 4 * 3 + (settings.shadows ? settings.shadows * settings.shadows * 4 : 0);
-      return { tier, label: KINGDOM_TIER_LABEL[tier], source: begin.source, probeMs: debugInfo.probeMs, calls: lastInfo.calls, triangles: lastInfo.triangles, textures: seen.size, maxTexture: maxTex, gpuMemoryMB: Math.round((texBytes + geoBytes + fbBytes) / 1048576), targetFps: settings.targetFps, pixelRatio: renderer.getPixelRatio(), life: life.counts(), weather: wx.counts() };
+      return { look: settings.look || null, fogDensity: scene.fog.density, fogAt400: settings.noFog || offline ? null : fogFactorAt(400, scene.fog.density, FOG_CLEAR_M), renderScale: renderScale ? renderScale.scale : 1, minScale: coarse ? minRenderScale({ coarse }) : null, ladder: [...ladderOff], sharpen: post && post.sharpening ? post.sharpening : 0, tier, label: KINGDOM_TIER_LABEL[tier], source: begin.source, probeMs: debugInfo.probeMs, calls: lastInfo.calls, triangles: lastInfo.triangles, textures: seen.size, maxTexture: maxTex, gpuMemoryMB: Math.round((texBytes + geoBytes + fbBytes) / 1048576), targetFps: settings.targetFps, pixelRatio: renderer.getPixelRatio(), life: life.counts(), weather: wx.counts() };
     },
     // For screenshots: the junction with the longest queue now.
     busiestJunction: () => life.traffic.busiest(),
@@ -821,6 +932,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       controls.dispose(); actors.dispose(); life.dispose(); wx.dispose();
       if (post) post.dispose();
       if (envRT) envRT.dispose(); if (pmrem) pmrem.dispose();
+      if (wetStreets) wetStreets.dispose(); if (nightEnv) nightEnv.dispose();
       scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => m.dispose()); });
       renderer.dispose(); canvas.remove();
     }

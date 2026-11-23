@@ -3101,7 +3101,7 @@
         <button type="button" id="kingdom-sound" aria-pressed="false" onclick="kingdomUi && kingdomUi.toggleSound()">Sound</button>
         <button type="button" id="kingdom-record-btn" aria-expanded="false" aria-controls="kingdom-record" onclick="kingdomUi && kingdomUi.toggleRecordPanel()">Record</button>
         <label class="sr-only" for="kingdom-quality">Quality</label>
-        <select id="kingdom-quality" onchange="kingdomUi && kingdomUi.setQuality(this.value)"><option value="auto">Auto</option><option value="legacy">Low</option><option value="phone">Medium</option><option value="balanced">High</option><option value="cinematic">Cinematic</option><option value="still" hidden>Still</option></select>
+        <select id="kingdom-quality" style="max-width: 9.5em" onchange="kingdomUi && kingdomUi.setQuality(this.value)"><option value="auto">Auto</option><option value="legacy">Low</option><option value="phone">Medium</option><option value="balanced">High</option><option value="cinematic">Cinematic</option><option value="still" hidden>Still</option></select>
       </div>
       <button type="button" class="icon-btn" aria-label="Close the Kingdom view" data-dialog-close onclick="triggerHaptic(40); closeKingdomScreen()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
@@ -3110,7 +3110,7 @@
         <div class="kingdom-view" id="kingdom-view"></div>
         <div class="kd-overlay">
           <p class="kd-badge" id="kingdom-badge" data-state="paused" role="status">Feed paused — showing last real events</p>
-          <p class="kd-countries" id="kingdom-countries" data-n="0"><span class="kd-flags" id="kingdom-flags" aria-hidden="true"></span><span id="kingdom-countries-text">Hostile traffic from 0 countries · last 24 h</span><span class="kd-pop" id="kingdom-pop" hidden></span></p>
+          <p class="kd-countries" id="kingdom-countries" data-n="0"><span class="kd-flags" id="kingdom-flags" aria-hidden="true"></span><span id="kingdom-countries-text">Probes and checks from 0 countries · last 24 h</span><span class="kd-pop" id="kingdom-pop" hidden></span></p>
           <p class="kd-hud" id="kingdom-hud" aria-live="polite">Defences: loading…</p>
           <ol class="kd-ticker" id="kingdom-ticker" aria-label="Live feed" data-state="quiet"></ol>
         </div>

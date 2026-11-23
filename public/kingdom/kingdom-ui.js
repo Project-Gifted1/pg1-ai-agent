@@ -20,6 +20,7 @@
 // pulses only while the feed answers; when it stops answering the badge
 // says "Feed paused — showing last real events" and nothing new plays.
 
+import { CINEMATIC_PHONE_NOTE } from './kingdom-look.js';
 import { createEventStore, eventLine, enemyLine, defenceLine, dublinTime, verdictText, reasonLabel, replaySchedule, normalizeState, flagOf, originTag, plural, whenLabel, captionLine, tickerLine, countriesText, BADGE, GADGET_META } from './kingdom-data.js';
 
 export const KINGDOM_POLL_MS = 5000;
@@ -106,7 +107,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     const hud = $('kingdom-hud');
     if (hud) hud.textContent = hudText(pg1State, store.day, { loaded });
     renderCountries();
-    if (scene && scene.setBillboards) scene.setBillboards(loaded ? { countries: store.origins.length, threats: Number(store.day.turned_away) || 0, checks: pg1State && Number.isFinite(pg1State.checks) ? pg1State.checks : null } : {});
+    if (scene && scene.setBillboards) scene.setBillboards(loaded ? { countries: store.origins.length, kind: store.originsKind, threats: Number(store.day.turned_away) || 0, checks: pg1State && Number.isFinite(pg1State.checks) ? pg1State.checks : null } : {});
     const level = store.threat.level;
     const mode = $('kingdom-mode');
     if (mode) { mode.dataset.mode = level; mode.textContent = level === 'storm' ? 'Under attack' : level === 'watch' ? 'On watch' : 'Calm'; }
@@ -159,7 +160,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
       if (more && !m) { m = document.createElement('span'); m.className = 'kd-more'; m.setAttribute('aria-hidden', 'true'); strip.after(m); }
       if (m) { m.textContent = more ? `+${more}` : ''; m.hidden = !more; }
     }
-    const t = $('kingdom-countries-text'); if (t) t.textContent = countriesText(o.length);
+    const t = $('kingdom-countries-text'); if (t) t.textContent = countriesText(o.length, store.originsKind);
   }
   function popFlag(e) {
     const pop = $('kingdom-pop');
@@ -320,6 +321,10 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
 
   function markTier(t) {
     const sel = $('kingdom-quality');
+    // On a phone Cinematic is a choice by hand, never Auto's (kingdom-look.js autoAllowed).
+    const cin = sel && sel.querySelector('option[value="cinematic"]');
+    const onPhone = !!((globalThis.matchMedia && globalThis.matchMedia('(pointer: coarse)').matches) || globalThis.innerWidth < 768);
+    if (cin && onPhone) cin.textContent = `Cinematic (${CINEMATIC_PHONE_NOTE})`;
     if (sel && t) { sel.value = t; sel.disabled = t === 'still'; }
   }
 
@@ -345,7 +350,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     const mode = ($('kingdom-record-mode') || {}).value === 'replay' ? 'replay' : 'live';
     const mod = await import('./kingdom-record.js');
     const coarse = !!(globalThis.matchMedia && globalThis.matchMedia('(pointer: coarse)').matches);
-    const rec = mod.createRecording(scene, { aspect, seconds, mode, coarse, legacy: scene.tier && scene.tier() === 'legacy', caption: () => scene.caption(), captionText: () => captionText(scene.caption()), countries: () => ({ n: store.origins.length, strip: flagStrip(store.origins) }), day: () => store.day, onTick: (t) => recStatus(`Recording ${Math.floor(t)} / ${seconds} s`), onDone: finishRecording });
+    const rec = mod.createRecording(scene, { aspect, seconds, mode, coarse, legacy: scene.tier && scene.tier() === 'legacy', caption: () => scene.caption(), captionText: () => captionText(scene.caption()), countries: () => ({ n: store.origins.length, strip: flagStrip(store.origins), kind: store.originsKind }), day: () => store.day, onTick: (t) => recStatus(`Recording ${Math.floor(t)} / ${seconds} s`), onDone: finishRecording });
     if (!rec) { recStatus('This browser cannot record video.'); return; }
     scene.setDirector(true);
     const dir = $('kingdom-director'); if (dir) dir.setAttribute('aria-pressed', 'true');

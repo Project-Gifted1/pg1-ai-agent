@@ -68,8 +68,9 @@ class Crowd {
   write(t, camPos) {
     const { m, local, q, e, v, s } = this;
     const n = this.agents.length;
-    // An empty crowd costs no draw call.
-    for (const p of this.parts) { p.mesh.count = n; p.mesh.visible = n > 0; }
+    // An empty crowd costs no draw call. Lean (the frame-time ladder): a flying
+    // crowd drops its rotors, glows and trails.
+    for (const p of this.parts) { p.mesh.count = n; p.mesh.visible = n > 0 && !(this.lean && this.fly && p.flat && p.swing === 'spin' || this.lean && this.fly && p.flat && p.offset[1] === 0 && p.geo === glowGeo) && !(this.lean && this.fly && p.geo === trailGeoQ); }
     for (let i = 0; i < n; i++) {
       const a = this.agents[i];
       const far = camPos ? Math.hypot(a.x - camPos.x, a.z - camPos.z) > LOD_FAR : false;
@@ -95,7 +96,7 @@ class Crowd {
 
 // A quadcopter: body, four arms, four spinning rotors, a camera pod and a
 // light (red on an attacker's siege drone, cyan on PG1's patrols).
-let glowGeo = null; let trailGeoQ = null; let LEAN = false;
+let glowGeo = null; let trailGeoQ = null; let LEAN = false; let LEAN_DRONES = false;
 const GLOW_GEO = (THREE) => glowGeo || (glowGeo = new THREE.IcosahedronGeometry(1.15, 1));
 const TRAIL_GEO = (THREE) => { if (!trailGeoQ) { trailGeoQ = new THREE.CylinderGeometry(0.06, 0.45, 9, 6, 1, true); trailGeoQ.rotateX(Math.PI / 2); trailGeoQ.translate(0, 0, -5); } return trailGeoQ; };
 // Both arms of a quad drone as one geometry (an X), with a rotor hub at each tip.
@@ -113,7 +114,7 @@ function armsX(THREE) {
   return armsGeoQ;
 }
 // lean (Low): the body, the arms and its light (three draw calls a crowd).
-function quadParts(THREE, M, light, body = 0x2a2e34, lean = LEAN) {
+function quadParts(THREE, M, light, body = 0x2a2e34, lean = LEAN || LEAN_DRONES) {
   const parts = [
     { geo: new THREE.BoxGeometry(0.9, 0.28, 0.9), mat: M(body, { metalness: 0.7, roughness: 0.35 }), offset: [0, 0, 0], swing: null },
     { geo: new THREE.BoxGeometry(0.42, 0.3, 0.42), mat: M(0x15181c, { metalness: 0.5, roughness: 0.3 }), offset: [0, -0.3, 0.1], swing: null },
@@ -122,6 +123,9 @@ function quadParts(THREE, M, light, body = 0x2a2e34, lean = LEAN) {
   // Low has no environment map: a metal body reflects nothing there and drew
   // as a black blob. A rough, lit body and the arms (one baked X, one draw
   // call) read as a drone at a glance.
+  // A phone's Medium (settings.leanDrones) uses the same three parts: body,
+  // arms and its light (three draw calls a crowd instead of eleven); the
+  // light still reads at night, and the final pass's grade lifts it.
   if (lean) return [{ ...parts[0], mat: M(0x4a525c, { metalness: 0.15, roughness: 0.62 }) }, { geo: armsX(THREE), mat: M(0x3a4048, { metalness: 0.1, roughness: 0.7 }), offset: [0, 0.05, 0], swing: null }, parts[2]];
   const arm = new THREE.BoxGeometry(2.2, 0.08, 0.12);
   parts.push({ geo: arm, mat: parts[0].mat, offset: [0, 0.05, 0], swing: 'yaw45' });
@@ -162,6 +166,7 @@ export function createActors(THREE, scene, world, settings) {
   scene.add(root);
   const phone = settings.tier === 'phone' || settings.tier === 'legacy';
   LEAN = !!settings.legacy;
+  LEAN_DRONES = !!settings.leanDrones;
   const M = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.6, ...o });
   // The other side.
   const scanners = new Crowd(THREE, root, quadParts(THREE, M, 0xff3d3d, 0x1a1c20), Math.round(settings.crowdCap / 2), { fly: 1 });
@@ -169,7 +174,7 @@ export function createActors(THREE, scene, world, settings) {
   const wakeGeo = new THREE.PlaneGeometry(9, 30); wakeGeo.rotateX(-Math.PI / 2); wakeGeo.translate(0, 0, -21);
   const wakeTex = (() => { const cv = document.createElement('canvas'); cv.width = 64; cv.height = 128; const g = cv.getContext('2d'); for (let y = 0; y < 128; y++) { const k = 1 - y / 128; const half = 4 + (y / 128) * 26; g.fillStyle = `rgba(255,255,255,${0.5 * k})`; g.fillRect(32 - half, y, 3, 1); g.fillRect(32 + half - 3, y, 3, 1); g.fillStyle = `rgba(255,255,255,${0.12 * k})`; g.fillRect(32 - half, y, half * 2, 1); } const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const wakeMat = new THREE.MeshBasicMaterial({ map: wakeTex, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false });
-  const boatParts = (hull, cabin, light, lightName) => LEAN ? [
+  const boatParts = (hull, cabin, light, lightName) => LEAN || settings.leanCity ? [
     { geo: new THREE.BoxGeometry(4.2, 1.8, 15), mat: M(hull, { metalness: 0.4, roughness: 0.4 }), offset: [0, 0.6, 0], swing: null },
     { geo: new THREE.BoxGeometry(3.2, 1.8, 5), mat: M(cabin, { metalness: 0.7, roughness: 0.2, emissive: light, emissiveIntensity: 0.6 }), offset: [0, 2.3, -2], swing: null }
   ] : [
@@ -202,9 +207,9 @@ export function createActors(THREE, scene, world, settings) {
   // PG1's shield on its own hulls (from the brand asset), never on an enemy.
   const hullMat = world.brandTex ? new THREE.MeshBasicMaterial({ map: world.brandTex, transparent: true, depthWrite: false, side: THREE.DoubleSide }) : null;
   const hullDecal = hullMat ? (() => { const g = new THREE.PlaneGeometry(0.8, 0.8); g.rotateX(-Math.PI / 2); return { geo: g, mat: hullMat, offset: [0, 0.16, 0], swing: null, flat: true }; })() : null;
-  if (hullDecal && !LEAN) sentinelParts.push(hullDecal);
+  if (hullDecal && !LEAN && !LEAN_DRONES) sentinelParts.push(hullDecal);
   const sentinels = new Crowd(THREE, root, sentinelParts, SENTINEL_CAP, { fly: 1 });
-  const commander = new Crowd(THREE, root, hullDecal && !LEAN ? [...quadParts(THREE, M, PG1_COLORS.gold, 0xf5f7fa), hullDecal] : quadParts(THREE, M, PG1_COLORS.gold, 0xf5f7fa), 1, { fly: 1 });
+  const commander = new Crowd(THREE, root, hullDecal && !LEAN && !LEAN_DRONES ? [...quadParts(THREE, M, PG1_COLORS.gold, 0xf5f7fa), hullDecal] : quadParts(THREE, M, PG1_COLORS.gold, 0xf5f7fa), 1, { fly: 1 });
   const repair = new Crowd(THREE, root, quadParts(THREE, M, PG1_COLORS.amber, 0xf5f7fa), 6, { fly: 1 });
   const pilotParts = boatParts(0xf5f7fa, 0x6fd8ff, PG1_COLORS.cyan).map((p, i) => (i === 0 ? { ...p, geo: new THREE.BoxGeometry(2.6, 1.2, 8) } : p));
   if (hullMat && !LEAN) { const g = new THREE.PlaneGeometry(1.6, 1.6); g.rotateY(Math.PI / 2); pilotParts.push({ geo: g, mat: hullMat, offset: [1.65, 2.3, -2], swing: null, flat: true }); }
@@ -212,7 +217,7 @@ export function createActors(THREE, scene, world, settings) {
   const roverLight = new THREE.MeshBasicMaterial({ color: 0x6a6f75 });
   const rovers = new Crowd(THREE, root, [
     { geo: new THREE.BoxGeometry(3.2, 1.6, 4.8), mat: M(0xe9edf1, { metalness: 0.3, roughness: 0.4 }), offset: [0, 1.5, 0], swing: null },
-    ...(LEAN ? [] : [{ geo: new THREE.BoxGeometry(3.6, 0.8, 1.2), mat: M(0x22262c), offset: [0, 0.6, 1.6], swing: null },
+    ...(LEAN || settings.leanCity ? [] : [{ geo: new THREE.BoxGeometry(3.6, 0.8, 1.2), mat: M(0x22262c), offset: [0, 0.6, 1.6], swing: null },
       { geo: new THREE.BoxGeometry(3.6, 0.8, 1.2), mat: M(0x22262c), offset: [0, 0.6, -1.6], swing: null }]),
     { geo: new THREE.BoxGeometry(2.4, 0.4, 0.2), mat: roverLight, offset: [0, 1.8, 2.45], swing: null, flat: true }
   ], 6);
@@ -515,6 +520,8 @@ export function createActors(THREE, scene, world, settings) {
   }
 
   return {
+    // The frame-time ladder (kingdom-look.js): drones without rotors, glows and trails.
+    setLean(on) { for (const c of crowds) c.lean = !!on; },
     stage, update, whereIs, pick, setSentinels,
     set onFire(fn) { onFire = typeof fn === 'function' ? fn : null; },
     setLanterns(n) { lanternsLit = Math.max(0, Math.min(world.lanterns.length, Number(n) || 0)); return lanternsLit; },
