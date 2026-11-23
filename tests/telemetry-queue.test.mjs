@@ -91,6 +91,19 @@ test('a timeout, then success on retry: the row is kept, nothing is logged or dr
   assert.deepEqual(telemetryDropStats(), { window: null, pending: null });
 });
 
+test('a row keeps the fetch in place when it was recorded: retries and the failure report never use a fetch swapped in later', async () => {
+  const { attempts, errors, drops } = installFetch(['network', 'network', 'network']);
+  const done = recordTelemetry({ endpoint: '/api/mcp', toolName: 'check_domain_age', status: 'ok' });
+  // The caller (a test's teardown, say) puts another fetch back while the retries wait.
+  const later = [];
+  globalThis.fetch = async (url) => { later.push(String(url)); return new Response(null, { status: 201 }); };
+  await done;
+  assert.equal(attempts.length, 3, 'every try went through the recording fetch');
+  assert.equal(drops.length, 1, 'the drop record too');
+  assert.equal(errors.length, 1, 'and the error-log write');
+  assert.deepEqual(later, [], 'nothing reached the fetch swapped in later');
+});
+
 test('a network failure and a 503 are retried too; a 4xx is not', async () => {
   let f = installFetch(['network', 503, 201]);
   await recordTelemetry({ endpoint: '/api/mcp', status: 'ok' });
