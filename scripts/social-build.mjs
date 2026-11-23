@@ -1,10 +1,13 @@
 #!/usr/bin/env node
 // PG1 social visuals from a Showcase render (scripts/showcase-render.mjs):
-// an eight-slide 1080 x 1350 carousel (and slide 1 at 1080 x 1920 for a Story), a 1200 x 675 cover, and highlights.mp4
+// a nine-slide 1080 x 1350 carousel (and slide 1 at 1080 x 1920 for a Story), a 1200 x 675 cover, and highlights.mp4
 // (1080 x 1920, about 27 s: the showcase shots cut together with clean
 // text cards between them). No music track: music is added in the app.
 //
-//   node scripts/social-build.mjs --from showcase-out [--stills showcase-out/stills] --out docs/social/2026-11
+//   node scripts/social-build.mjs --from showcase-out [--stills showcase-out/stills] --out docs/social/2026-11 [--no-video]
+//
+// --no-video: the slides, the Story and the cover only (highlights.mp4 is
+// left as it is; it needs the shot clips from scripts/showcase-render.mjs).
 //
 // Stills needed (scripts/showcase-render.mjs --stills ...): every slide's at
 // 1080x1350, the cover's at 1080x1920 (the Story) and 1920x1080 (cover-1200x675).
@@ -27,18 +30,29 @@ export const MARK = 'Project-Gifted1™';
 // showcase still (scripts/showcase-render.mjs --stills, at 1080 x 1350),
 // and slide 1 again at 1080 x 1920 for a Story. still: the still's id.
 export const SLIDES = Object.freeze([
-  { id: 'cover', file: 'slide-1-cover.png', still: 'cover', tag: 'November 2026', title: 'What PG1 shipped', line: 'PG1 City, PG1 Universe, and new free checks for agents.' },
-  { id: 'check-repo-trap', file: 'slide-2-check-repo-trap.png', still: 'tower-cluster', tag: 'New free check · v1.22.0', title: 'check_repo_trap', line: 'Flags a downloaded project set up to hijack the coding agent that opens it, before anything runs.' },
-  { id: 'check-agent-message', file: 'slide-3-check-agent-message.png', still: 'promenade', tag: 'Free check · v1.21', title: 'check_agent_message', line: 'Reads agent messages and skill.md files first, and flags hidden instructions and payment redirects aimed at the reader.' },
-  { id: 'a2a-1-0', file: 'slide-4-a2a-1-0.png', still: 'city-strip', tag: 'Standards', title: 'A2A 1.0', line: 'PG1 passes the official A2A 1.0 conformance tests.' },
-  { id: 'pg1-city', file: 'slide-5-pg1-city.png', still: 'aerial-rain', tag: 'Live 3D', title: 'PG1 City', line: 'A living city at night and in the rain, moved only by real PG1 defence events.' },
-  { id: 'pg1-universe', file: 'slide-6-pg1-universe.png', still: 'deep-space', tag: 'Simulation', title: 'PG1 Universe', line: 'Simulated worlds from orbit to the ground, and Benin–Warri c. 1610 at dawn.' },
-  { id: 'passkey-signed', file: 'slide-7-passkey-signed-results.png', still: 'city-night', tag: 'Trust', title: 'Passkey sign-in + signed results', line: 'Operator sign-in by passkey, and every tool result signed (Ed25519) for an offline check.' },
-  { id: 'end', file: 'slide-8-link-in-bio.png', still: null, tag: '', title: 'Link in bio', line: 'Free checks for AI agents.' }
+  { id: 'cover', file: 'slide-1-cover.png', still: 'cover', tag: '23 November 2026', title: 'What PG1 shipped', line: 'PG1 City, PG1 Universe, and new free checks for agents.' },
+  // The recap: every feature in one checklist (no still: the dark card with the shield).
+  { id: 'recap', file: 'slide-2-whats-new.png', still: null, tag: '', title: "What's new", line: '', items: [
+    { name: 'check_repo_trap', text: 'Checks a project before your agent runs it.' },
+    { name: 'check_agent_message', text: 'Flags hidden instructions in agent messages.' },
+    { name: 'A2A 1.0', text: 'Other AI agents can send PG1 tasks.' },
+    { name: 'PG1 City', text: "PG1's real activity, live in a 3D city." },
+    { name: 'PG1 Universe', text: 'Simulated worlds, including Benin–Warri c. 1610.' },
+    { name: 'Passkey + signed results', text: 'Passkey sign-in; every tool result signed.' }
+  ] },
+  { id: 'check-repo-trap', file: 'slide-3-check-repo-trap.png', still: 'tower-cluster', tag: 'New free check · v1.22.0', title: 'check_repo_trap', line: "Checks a downloaded project's files before your coding agent runs anything from it: look-alike standard-library files, startup hooks, install scripts, executables and encoded payloads. For anyone letting an agent work on code they didn't write." },
+  { id: 'check-agent-message', file: 'slide-4-check-agent-message.png', still: 'promenade', tag: 'Free check · v1.21', title: 'check_agent_message', line: 'Reads agent messages and skill.md files before your agent does. Flags hidden instructions and wallet or payment redirects aimed at the reader, and skips lines that only name, quote or negate a risk. Rule-based, no AI model.' },
+  { id: 'a2a-1-0', file: 'slide-5-a2a-1-0.png', still: 'city-strip', tag: 'Standards', title: 'A2A 1.0', line: 'PG1 speaks A2A 1.0 and is tested with the official A2A SDK, so other AI agents can send it tasks using the standard protocol. Plain messages get a free reply.' },
+  { id: 'pg1-city', file: 'slide-6-pg1-city.png', still: 'aerial-rain', tag: 'Live 3D', title: 'PG1 City', line: "A living 3D city that shows PG1's real activity as it happens: probes, checks and signed results, with the origin countries and real Dublin weather. Every event is real, never simulated." },
+  { id: 'pg1-universe', file: 'slide-7-pg1-universe.png', still: 'deep-space', tag: 'Simulation', title: 'PG1 Universe', line: 'Simulated worlds with a living society, from orbit down to the ground, including Benin–Warri c. 1610: inspired by history, every fact sourced, its people fictional. With weather and day and night.' },
+  { id: 'passkey-signed', file: 'slide-8-passkey-signed-results.png', still: 'city-night', tag: 'Trust', title: 'Passkey sign-in + signed results', line: "The operator signs in with a passkey; once one is set up, the password alone is refused. Every PG1 tool result is signed (Ed25519) and can be checked offline with PG1's public key." },
+  { id: 'end', file: 'slide-9-link-in-bio.png', still: null, tag: '', title: 'Link in bio', line: 'Free checks for AI agents.' }
 ]);
 export const STORY = Object.freeze({ file: 'story-1-cover-1080x1920.png', slide: 'cover' });
 export const HIGHLIGHTS = SLIDES.filter((x) => x.still && x.id !== 'cover');
-export const COVER = Object.freeze({ file: 'cover-1200x675.png', still: 'cover', title: 'What PG1 shipped', line: 'PG1 City, PG1 Universe, and new free checks for agents.' });
+export const COVER = Object.freeze({ file: 'cover-1200x675.png', still: 'cover', tag: '23 November 2026', title: 'What PG1 shipped', line: 'PG1 City, PG1 Universe, and new free checks for agents.' });
+// The post's date (the cover's label on the slide, the Story and the wide cover).
+export const POST_DATE = '23 November 2026';
 
 // The cut: [kind, what, seconds]. Shots run from their own start (the move
 // eased in), cards fade in and out.
@@ -70,13 +84,32 @@ const BASE_CSS = () => `@font-face{font-family:I;font-weight:400;src:url(${font(
 const crown = (cls = '') => `<i class="${cls}">${SHIELD}</i>`;
 const isCode = (t) => /^[a-z_]+$/.test(t);
 
+function recapHtml(h) {
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${BASE_CSS()}
+body{position:relative;overflow:hidden;background:radial-gradient(120% 70% at 50% 30%,#17140a 0%,#0b0b0d 45%,#070708 100%)}
+.top{position:absolute;left:84px;top:78px;font-size:34px}.c{position:absolute;right:84px;top:64px;width:120px;height:120px}
+.title{position:absolute;left:84px;top:190px;font-size:88px}
+ul{position:absolute;left:84px;right:84px;top:330px;list-style:none;padding:0;display:flex;flex-direction:column;gap:18px}
+li{display:flex;gap:26px;align-items:flex-start;padding:16px 24px;border:1px solid rgba(243,198,35,.22);border-radius:22px;background:rgba(255,255,255,.035)}
+.k{flex:none;width:46px;height:46px;border-radius:50%;background:#f3c623;color:#070708;font-weight:700;font-size:30px;display:flex;align-items:center;justify-content:center;margin-top:4px}
+.n{font-weight:700;font-size:34px;color:#fff;line-height:1.15}.t{font-size:30px;color:#d3d3da;line-height:1.3;margin-top:4px;white-space:nowrap}
+.foot{position:absolute;left:84px;right:84px;bottom:66px;display:flex;justify-content:space-between;font-size:26px;color:#a9a9b3}
+</style></head><body><div class="top mark">${crown()}PG1</div><div class="c">${SHIELD}</div><div class="title">${esc(h.title)}</div>
+<ul>${h.items.map((it) => `<li><span class="k">✓</span><div><div class="n">${esc(it.name)}</div><div class="t">${esc(it.text)}</div></div></li>`).join('')}</ul>
+<div class="foot"><span>${MARK}</span><span>PG1</span></div></body></html>`;
+}
+
 function cardHtml(h, bg, { hgt = 1350 } = {}) {
+  if (h.items) return recapHtml(h);
   const big = isCode(h.title) ? 84 : h.title.length > 24 ? 80 : 108;
+  // A summary of more than one line is set a little smaller (never under 30 px).
+  const lineSize = h.line.length > 120 ? 34 : 40;
   return `<!doctype html><html><head><meta charset="utf-8"><style>${BASE_CSS()}
 body{position:relative;overflow:hidden}.bg{position:absolute;inset:0;background:${bg ? `url(${bg}) center/cover` : 'radial-gradient(120% 70% at 50% 40%,#17140a 0%,#0b0b0d 45%,#070708 100%)'}}
 .shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(7,7,8,.55) 0%,rgba(7,7,8,0) 18%,rgba(7,7,8,0) ${hgt > 1500 ? 50 : 40}%,rgba(7,7,8,.82) ${hgt > 1500 ? 68 : 62}%,#070708 100%)}
 .top{position:absolute;left:84px;top:${hgt > 1500 ? 120 : 78}px;font-size:34px}.body{position:absolute;left:84px;right:84px;bottom:${hgt > 1500 ? 260 : 150}px}
-.tag{font-size:30px;margin-bottom:28px}.title{font-size:${big}px;margin-bottom:30px;text-shadow:0 2px 24px rgba(0,0,0,.5)}.line{font-size:40px;max-width:900px}
+
+.tag{font-size:30px;margin-bottom:28px}.title{font-size:${big}px;margin-bottom:30px;text-shadow:0 2px 24px rgba(0,0,0,.5)}.line{font-size:${lineSize}px;max-width:912px;text-shadow:0 2px 16px rgba(0,0,0,.6)}
 .foot{position:absolute;left:84px;right:84px;bottom:${hgt > 1500 ? 150 : 66}px;display:flex;justify-content:space-between;font-size:26px;color:#a9a9b3}
 .endc{position:absolute;left:0;right:0;top:${Math.round(hgt * 0.24)}px;display:flex;justify-content:center}.endc i{display:block;width:240px;height:240px}
 .end .body{left:84px;right:84px;bottom:auto;top:${Math.round(hgt * 0.24) + 320}px;text-align:center}.end .line{margin:0 auto}
@@ -91,9 +124,9 @@ function coverHtml(bg) {
 body{position:relative;overflow:hidden}.bg{position:absolute;inset:0;background:url(${bg}) center 38%/cover}
 .shade{position:absolute;inset:0;background:linear-gradient(90deg,#070708 0%,rgba(7,7,8,.88) 34%,rgba(7,7,8,.2) 70%,rgba(7,7,8,.1) 100%)}
 .c{position:absolute;left:72px;top:72px;width:110px;height:110px}.body{position:absolute;left:72px;bottom:120px;width:640px}
-.title{font-size:76px;margin-bottom:22px}.line{font-size:28px}.foot{position:absolute;left:72px;bottom:52px;font-size:22px;color:#a9a9b3}
+.tag{font-size:24px;margin-bottom:18px}.title{font-size:76px;margin-bottom:22px}.line{font-size:28px}.foot{position:absolute;left:72px;bottom:52px;font-size:22px;color:#a9a9b3}
 </style></head><body><div class="bg"></div><div class="shade"></div><div class="c">${SHIELD}</div>
-<div class="body"><div class="title">${esc(COVER.title)}</div><div class="line">${esc(COVER.line)}</div></div><div class="foot">${MARK}</div></body></html>`;
+<div class="body"><div class="tag">${esc(COVER.tag)}</div><div class="title">${esc(COVER.title)}</div><div class="line">${esc(COVER.line)}</div></div><div class="foot">${MARK}</div></body></html>`;
 }
 
 // A full-screen text card for the vertical video.
@@ -121,7 +154,7 @@ function ff(args) {
 }
 const ENC = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-pix_fmt', 'yuv420p', '-r', '30'];
 
-export async function build({ from, out, stills }) {
+export async function build({ from, out, stills, video = true }) {
   const tmp = join(os.tmpdir(), `pg1-social-${process.pid}`);
   rmSync(tmp, { recursive: true, force: true }); mkdirSync(tmp, { recursive: true }); mkdirSync(out, { recursive: true });
   const shotMp4 = (id) => { const f = join(from, `${id}.mp4`); if (!existsSync(f)) throw new Error(`missing ${f} (run scripts/showcase-render.mjs first)`); return f; };
@@ -143,6 +176,7 @@ export async function build({ from, out, stills }) {
     const s1 = SLIDES.find((x) => x.id === STORY.slide);
     await shoot(cardHtml(s1, still(s1.still, '1080x1920'), { hgt: 1920 }), 1080, 1920, join(out, STORY.file));
     await shoot(coverHtml(still(COVER.still, '1920x1080')), 1200, 675, join(out, COVER.file));
+    if (!video) return;
     // The vertical cut.
     const parts = [];
     for (const [i, [kind, what, sec, label]] of CUT.entries()) {
@@ -167,6 +201,6 @@ export async function build({ from, out, stills }) {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const a = process.argv.slice(2); const get = (k, d) => { const i = a.indexOf(k); return i >= 0 ? a[i + 1] : d; };
-  build({ from: resolve(get('--from', join(ROOT, 'showcase-out'))), stills: resolve(get('--stills', join(get('--from', join(ROOT, 'showcase-out')), 'stills'))), out: resolve(get('--out', join(ROOT, 'docs', 'social', '2026-11'))) })
+  build({ from: resolve(get('--from', join(ROOT, 'showcase-out'))), stills: resolve(get('--stills', join(get('--from', join(ROOT, 'showcase-out')), 'stills'))), out: resolve(get('--out', join(ROOT, 'docs', 'social', '2026-11'))), video: !a.includes('--no-video') })
     .then(() => console.log('[social] done'), (e) => { console.error(`[social] ${e && e.stack || e}`); process.exit(1); });
 }
