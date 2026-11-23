@@ -215,6 +215,7 @@ const pgrst204 = () => new Response(JSON.stringify({
 
 beforeEach(() => {
   useSupabase();
+  telemetry.__resetTelemetryQueueForTests();
   __resetTelemetryFailureLogForTests();
   __clearAuthRateLimitState();
 });
@@ -232,7 +233,8 @@ test('a rejected insert writes one pg1_errors row: fixed text, PostgREST code on
   assert.equal(row.status, 400);
   assert.equal(row.reason, 'telemetry_insert_failed');
   assert.equal(row.category, 'http_4xx');
-  assert.equal(row.message, 'agent_telemetry insert rejected (HTTP 400, PGRST204); rows are being dropped until the table matches lib/telemetry.mjs.');
+  // 1.23.x: the warning names how many rows were dropped and when.
+  assert.match(row.message, /^agent_telemetry insert rejected \(HTTP 400, PGRST204\): 1 row dropped at \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC; rows are dropped until the table matches lib\/telemetry\.mjs\.$/);
   const text = JSON.stringify(row);
   for (const leaked of ['check_domain_age', '203.0.113.7', 'event_type', inserts[0].body.caller_hash]) {
     assert.ok(!text.includes(leaked), `pg1_errors row does not carry ${leaked}`);
@@ -334,7 +336,10 @@ async function runRoute(call) {
   return { res, ms: Date.now() - started };
 }
 
-test('every route answers exactly the same when the insert is rejected (the live PGRST204) or hangs, without waiting for it', async () => {
+test('every route answers exactly the same when the insert is rejected (the live PGRST204) or hangs, without waiting for it', async (t) => {
+  // Retries are covered by tests/telemetry-queue.test.mjs; here one try per row.
+  telemetry.__setTelemetryRetryDelaysForTests([]);
+  t.after(() => telemetry.__setTelemetryRetryDelaysForTests(null));
   const baseline = {};
   installFetch(() => new Response(null, { status: 201 }));
   for (const [name, call] of Object.entries(ROUTE_CALLS)) baseline[name] = visible((await runRoute(call)).res);
@@ -347,8 +352,11 @@ test('every route answers exactly the same when the insert is rejected (the live
     __clearAuthRateLimitState();
     const { inserts } = installFetch(insert);
     for (const [name, call] of Object.entries(ROUTE_CALLS)) {
+      await new Promise((r) => setTimeout(r, 30)); // rows queued by the call before have gone out
+      telemetry.__resetTelemetryQueueForTests(); // a mock insert that never settles must not hold the next route's row
       const before = inserts.length;
       const { res, ms } = await runRoute(call);
+      await new Promise((r) => setTimeout(r, 30)); // the queue flushes on the next turn (some routes record after their own awaits)
       assert.deepEqual(visible(res), baseline[name], `${name} (${mode}): same status and body`);
       assert.ok(ms < 1000, `${name} (${mode}): answered in ${ms}ms, not held by the insert`);
       if (name !== 'chat /help') assert.equal(inserts.length - before, 1, `${name} (${mode}): one insert attempted`);

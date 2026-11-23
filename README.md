@@ -268,7 +268,8 @@ Watchlist webhooks are signed separately with HMAC-SHA256: `X-PG1-Signature: t=<
 | `check_wallet_sanctions` | Always free | 120 calls/hour per caller |
 | `check_domain_age`, `check_hostname_reputation`, `check_wallet_age`, `check_package` | Always free | 60 calls/hour per caller, per tool |
 | `check_ip_abuse` | Always free (your own AbuseIPDB quota) | 60 calls/hour per caller |
-| `check_x402_endpoint`, `check_agent_card`, `check_agent_message`, `check_repo_trap` | Always free | 60 calls/hour per caller, per tool |
+| `check_x402_endpoint`, `check_agent_card` | Always free | 60 calls/hour per caller, per tool |
+| `check_agent_message`, `check_repo_trap` | Free to start, then plans ([/pricing](https://pg1-ai-agent.vercel.app/pricing)) | 60 calls/hour per caller, per tool; with plans on, 25 checks a day without a key, 500 with a free key from [/keys](https://pg1-ai-agent.vercel.app/keys), one quota for both tools |
 | `verify_result` | Always free | none |
 | `preflight_check`, `hosting_advisor` | Paid: 0.01 USD per call | 5 free calls a day per caller, shared with the other paid tools, then x402 |
 | `get_usage_status` | Always free | none |
@@ -282,6 +283,24 @@ Watchlist webhooks are signed separately with HMAC-SHA256: `X-PG1-Signature: t=<
 - Send `X-Free-Tier: 0` to skip it and get the payment challenge straight away.
 - A licence key in `X-API-KEY` lifts the hourly limits and pays for paid calls.
 - A rate-limited call is a `rate_limited` error with `retry_after`.
+
+### Plans for check_agent_message and check_repo_trap
+
+The two pre-read and pre-run checks share one quota per caller. Plans: [/pricing](https://pg1-ai-agent.vercel.app/pricing). A free key: [/keys](https://pg1-ai-agent.vercel.app/keys).
+
+| Plan | Checks | Price |
+|---|---|---|
+| No key | 25 a day per caller | free |
+| Free key (email) | 500 a day | free |
+| Builder | 10,000 a month | 9 USD a month, by card |
+| Team | 100,000 a month, up to 5 keys | 49 USD a month, by card |
+| Partner | unlimited | by arrangement |
+| Pay per check | one check | 0.002 USD in USDC on Base (x402) |
+
+- Every key goes in `X-API-KEY`: a free key, a Builder or Team licence key, a Team key or a Partner licence.
+- Over the free limit without a licence, the call gets an x402 payment challenge for 0.002 USD; a licence over its monthly quota gets a `quota_exceeded` error naming the quota and the reset date. Both carry `keys_url` and `pricing_url`. Results are never cut short.
+- Responses carry `X-PG1-Plan`, and where a quota applies `X-PG1-Quota`, `X-PG1-Quota-Remaining` and `X-PG1-Quota-Reset`.
+- A clean result is `no_findings`: no findings, never "safe".
 
 ## Two Ways to Connect
 
