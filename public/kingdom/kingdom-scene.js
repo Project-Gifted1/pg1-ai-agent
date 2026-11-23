@@ -885,6 +885,8 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       if (onRebuild) onRebuild(KINGDOM_FROM_AUTO[startTier({ coarse, memory })], { auto: true });
     },
     // For the tests and the budget check: what the last frame cost.
+    // The drones' look and whether the scene has an environment map (tests: drones lit on Low with none).
+    droneLook() { return { environment: !!scene.environment, night: world.env ? world.env.night : null, crowds: actors.droneLook() }; },
     stats() {
       let texBytes = 0; let maxTex = 0; const seen = new Set();
       let geoBytes = 0; const geos = new Set();

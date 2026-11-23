@@ -9,7 +9,11 @@
  *     sharpened to it (the final pass is on);
  *   - the foreground stays clear of fog;
  *   - with frames forced slow, the render scale never goes below 0.8;
- *   - the quality menu says Cinematic may look softer on this phone;
+ *   - the quality menu shows "Cinematic (manual)" whole (its title says it
+ *     may look softer on this phone);
+ *   - the banner at 360 px never leaves a word alone on its last line;
+ *   - the drones on Low (no environment map) have a light, lit body, nav
+ *     lights and a strobe, and an underglow at night only;
  *   - no page errors.
  * Frame times are not asserted (CI draws 3D in software); draw calls and
  * triangles are the same on any GPU.
@@ -37,7 +41,7 @@ if (chromium && !existsSync(chromium.executablePath())) {
   else skip = `Chromium is not installed at ${chromium.executablePath()}`;
 }
 
-async function openA07(t, { tier, weather }) {
+async function openA07(t, { tier, weather, at = NIGHT }) {
   const feed = fixtureFeed({});
   const { server, origin } = await startCommandCentreServer({ publicDir: PUBLIC_DIR, defenseFeed: async (url) => { const f = await feed(url); if (!url.searchParams.get('since')) f.weather = weather; return f; } });
   const browser = await chromium.launch({ executablePath, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
@@ -48,7 +52,7 @@ async function openA07(t, { tier, weather }) {
     try { localStorage.setItem('pg1_theme', 'dark'); localStorage.setItem('pg1_kingdom_quality', tier); } catch (e) { /* private */ }
     try { Object.defineProperty(Navigator.prototype, 'deviceMemory', { get: () => 4, configurable: true }); } catch (e) { /* read-only */ }
     const real = Date.now.bind(Date); const off = at - real(); Date.now = () => real() + off;
-  }, { at: NIGHT, tier });
+  }, { at, tier });
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (err) => errors.push(String((err && err.message) || err)));
@@ -82,7 +86,8 @@ for (const [name, weather] of [['night, rain', { state: 'rain', source: 'open-me
     assert.equal(st.fogAt400, 0, 'the first 400 m stay clear');
     assert.equal(st.targetFps, 30);
     const opt = await page.locator('#kingdom-quality option[value="cinematic"]').textContent();
-    assert.equal(opt, 'Cinematic (may look softer on this phone)');
+    assert.equal(opt, 'Cinematic (manual)');
+    assert.equal(await page.locator('#kingdom-quality option[value="cinematic"]').getAttribute('title'), 'Chosen by hand: may look softer on this phone');
     assert.deepEqual(errors, []);
   });
 }
@@ -100,3 +105,67 @@ test('Galaxy A07 profile, Cinematic with slow frames: effects go first, and the 
   assert.ok(Number(d.renderPixels) >= 0.8 * 0.8 - 1e-9, `render pixels ${d.renderPixels}`);
   assert.deepEqual(errors, []);
 });
+
+// The words of the banner's last line, from the text's own line boxes.
+async function bannerLines(page) {
+  return page.evaluate(() => {
+    const el = document.getElementById('kingdom-countries-text');
+    const node = el.firstChild; const text = node.textContent; const r = document.createRange();
+    const lines = []; let top = null; let cur = '';
+    for (let i = 0; i < text.length; i++) {
+      r.setStart(node, i); r.setEnd(node, i + 1);
+      const rect = [...r.getClientRects()].find((x) => x.width > 0);
+      if (rect && top !== null && rect.top > top + 4) { lines.push(cur); cur = ''; }
+      if (rect && (top === null || rect.top > top + 4)) top = rect.top;
+      cur += text[i];
+    }
+    lines.push(cur);
+    return { lines: lines.map((l) => l.trim()), width: el.getBoundingClientRect().width };
+  });
+}
+
+test('Galaxy A07 profile, 360 px: the banner never leaves a word alone on its last line; the quality menu shows its whole label', { skip, timeout: 900000 }, async (t) => {
+  const { page, errors } = await openA07(t, { tier: 'phone', weather: { state: 'clear', source: 'open-meteo', cloud: 0.1 } });
+  await page.waitForFunction(() => /countries|country/.test(document.getElementById('kingdom-countries-text').textContent) && document.getElementById('kingdom-countries').dataset.n !== '0', null, { timeout: 60000 }).catch(() => {});
+  const { lines } = await bannerLines(page);
+  t.diagnostic(`banner lines at 360 px: ${JSON.stringify(lines)}`);
+  const last = lines[lines.length - 1];
+  assert.ok(last.split(/[\s\u00a0]+/).filter(Boolean).length >= 2, `a word alone on the last line: ${JSON.stringify(lines)}`);
+  assert.match(last.replace(/\u00a0/g, ' '), /last 24 h$/);
+  assert.match(lines.join(' ').replace(/\u00a0/g, ' '), /^Probes and checks from \d+ countr(y|ies) · last 24 h$/);
+  // The quality menu: wide enough for its widest label, so a choice is never cut off.
+  const q = await page.evaluate(() => {
+    const sel = document.getElementById('kingdom-quality');
+    const cs = getComputedStyle(sel);
+    const span = document.createElement('span'); span.style.font = cs.font; span.style.whiteSpace = 'pre'; span.style.position = 'absolute'; span.style.visibility = 'hidden'; document.body.appendChild(span);
+    const widths = [...sel.options].filter((o) => !o.hidden).map((o) => { span.textContent = o.textContent; return { text: o.textContent, w: span.getBoundingClientRect().width }; });
+    span.remove();
+    const inner = sel.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    return { widths, inner, right: sel.getBoundingClientRect().right, vw: innerWidth };
+  });
+  t.diagnostic(`quality menu: inner ${Math.round(q.inner)} px; labels ${q.widths.map((w) => `${w.text} ${Math.round(w.w)}`).join(', ')}`);
+  for (const w of q.widths) assert.ok(w.w <= q.inner + 0.5, `"${w.text}" (${w.w} px) is cut off in ${q.inner} px`);
+  assert.ok(q.widths.some((w) => w.text === 'Cinematic (manual)'));
+  assert.ok(q.right <= q.vw, 'the menu stays on screen');
+  assert.deepEqual(errors, []);
+});
+
+for (const [name, at] of [['night', NIGHT], ['day', Date.UTC(2026, 10, 23, 12, 30)]]) {
+  test(`Galaxy A07 profile, Low (no environment map), ${name}: drones have a light lit body, nav lights and a strobe; underglow at night only`, { skip, timeout: 900000 }, async (t) => {
+    const { page, errors } = await openA07(t, { tier: 'legacy', at, weather: { state: 'clear', source: 'open-meteo', cloud: 0.1 } });
+    await frames(page, 3);
+    const look = await page.evaluate(() => window.kingdomUi.scene().droneLook());
+    t.diagnostic(`Low ${name}: environment map ${look.environment}, night ${look.night}, ${look.crowds.length} drone kinds`);
+    assert.equal(look.environment, false, 'Low draws with no environment map');
+    for (const c of look.crowds) {
+      const r = (c.body >> 16) & 255; const g = (c.body >> 8) & 255; const b = c.body & 255;
+      const lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+      assert.ok(lum >= 0.5, `body #${c.body.toString(16)} is too dark (${lum.toFixed(2)})`);
+      assert.ok(c.metalness <= 0.3, `metalness ${c.metalness}: a metal body is black with no environment map`);
+      assert.ok(c.emissive > 0, 'the body has a little light of its own');
+      assert.equal(c.nav, 3, 'nav lights, strobe and underglow');
+      if (name === 'night') assert.ok(c.underglow > 0 && c.underglow <= 0.3, `underglow ${c.underglow}`); else assert.equal(c.underglow, 0);
+    }
+    assert.deepEqual(errors, []);
+  });
+}

@@ -165,7 +165,7 @@ test('runReport: stores the report, saves the PDF, pushes it, and acts on the fi
   assert.equal(fix.status, 'lab_running');
   assert.deepEqual(fix.evidence, { tool: 'check_wallet_age', type: 'upstream_error', route: '/api/mcp', real_errors: 6, probe_errors: 0, window: '24h' });
   assert.equal(started[0].kind, 'code');
-  assert.match(started[0].goal, /^Fix: Fix check_wallet_age/);
+  assert.match(started[0].goal, /^Fix check_wallet_age/, 'the prefix is never doubled ("Fix: Fix …")');
   // Once a day; and the same finding never makes a second task.
   assert.equal((await runReport({ kind: 'daily', env: ENV, supUrl: SUP, supKey: 'k', fetchImpl: reportFetch(), now: NOW + 3600000, getStats, deps })).skipped, 'already sent today');
   await runReport({ kind: 'daily', env: ENV, supUrl: SUP, supKey: 'k', fetchImpl: reportFetch(), now: NOW, getStats, deps: { ...deps, force: true } });

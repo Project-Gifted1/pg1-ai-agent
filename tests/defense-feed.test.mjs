@@ -327,7 +327,7 @@ test('allies and day totals: paid A2A jobs, licensed partners, verify_result; th
   assert.equal(classifyTelemetryRow(r({ status: 'ok', payment_type: 'license', tool_name: 'check_package' })).check, 'partner', 'a partner is never named');
   assert.equal(classifyTelemetryRow(r({ status: 'ok', tool_name: 'verify_result' })).verdict, 'SEAL_VERIFIED');
   const ev2 = (o) => ({ time: iso(60000), role: 'attacker', count: 1, country_code: 'CN', verdict_code: 'X', ...o });
-  assert.deepEqual(dayTotals([ev2({ count: 30 }), ev2({ country_code: 'NL' }), ev2({ country_code: null }), ev2({ role: 'ally', verdict_code: 'SETTLED', count: 3 }), ev2({ role: 'ally', verdict_code: 'JOB_PAID' })], NOW), { turned_away: 32, countries: 2, settled: 4 });
+  assert.deepEqual(dayTotals([ev2({ count: 30 }), ev2({ country_code: 'NL' }), ev2({ country_code: null }), ev2({ role: 'ally', verdict_code: 'SETTLED', count: 3 }), ev2({ role: 'ally', verdict_code: 'JOB_PAID' })], NOW), { turned_away: 32, countries: 2, settled: 4, kind: 'probes' });
 });
 
 test('Fix 1: a 402 is a Toll Gantry event only on a paid skill; check_package only reaches the Supply Inspector', async () => {

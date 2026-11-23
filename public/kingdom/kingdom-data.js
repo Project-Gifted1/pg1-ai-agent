@@ -85,7 +85,7 @@ export function createEventStore({ max = 800 } = {}) {
   const byId = new Map();
   let today = {};
   let threat = { level: 'calm' };
-  let day = { turned_away: 0, countries: 0, settled: 0 };
+  let day = { turned_away: 0, countries: 0, settled: 0, kind: 'probes' };
   const origins = new Map();
   const dayCountries = new Set();
   // What the countries count is made of (lib/defenseFeed.mjs originsKind).
@@ -106,7 +106,7 @@ export function createEventStore({ max = 800 } = {}) {
       if (feed && feed.today && typeof feed.today === 'object') today = Object.fromEntries(Object.entries(feed.today).filter(([k, v]) => Object.hasOwn(GADGET_META, k) && Number.isFinite(v)).map(([k, v]) => [k, Math.max(0, Math.round(v))]));
       const initial = !!(feed && feed.today);
       if (feed && Array.isArray(feed.origins)) { origins.clear(); for (const o of feed.origins) if (o && /^[A-Z]{2}$/.test(o.country_code) && Number.isFinite(o.count)) origins.set(o.country_code, o.count); originsKind = feed.origins_kind === 'blocked' ? 'blocked' : 'probes_and_checks'; }
-      if (feed && feed.day && typeof feed.day === 'object') day = { turned_away: Math.max(0, Number(feed.day.turned_away) || 0), countries: Math.max(0, Number(feed.day.countries) || 0), settled: Math.max(0, Number(feed.day.settled) || 0) };
+      if (feed && feed.day && typeof feed.day === 'object') day = { turned_away: Math.max(0, Number(feed.day.turned_away) || 0), countries: Math.max(0, Number(feed.day.countries) || 0), settled: Math.max(0, Number(feed.day.settled) || 0), kind: feed.day.kind === 'blocked' ? 'blocked' : 'probes' };
       for (const raw of events) {
         const e = normalizeEvent(raw);
         if (!e) continue;
@@ -116,7 +116,7 @@ export function createEventStore({ max = 800 } = {}) {
         if (!delta) continue;
         fresh.push({ event: e, delta });
         if (!initial) {
-          if (e.role === 'attacker') { day.turned_away += delta; if (e.country) { dayCountries.add(e.country); origins.set(e.country, (origins.get(e.country) || 0) + delta); if (e.kind !== 'payer_refused') originsKind = 'probes_and_checks'; } }
+          if (e.role === 'attacker') { day.turned_away += delta; if (!BLOCKED_ATTACK_KINDS.includes(e.kind)) day.kind = 'probes'; else if (day.turned_away === delta) day.kind = 'blocked'; if (e.country) { dayCountries.add(e.country); origins.set(e.country, (origins.get(e.country) || 0) + delta); if (!BLOCKED_ATTACK_KINDS.includes(e.kind)) originsKind = 'probes_and_checks'; } }
           if (e.verdict === 'SETTLED' || e.verdict === 'JOB_PAID') day.settled += delta;
           today[e.gadget] = (today[e.gadget] || 0) + delta;
           if (e.role === 'attacker' && !e.country && e.check !== 'operator_signin' && e.verdict !== 'SANCTIONS_MATCH') today.fog_wall = (today.fog_wall || 0) + delta;
@@ -260,14 +260,23 @@ export function weatherLook(raw) {
 
 // The billboards: real PG1 numbers from the feed only; "not read" when a
 // number is not there. Threats only (no payments).
-export function billboardLines({ countries = null, threats = null, checks = null, kind = 'probes_and_checks' } = {}) {
+export function billboardLines({ countries = null, threats = null, checks = null, kind = 'probes_and_checks', dayKind = 'probes' } = {}) {
   const n = (v) => (Number.isFinite(v) ? String(v) : 'not read');
   return [
     `${n(countries)} ${countries === 1 ? 'country' : 'countries'} · ${kind === 'blocked' ? 'hostile traffic' : 'probes and checks'}, last 24 h`,
-    `${n(threats)} ${threats === 1 ? 'threat' : 'threats'} turned away today`,
+    `${n(threats)} ${turnedAwayNoun(threats, dayKind)} turned away today`,
     `${n(checks)} ${checks === 1 ? 'check' : 'checks'} live`
   ];
 }
+
+// What the day's turned-away count is called, matching the banner: probes,
+// unless every counted event is a blocked attack (lib/defenseFeed.mjs
+// dayTotals kind 'blocked': only a payer refused by the sanctions screen,
+// BLOCKED_ATTACK_KINDS). Never "threats" for unknown-method probes, 402s
+// or rate limits.
+export const BLOCKED_ATTACK_KINDS = Object.freeze(['payer_refused']);
+export function turnedAwayNoun(n, kind = 'probes') { return kind === 'blocked' ? (n === 1 ? 'attack' : 'attacks') : (n === 1 ? 'probe' : 'probes'); }
+export function turnedAwayText(n, kind = 'probes') { const k = Number(n) || 0; return `${k} ${turnedAwayNoun(k, kind)} turned away today`; }
 
 // The enemy palette (red), which nothing ambient or PG1's may use.
 export function isEnemyColour(hex) {
@@ -283,7 +292,11 @@ export function isEnemyColour(hex) {
 // The HUD's country counter.
 // "Hostile" only when every event counted is a blocked attack
 // (lib/defenseFeed.mjs originsKind 'blocked'); otherwise probes and checks.
-export function countriesText(n, kind = 'probes_and_checks') { return `${kind === 'blocked' ? 'Hostile traffic' : 'Probes and checks'} from ${plural(n, 'country', 'countries')} · last 24 h`; }
+// The tail ("5 countries · last 24 h") is held together with no-break
+// spaces, so a narrow banner (360 px) never leaves a word alone on its
+// last line.
+const NB = '\u00a0';
+export function countriesText(n, kind = 'probes_and_checks') { return `${kind === 'blocked' ? 'Hostile traffic' : 'Probes and checks'} from ${[String(n), n === 1 ? 'country' : 'countries', '·', 'last', '24', 'h'].join(NB)}`; }
 
 // What PG1 does about an event: which gadget answers and how. PG1 only
 // defends: block, scan, catch, turn back, repair, stamp, light or welcome;
@@ -309,13 +322,21 @@ export function defenceLine(e) {
   return `${name} · ${e.check}: ${verdictText(e)}${reason}`;
 }
 
-// The other side's caption, paired with it.
-const ENEMY_NAME = { rate_shield: 'Siege drones', truth_lens: 'Shadow courier', repo_scanner: 'Trojan workspace', passkey_vault: 'Shadow at the vault', supply_inspector: 'Trojan freighter', phishing_net: 'Mimic boat', sanctions_gate: 'Listed freighter' };
+// The other side's caption, paired with it: what the event is, in plain
+// words. "Raiders" only for a blocked attack (BLOCKED_ATTACK_KINDS); a probe
+// is a probe ("Probe ×3 from DE"), a flagged check names what was flagged.
+const CALLER_NAME = { probe: 'Probe', caller_fault: 'Malformed call', rate_limited: 'Rate-limited calls', payment_challenge: 'Unpaid call', payment_failed: 'Failed payment', signin_failed: 'Failed sign-in', lockout: 'Sign-in burst' };
+const FLAGGED_NAME = { truth_lens: 'Flagged message', repo_scanner: 'Flagged project', supply_inspector: 'Flagged package', phishing_net: 'Flagged domain', sanctions_gate: 'Listed wallet', preflight_ward: 'Flagged preflight' };
+export function callerName(e) {
+  if (!e) return '';
+  if (BLOCKED_ATTACK_KINDS.includes(e.kind)) return 'Raiders';
+  if (e.kind === 'check_verdict') return FLAGGED_NAME[e.gadget] || 'Flagged check';
+  return CALLER_NAME[e.kind] || 'Caller';
+}
 export function enemyLine(e) {
   if (!e || e.role !== 'attacker') return e && e.role === 'ally' ? `Ally${e.country ? ` from ${e.country}` : ''}${e.count > 1 ? ` ×${e.count}` : ''}` : '';
-  const who = ENEMY_NAME[e.gadget] || 'Raiders';
   const from = e.country ? ` from ${e.country}` : e.check === 'operator_signin' ? '' : ' from the fog';
-  return `${who}${e.count > 1 ? ` ×${e.count}` : ''}${from}`;
+  return `${callerName(e)}${e.count > 1 ? ` ×${e.count}` : ''}${from}`;
 }
 
 // PG1's own state for the tower (the feed's \`state\`), checked.

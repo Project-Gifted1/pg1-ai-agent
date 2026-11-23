@@ -480,6 +480,8 @@
     .kd-badge[data-state="replay"] { border-color: rgba(111, 216, 255, 0.7); }
     @keyframes kd-live { 0%, 100% { box-shadow: 0 0 0 0 rgba(61, 220, 132, 0.0); } 50% { box-shadow: 0 0 0 4px rgba(61, 220, 132, 0.25); } }
     .kd-countries { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 0.95rem; font-weight: 700; color: #ffffff; }
+    /* No word alone on the banner's last line (its tail is held by no-break spaces too). */
+    #kingdom-countries-text { text-wrap: pretty; }
     .kd-flags { font-size: 24px; line-height: 1; letter-spacing: 2px; font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
     .kd-more { font-size: 0.8em; font-weight: 700; color: #c9ccd2; padding: 1px 6px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); }
     .kd-more[hidden] { display: none; }
@@ -3101,7 +3103,7 @@
         <button type="button" id="kingdom-sound" aria-pressed="false" onclick="kingdomUi && kingdomUi.toggleSound()">Sound</button>
         <button type="button" id="kingdom-record-btn" aria-expanded="false" aria-controls="kingdom-record" onclick="kingdomUi && kingdomUi.toggleRecordPanel()">Record</button>
         <label class="sr-only" for="kingdom-quality">Quality</label>
-        <select id="kingdom-quality" style="max-width: 9.5em" onchange="kingdomUi && kingdomUi.setQuality(this.value)"><option value="auto">Auto</option><option value="legacy">Low</option><option value="phone">Medium</option><option value="balanced">High</option><option value="cinematic">Cinematic</option><option value="still" hidden>Still</option></select>
+        <select id="kingdom-quality" style="width: auto; max-width: 100%" onchange="kingdomUi && kingdomUi.setQuality(this.value)"><option value="auto">Auto</option><option value="legacy">Low</option><option value="phone">Medium</option><option value="balanced">High</option><option value="cinematic">Cinematic</option><option value="still" hidden>Still</option></select>
       </div>
       <button type="button" class="icon-btn" aria-label="Close the Kingdom view" data-dialog-close onclick="triggerHaptic(40); closeKingdomScreen()"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
@@ -5539,7 +5541,7 @@
         + `<figure class="lab-beaker${high ? ' is-high' : ''}" aria-label="Budget: ${labMoney(v.spent_usd)} of ${labMoney(v.budget_usd)} spent, ${pct}%"><svg viewBox="6 0 34 50" aria-hidden="true"><path class="bk-cap" d="M8 6h26"/><rect class="bk-liquid" x="11.5" y="6" width="17" height="40" rx="1" style="--fill: ${fill.toFixed(3)}"/><path class="bk-glass" d="M9 3h22M10.5 3v40a5 5 0 0 0 5 5h9a5 5 0 0 0 5-5V3"/></svg>`
         + `<figcaption>${labMoney(v.spent_usd)}<br>of ${labMoney(v.budget_usd)}</figcaption></figure></div>`
         + (track ? `<ol class="lab-track" aria-label="Stage">${track}</ol>` : '')
-        + (v.failure && typeof v.failure === 'object' && v.failure.message ? `<p class="lab-card-error" role="note"><strong>Stopped at ${escapeHTML(String(v.failure.stage || ''))}:</strong> ${escapeHTML(String(v.failure.message).slice(0, 240))}</p>` : '')
+        + (v.failure && typeof v.failure === 'object' && v.failure.message ? `<p class="lab-card-error" role="note"><strong>Stopped at ${escapeHTML(String(v.failure.stage || ''))}:</strong> ${escapeHTML(window.pg1Text ? window.pg1Text.clipWords(v.failure.message, 240) : String(v.failure.message))}</p>` : '')
         + actions
         + '</section>';
     }
@@ -10437,5 +10439,6 @@
     
   </script>
   <script type="module" src="/sandbox/sound-ui.js"></script>
+  <script type="module">import * as T from '/text-display.js'; window.pg1Text = T;</script>
 </body>
 </html>

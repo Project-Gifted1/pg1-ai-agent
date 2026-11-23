@@ -200,12 +200,12 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   assert.equal(Number(d.sentinels), listedTools({}).length);
   assert.equal(d.beacon, 'gold'); assert.equal(d.seal, 'bronze');
   assert.equal(Number(d.beaconsLit), FIXTURE_APPROVALS);
-  assert.match(await page.locator('#kingdom-hud').textContent(), new RegExp(`^Defences active: ${listedTools({}).length} checks live · \\d+ threats turned away today$`));
+  assert.match(await page.locator('#kingdom-hud').textContent(), new RegExp(`^Defences active: ${listedTools({}).length} checks live · \\d+ probes? turned away today$`));
 
   // The billboards: real numbers from the feed only (threats, no payments).
   await page.waitForFunction(() => /checks live/.test(document.getElementById('kingdom-view').dataset.billboard || ''), null, { timeout: 15000 });
   const day = await page.evaluate(() => window.kingdomUi.store.day.turned_away);
-  assert.equal((await view(page)).billboard, billboardLines({ countries: N, threats: day, checks: listedTools({}).length }).join(' | '));
+  assert.equal((await view(page)).billboard, billboardLines({ countries: N, threats: day, dayKind: await page.evaluate(() => window.kingdomUi.store.day.kind), checks: listedTools({}).length }).join(' | '));
   assert.ok(!/payment/.test((await view(page)).billboard));
   // Windows follow the hour in Dublin (Dublin time by default; dusk is 19:30).
   assert.equal((await view(page)).light, 'live');
@@ -237,7 +237,7 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   assert.ok(Date.now() - t0 <= 10000, 'within 10 s');
   await page.waitForFunction((b) => Number(document.getElementById('kingdom-view').dataset.attackers || 0) > b, before, { timeout: 10000 });
   await page.waitForFunction(() => /^LIVE · \d+ s ago$/.test(document.querySelector('#kingdom-caption .kd-cap-when').textContent), null, { timeout: 10000 });
-  await page.waitForFunction(() => /JP · Raiders · tool_router: unknown tool probe/.test(document.querySelector('#kingdom-ticker li').textContent), null, { timeout: 5000 }).catch(async () => { throw new Error(JSON.stringify({ st: await status(page), html: await page.locator('#kingdom-ticker').innerHTML(), errors })); });
+  await page.waitForFunction(() => /JP · Probe · tool_router: unknown tool probe/.test(document.querySelector('#kingdom-ticker li').textContent), null, { timeout: 5000 }).catch(async () => { throw new Error(JSON.stringify({ st: await status(page), html: await page.locator('#kingdom-ticker').innerHTML(), errors })); });
   // The burst grows: a second real row, the running count.
   control.addTelemetry({ event_type: 'tool_call', endpoint: '/api/mcp', status: 'unknown_tool', caller_hash: h.c, country_code: 'JP' });
   await page.waitForFunction(() => /×2/.test(document.querySelector('#kingdom-ticker li').textContent), null, { timeout: 12000 });
@@ -334,7 +334,7 @@ test('an empty feed: the claim and the counter are there, nothing plays, the tic
     const ins = await page.evaluate(() => window.kingdomUi.scene().inspect());
     assert.ok(ins.lifeCounts.vehicles > 50 && ins.lifeCounts.people > 100);
     assert.equal(await page.locator('#kingdom-caption').isHidden(), true, 'no caption without an event');
-    assert.equal((await view(page)).billboard, '0 countries · probes and checks, last 24 h | 0 threats turned away today | not read checks live');
+    assert.equal((await view(page)).billboard, '0 countries · probes and checks, last 24 h | 0 probes turned away today | not read checks live');
     await shot(page, `kingdom-city-default-${name}.png`);
     await context.close();
   }
