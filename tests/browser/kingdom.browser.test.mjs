@@ -188,7 +188,10 @@ test('PG1 City at 412 px: real-not-simulated claim, live arrivals, replays, Fix 
   // The city's own life: there, and never in the enemy palette.
   assert.ok(inside.lifeCounts.vehicles > 50 && inside.lifeCounts.people > 100 && inside.lifeCounts.boats > 0);
   for (const c of inside.lifeColours) assert.ok(!isEnemyColour(c), `ambient colour ${c.toString(16)} is enemy red`);
-  for (const n of ['car-bodies', 'buses', 'tram', 'water-taxis-and-ferries', 'aircraft', 'birds', 'rooftop-steam', 'rooftop-radar', 'construction-crane', 'street-light-pools', 'zebra-crossings', 'manhole-covers', 'plaza-fountain', 'plaza-benches', 'pavements', 'kerbs']) assert.ok(inside.names.includes(n), `${n} missing`);
+  // At 412 px this is Medium on a phone, the lean city (1.23, kingdom-look.js):
+  // no rooftop steam, radar or crane (Balanced and Cinematic keep them).
+  for (const n of ['rooftop-steam', 'rooftop-radar', 'construction-crane']) assert.ok(!inside.names.includes(n), `${n} is not drawn on the lean phone city`);
+  for (const n of ['car-bodies', 'buses', 'tram', 'water-taxis-and-ferries', 'aircraft', 'birds', 'street-light-pools', 'zebra-crossings', 'manhole-covers', 'plaza-fountain', 'plaza-benches', 'pavements', 'kerbs']) assert.ok(inside.names.includes(n), `${n} missing`);
   for (const n of ['pg1-tower', 'tower-gold-accent', 'tower-crown-lights', 'river', 'bridge-arch', 'bridge-west', 'moored-boats', 'pier-deck', 'skyline-twist', 'skyline-crown', 'rooftop-plant', 'aircraft-lights', 'lane-markings', 'traffic-lights', 'pedestrians', 'tree-crowns', 'river-light-streaks', 'embankment-railing']) assert.ok(inside.names.includes(n), `${n} missing`);
 
   // PG1 state and the HUD (plurals).
@@ -324,14 +327,14 @@ test('an empty feed: the claim and the counter are there, nothing plays, the tic
     assert.equal(d.shield, 'hidden', 'the shield is invisible until a gadget fires');
     assert.equal((await status(page)).live.length, 0, 'nothing is generated for a quiet period');
     assert.equal(await page.locator('#kingdom-badge').textContent(), BADGE.live);
-    assert.equal(await page.locator('#kingdom-countries-text').textContent(), 'Hostile traffic from 0 countries · last 24 h');
+    assert.equal(await page.locator('#kingdom-countries-text').textContent(), 'Probes and checks from 0 countries · last 24 h', 'an empty feed has no blocked attacks to call hostile');
     assert.match(await page.locator('#kingdom-ticker').textContent(), /^Quiet · /);
     assert.match(await page.locator('#kingdom-feed').textContent(), /No defence events in the last 24 hours/);
     // The city's life runs, and is never captioned or counted as a defence or an attack.
     const ins = await page.evaluate(() => window.kingdomUi.scene().inspect());
     assert.ok(ins.lifeCounts.vehicles > 50 && ins.lifeCounts.people > 100);
     assert.equal(await page.locator('#kingdom-caption').isHidden(), true, 'no caption without an event');
-    assert.equal((await view(page)).billboard, '0 countries · hostile traffic, last 24 h | 0 threats turned away today | not read checks live');
+    assert.equal((await view(page)).billboard, '0 countries · probes and checks, last 24 h | 0 threats turned away today | not read checks live');
     await shot(page, `kingdom-city-default-${name}.png`);
     await context.close();
   }
