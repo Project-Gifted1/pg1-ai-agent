@@ -194,23 +194,24 @@ test('runner: a skill experiment drafts, checks and evaluates trait by trait', a
 test('runner: code proposals are confined to allowed paths; over budget stops before the call', async () => {
   // The code lab researches first (search-grounded), then builds.
   const research = (answer) => async (system, prompt, provider, body) => (/researching before a change/.test(system) ? FINDINGS : answer(system, prompt, provider, body));
-  const ok = modelStub(research(() => JSON.stringify({ summary: 'Add a helper', files: [{ path: 'lib/helpers/x.mjs', content: 'export const x = 1;\n' }, { path: 'tests/x.test.mjs', content: '// test\n' }], tests: 'unit' })));
+  const ok = modelStub(research(() => JSON.stringify({ summary: 'Add a helper', new_files: [{ path: 'lib/helpers/x.mjs', content: 'export const x = 1;\n' }, { path: 'tests/x.test.mjs', content: '// test\n' }], tests: 'unit' })));
   const r = await runExperiment({ id: 'dddddddd-0000-0000-0000-000000000000', kind: 'code', goal: 'helper', env: { PG1_DAILY_SPEND_CAP_USD: '1000', PG1_LAB_ANTHROPIC_API_KEY: 'a' }, budgetUsd: 2, fetchImpl: ok.fetchImpl });
   assert.equal(r.status, 'done');
   assert.equal(r.stages.research.ok, true);
-  assert.deepEqual(r.stages.build, { ok: true, files: 2 });
+  assert.equal(r.stages.build.ok, true); assert.equal(r.stages.build.files, 2); assert.equal(r.stages.build.new_files, 2);
   assert.match(r.report_markdown, /^## Research\n## Findings[\s\S]*## Code change/);
   assert.match(ok.calls.filter((c) => c.method === 'POST')[1].body.messages[0].content, /<research_findings untrusted="true">/, 'the findings feed the build');
   assert.equal(r.code.branch, 'lab/dddddddd');
   assert.deepEqual(r.patch.map((f) => f.path), ['lib/helpers/x.mjs', 'tests/x.test.mjs']);
   for (const bad of ['.github/workflows/tests.yml', 'vercel.json', 'package.json', 'lib/autonomy.mjs', 'lib/lab/policy.mjs', 'scripts/lab-pr.mjs', '../etc/passwd', '.env.local', 'lib/auditLog.mjs', 'tests/ci/no-network.mjs']) {
     assert.equal(checkCodePath(bad).ok, false, bad);
-    const evil = modelStub(research(() => JSON.stringify({ summary: 'x', files: [{ path: bad, content: 'x' }] })));
+    const evil = modelStub(research(() => JSON.stringify({ summary: 'x', new_files: [{ path: bad, content: 'x' }, { path: 'tests/x.test.mjs', content: 'x' }] })));
     const rr = await runExperiment({ id: 'eeeeeeee-0000-0000-0000-000000000000', kind: 'code', goal: 'x', env: { PG1_DAILY_SPEND_CAP_USD: '1000', PG1_LAB_ANTHROPIC_API_KEY: 'a' }, budgetUsd: 2, fetchImpl: evil.fetchImpl });
     assert.equal(rr.code, null, bad);
     assert.match(rr.report_markdown, /Refused/, bad);
     assert.equal(rr.status, 'failed', bad);
     assert.match(rr.error, /^build: Refused/, bad);
+    assert.equal(rr.stages.build.failure, 'refused_path', bad);
   }
   const poor = modelStub(async () => 'x');
   const over = await runExperiment({ id: 'ffffffff-0000-0000-0000-000000000000', kind: 'code', goal: 'x', env: { PG1_DAILY_SPEND_CAP_USD: '1000', PG1_LAB_ANTHROPIC_API_KEY: 'a' }, budgetUsd: 0.01, fetchImpl: poor.fetchImpl });

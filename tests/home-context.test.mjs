@@ -307,7 +307,7 @@ test('endpoint is not given the wildcard CORS rule; the findings count is stored
   const vercel = JSON.parse(readFileSync(join(ROOT, 'vercel.json'), 'utf8'));
   const rule = vercel.headers.find((h) => h.source.startsWith('/api/:path('));
   assert.match(rule.source, /home-context\$/);
-  assert.match(readFileSync(join(ROOT, 'lib/operator/run.mjs'), 'utf8'), /built\.card\.findings = findings\.length;/);
+  assert.match(readFileSync(join(ROOT, 'lib/operator/run.mjs'), 'utf8'), /built\.card\.findings = findings(?:\.filter\(\(f\) => f\.kind !== 'note'\))?\.length;/);
 });
 
 test('digits: the home text is not a chat reply and never goes through the reply guard', () => {
