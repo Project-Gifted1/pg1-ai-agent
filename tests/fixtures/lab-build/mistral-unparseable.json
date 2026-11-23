@@ -1,0 +1,24 @@
+{
+  "_note": "Fixture in the shape of an OpenAI-compatible chat completion (Mistral): a complete reply that holds no JSON. Not a recording of a real call.",
+  "response": {
+    "id": "chatcmpl-fixture",
+    "object": "chat.completion",
+    "created": 1795420800,
+    "model": "mistral-small-latest",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "I would make the error message for unknown methods clearer by listing the supported methods, and add a test for it."
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 5210,
+      "completion_tokens": 31,
+      "total_tokens": 5241
+    }
+  }
+}

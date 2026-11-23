@@ -260,3 +260,54 @@ test('"Next step" after a failure says what a retry would change, or why it woul
   assert.equal(new Set(texts).size, texts.length);
   for (const t of texts) assert.ok(!/^Read the report for the reason, then start it again/.test(t));
 });
+
+// Recorded-shape engine replies (tests/fixtures/lab-build/*.json, OpenAI-compatible
+// chat completions as Groq and Mistral return them): the first free engine called
+// gets the first fixture, the next engine the second.
+const FIX = (name) => JSON.parse(readFileSync(new URL(`./fixtures/lab-build/${name}.json`, import.meta.url), 'utf8')).response;
+function replay(first, second) {
+  const calls = [];
+  const order = [];
+  const fetchImpl = async (u, o = {}) => {
+    const host = new URL(String(u)).hostname;
+    calls.push({ host, method: o.method || 'GET' });
+    if (host !== 'api.groq.com' && host !== 'api.mistral.ai') return new Response('{}', { status: 404 });
+    const body = JSON.parse(o.body || '{}');
+    const sys = (body.messages || []).find((m) => m.role === 'system')?.content || '';
+    if (/researching before a change/.test(sys)) return Response.json({ choices: [{ message: { content: FINDINGS }, finish_reason: 'stop' }] });
+    if (!order.includes(host)) order.push(host);
+    return Response.json(FIX(order.indexOf(host) === 0 ? first : second));
+  };
+  return { fetchImpl, calls, order };
+}
+
+test('recorded replies: a cut-off reply, then the next free engine answers', async () => {
+  const x = replay('groq-cut-off', 'free-edits');
+  const r = await run(x.fetchImpl);
+  assert.equal(r.status, 'done', r.error);
+  const [a, b] = r.stages.build.attempts;
+  assert.equal(a.outcome, 'truncated'); assert.equal(a.truncated, true);
+  assert.equal(b.outcome, 'ok');
+  assert.equal(x.order.length, 2, 'two different free engines');
+  assert.equal(r.patch[0].path, 'api/mcp.mjs');
+});
+
+test('recorded replies: an unparseable reply, then the next free engine answers', async () => {
+  const x = replay('mistral-unparseable', 'free-edits');
+  const r = await run(x.fetchImpl);
+  assert.equal(r.status, 'done', r.error);
+  assert.deepEqual(r.stages.build.attempts.map((t) => t.outcome), ['no_json', 'ok']);
+});
+
+test('recorded replies: cut off, then unparseable: fails with the reason, the raw reply kept, no paid call', async () => {
+  const x = replay('groq-cut-off', 'mistral-unparseable');
+  const r = await run(x.fetchImpl, { ...FREE_ENV, PG1_LAB_ANTHROPIC_API_KEY: 'paid-key-0000000000000' });
+  assert.equal(r.status, 'failed');
+  assert.deepEqual(r.stages.build.attempts.map((t) => t.outcome), ['truncated', 'no_json']);
+  assert.equal(r.stages.build.failure, 'no_json');
+  assert.match(r.error, /^build: the reply held no JSON object \(it began: "I would make the error message/);
+  assert.match(r.build_reply.text, /^I would make the error message/);
+  assert.equal(r.stages.build.paid_build, 'off');
+  assert.equal(x.calls.filter((c) => c.host === 'api.anthropic.com').length, 0);
+  assert.match(labNextStep({ status: r.status, error: r.error, result: r }), /PG1_LAB_PAID_BUILD=on/);
+});

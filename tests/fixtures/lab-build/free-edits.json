@@ -1,0 +1,24 @@
+{
+  "_note": "Fixture in the shape of an OpenAI-compatible chat completion: a usable targeted-edits reply. Not a recording of a real call.",
+  "response": {
+    "id": "chatcmpl-fixture",
+    "object": "chat.completion",
+    "created": 1795420800,
+    "model": "llama-3.3-70b-versatile",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "```json\n{\n \"summary\": \"Answer server/discover with the versions PG1 serves\",\n \"edits\": [\n  {\n   \"path\": \"api/mcp.mjs\",\n   \"search\": \"  if (method === 'tools/list') return { tools: [] };\",\n   \"replace\": \"  if (method === 'server/discover') return { resultType: 'complete', supportedVersions: ['2025-06-18'], capabilities: {}, ttlMs: 3600000, cacheScope: 'public' };\\n  if (method === 'tools/list') return { tools: [] };\"\n  }\n ],\n \"new_files\": [\n  {\n   \"path\": \"tests/discover.test.mjs\",\n   \"content\": \"import { test } from 'node:test';\\n\"\n  }\n ],\n \"tests\": \"server/discover answers with supportedVersions\"\n}\n```"
+        },
+        "finish_reason": "stop"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 5210,
+      "completion_tokens": 410,
+      "total_tokens": 5620
+    }
+  }
+}
