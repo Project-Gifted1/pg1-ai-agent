@@ -81,7 +81,7 @@ describe('the Living lab at $0', () => {
 
   test('a paid step at $0 is skipped, the rest of a code run goes on; the lab fetch may POST to the free engines only at $0', async () => {
     const fetchImpl = async (u) => {
-      if (String(u).startsWith('https://api.groq.com/')) return groqReply(calls++ === 0 ? '## Findings\nThe change needs a size check before the batch loop and a test for the limit, nothing else touches it.\n## Sources\nnone' : JSON.stringify({ summary: 'size check', files: [{ path: 'lib/sizeCheck.mjs', content: 'export const MAX = 10;\n' }], tests: 'a unit test' }));
+      if (String(u).startsWith('https://api.groq.com/')) return groqReply(calls++ === 0 ? '## Findings\nThe change needs a size check before the batch loop and a test for the limit, nothing else touches it.\n## Sources\nnone' : JSON.stringify({ summary: 'size check', new_files: [{ path: 'lib/sizeCheck.mjs', content: 'export const MAX = 10;\n' }, { path: 'tests/sizeCheck.test.mjs', content: "import { test } from 'node:test';\n" }], tests: 'a unit test' }));
       return new Response('{}', { status: 500 });
     };
     let calls = 0;
