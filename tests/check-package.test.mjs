@@ -201,7 +201,7 @@ test('registered everywhere a free check is: A2A skill, agent card, chat (operat
   assert.ok(skill);
   assert.equal(skill.security, undefined, 'no key needed');
   assert.ok(skill.description.includes(ATTRIBUTIONS_URL));
-  assert.equal(card.version, '1.23.0');
+  assert.equal(card.version, '1.24.0');
   assert.ok(chatToolsForRole('operator').some((t) => t === tool));
   assert.ok(chatToolsForRole('guest').some((t) => t === tool), 'guest set too');
   assert.ok(PLAYGROUND_TOOLS.includes('check_package'));
@@ -388,7 +388,7 @@ test('reported malicious: an OSV MAL- advisory for the version flags, worded "re
   assert.match(r.note, /Reported malicious" means a public report exists/);
 });
 
-test('vulnerabilities: ids and severity only, allow-listed sources only, others counted as omitted; informational', async (t) => {
+test('vulnerabilities: ids and severity only, allow-listed sources only, others counted as omitted; a 9.8 (CRITICAL) flags (1.24.0)', async (t) => {
   spyFetch(t, {
     npm: (name) => ({ status: 200, body: npmDoc({ name }) }),
     osv: () => ({
@@ -407,13 +407,15 @@ test('vulnerabilities: ids and severity only, allow-listed sources only, others 
   });
   const r = await handleCheckPackage({ ecosystem: 'npm', name: 'pg1-synthetic' }, 'tester', null, { licensed: true });
   assert.deepEqual(r.vulnerabilities, [
-    { id: 'GHSA-aaaa-bbbb-cccc', severity: 'HIGH', cvss_vector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H' },
-    { id: 'PYSEC-2026-1', severity: null, cvss_vector: null }
+    // 1.24.0 adds cvss_score, severity_level and fixed_version (additive): the score decides over the label.
+    { id: 'GHSA-aaaa-bbbb-cccc', severity: 'HIGH', cvss_vector: 'CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H', cvss_score: 9.8, severity_level: 'CRITICAL', fixed_version: null },
+    { id: 'PYSEC-2026-1', severity: null, cvss_vector: null, cvss_score: null, severity_level: null, fixed_version: null }
   ]);
   assert.equal(r.vulnerabilities_omitted, 3);
-  assert.deepEqual(codes(r), ['PACKAGE_KNOWN_VULNERABILITIES']);
-  assert.match(r.reasons[0].message, /2 known vulnerabilities/);
-  assert.equal(r.status, 'no_flags', 'known vulnerabilities never flag on their own');
+  assert.deepEqual(codes(r), ['PACKAGE_KNOWN_VULNERABILITIES_HIGH', 'PACKAGE_KNOWN_VULNERABILITIES']);
+  assert.match(r.reasons[1].message, /2 known vulnerabilities in the advisory databases checked, highest CRITICAL \(1 of unknown severity\)/);
+  assert.equal(r.status, 'flagged', 'a CRITICAL known vulnerability flags (1.24.0)');
+  assert.equal(r.highest_severity, 'CRITICAL'); assert.equal(r.vulnerability_count, 2); assert.equal(r.fixed_version_suggestion, null);
   const text = JSON.stringify(r);
   assert.doesNotMatch(text, /upstream-only-marker|CVE-0000-9999|UBUNTU|DEBIAN/, 'no advisory text, aliases or excluded sources');
 });
@@ -883,7 +885,7 @@ function importGraph(entry) {
 test('no AI client is imported on the check_package path (lib, MCP, A2A, playground)', () => {
   const AI = /^(?:ai|@ai-sdk\/.*|openai|@anthropic-ai\/.*|@google\/genai|@google\/generative-ai|langchain|@langchain\/.*|cohere-ai|@mistralai\/.*)$/;
   const lib = importGraph('lib/packageCheck.mjs');
-  assert.deepEqual(lib.files.sort(), ['lib/attributions.mjs', 'lib/invalidInput.mjs', 'lib/packageCheck.mjs', 'lib/popularPackages.mjs', 'lib/reasonCodes.mjs', 'lib/responseMeta.mjs']);
+  assert.deepEqual(lib.files.sort(), ['lib/attributions.mjs', 'lib/cvss.mjs', 'lib/invalidInput.mjs', 'lib/packageCheck.mjs', 'lib/popularPackages.mjs', 'lib/reasonCodes.mjs', 'lib/responseMeta.mjs']);
   assert.deepEqual(lib.bare, [], 'lib/packageCheck.mjs imports no package at all');
   for (const entry of ['api/mcp.mjs', 'api/a2a.mjs', 'api/playground.mjs']) {
     const g = importGraph(entry);

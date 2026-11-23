@@ -1,0 +1,50 @@
+{
+  "_note": "OSV /v1/query answer shape for npm lodash@4.17.21, reproducing the three advisories in the 3 Nov 2026 evidence (ids and the GitHub severity labels as reported). Summaries, details, CVSS vectors and fixed versions are left out: they were not part of the evidence, so none is invented here.",
+  "vulns": [
+    {
+      "id": "GHSA-r5fr-rjxr-66jc",
+      "summary": "fixture",
+      "database_specific": {
+        "severity": "HIGH"
+      },
+      "affected": [
+        {
+          "package": {
+            "ecosystem": "npm",
+            "name": "lodash"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GHSA-f23m-r3pf-42rh",
+      "summary": "fixture",
+      "database_specific": {
+        "severity": "MODERATE"
+      },
+      "affected": [
+        {
+          "package": {
+            "ecosystem": "npm",
+            "name": "lodash"
+          }
+        }
+      ]
+    },
+    {
+      "id": "GHSA-xxjr-mmjv-4gpg",
+      "summary": "fixture",
+      "database_specific": {
+        "severity": "MODERATE"
+      },
+      "affected": [
+        {
+          "package": {
+            "ecosystem": "npm",
+            "name": "lodash"
+          }
+        }
+      ]
+    }
+  ]
+}
