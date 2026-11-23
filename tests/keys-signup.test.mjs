@@ -18,7 +18,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 import { createKeysHandler, __resetKeyLimitsForTests, SIGNUP_LIMIT_WITHOUT_CHALLENGE, SIGNUP_MESSAGE, DELETION_REQUEST_MESSAGE } from '../lib/keysApi.mjs';
-import { handleKeysCommand, pendingDeletionSummary } from '../lib/keysOperator.mjs';
+import { handleKeyDeletionCommand, isKeyDeletionCommand, pendingDeletionSummary } from '../lib/keysOperator.mjs';
 import { createMemoryKeyStore, hashApiKey, hashEmail, freeKeySubject, isWellFormedPg1Key, normalizeEmail, licenceAccount } from '../lib/apiKeys.mjs';
 import { resolveCaller, __clearKeyCacheForTests } from '../lib/checkMeter.mjs';
 import subscribe, { checkoutUrl } from '../api/plans/subscribe.mjs';
@@ -143,20 +143,23 @@ test('delete my key and email: at once with the key; with only an email, a reque
   assert.equal((await call('delete', { body: {} })).statusCode, 400);
   // The operator carries it out: /keys delete-request <id> approve.
   const id = store.requests[0].id.slice(0, 8);
-  assert.equal((await handleKeysCommand({ text: '/keys delete-requests', isOperator: false, store })).status, 401, 'operator only');
-  const list = await handleKeysCommand({ text: '/keys delete-requests', isOperator: true, store });
+  assert.equal((await handleKeyDeletionCommand({ text: '/keys delete-requests', isOperator: false, store })).status, 401, 'operator only');
+  // Only the deletion sub-commands: /keys and /keys fresh stay the AI-key status command.
+  for (const t of ['/keys', '/keys fresh', '/keysx delete-requests']) assert.equal(isKeyDeletionCommand(t), false, t);
+  for (const t of ['/keys delete-requests', '/keys delete-request abcd1234 approve']) assert.equal(isKeyDeletionCommand(t), true, t);
+  const list = await handleKeyDeletionCommand({ text: '/keys delete-requests', isOperator: true, store });
   assert.match(list.reply, new RegExp(`\\\`${id}\\\` · asked 0 days ago · due in 30 days`));
   assert.ok(!list.reply.includes('del2@'), 'never an email in the reply');
-  const done = await handleKeysCommand({ text: `/keys delete-request ${id} approve`, isOperator: true, store });
+  const done = await handleKeyDeletionCommand({ text: `/keys delete-request ${id} approve`, isOperator: true, store });
   assert.match(done.reply, /Done .*: 1 key, the email and its usage counts deleted\./);
   assert.equal(store.keys.length, 0);
   assert.equal(store.requests[0].status, 'done');
-  assert.match((await handleKeysCommand({ text: `/keys delete-request ${id} approve`, isOperator: true, store })).reply, /No waiting request/);
+  assert.match((await handleKeyDeletionCommand({ text: `/keys delete-request ${id} approve`, isOperator: true, store })).reply, /No waiting request/);
   // Decline closes one without deleting.
   const c = await call('signup', { body: { email: 'keep@example.com', consent: true }, ip: '198.51.100.33' });
   await call('delete', { body: { email: 'keep@example.com' } });
   const id2 = store.requests.find((r) => r.status === 'pending').id.slice(0, 8);
-  assert.match((await handleKeysCommand({ text: `/keys delete-request ${id2} decline`, isOperator: true, store })).reply, /Declined/);
+  assert.match((await handleKeyDeletionCommand({ text: `/keys delete-request ${id2} decline`, isOperator: true, store })).reply, /Declined/);
   assert.ok(await store.findActiveKey(hashApiKey(c.body.key)));
   // The daily report names the waiting requests.
   await call('delete', { body: { email: 'keep@example.com' } });
