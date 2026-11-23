@@ -37,7 +37,7 @@
       <button id="signup-btn" type="submit">Create my free key</button>
       <p id="signup-status" class="status" role="status" aria-live="polite"></p>
     </form>
-    <p class="note">The key is shown once. PG1 keeps only a hash of it, so it cannot be shown again: copy it when it appears. One active free key per email.</p>
+    <p class="note">The key is shown once. PG1 keeps only a hash of it, so it cannot be shown again: copy it when it appears. One active free key per email: if the email already has one, no new key is shown (the page never says whether an email is registered). Then rotate the key you have, or ask for deletion and sign up again.</p>
     <pre><code>curl -s https://pg1-ai-agent.vercel.app/api/repo-trap \
   -H 'Content-Type: application/json' \
   -H 'X-API-KEY: pg1_your_key_here' \
@@ -59,15 +59,15 @@
   <section aria-labelledby="privacy">
     <h2 id="privacy">Privacy notice</h2>
     <p><strong>What is stored:</strong> your email address; a one-way hash of your key (never the key itself); the first 8 characters of the key, so you can tell keys apart; how many checks your key used each day; when you agreed to this notice; and whether you asked for product news.</p>
-    <p><strong>Why:</strong> to give your key its daily allowance, to stop abuse, and to contact you about your key or changes to the service. PG1 does not sell or share your email. You get product news only if you ticked the optional second box.</p>
+    <p><strong>Why:</strong> to give your key its daily allowance, to stop abuse, and to contact you about your key or changes to the service. PG1 does not sell or share your email. You get product news only if you ticked the optional second box, and not before your address has been verified.</p>
     <p><strong>What is not stored:</strong> the content you check. Checks are never stored; only a verdict and reason codes are logged, without your email.</p>
     <p><strong>How long:</strong> until you delete it. Daily usage counts are removed after 62 days.</p>
-    <p><strong>Your rights:</strong> PG1 is run from Ireland and the GDPR applies. You can delete your key and email at any time below. For a copy of your data or a correction, write to the contact on the <a href="/about#contact">About page</a>. You can also complain to the Data Protection Commission (Ireland).</p>
+    <p><strong>Your rights:</strong> PG1 is run from Ireland and the GDPR applies. You can delete your key and email at any time below (at once with your key, within 30 days with only your email). For a copy of your data or a correction, write to the contact on the <a href="/about#contact">About page</a>. You can also complain to the Data Protection Commission (Ireland).</p>
   </section>
 
   <section aria-labelledby="delete">
     <h2 id="delete">Delete my key and email</h2>
-    <p>Enter your key, or the email you signed up with. The email, every key for it and its usage counts are deleted. This cannot be undone; you can sign up again later.</p>
+    <p><strong>With your key:</strong> the email, every key for it and its usage counts are deleted at once. <strong>With only your email</strong> (you lost the key): your request is recorded and we'll delete your email and key within 30 days; anyone can type an email, so it is checked first. This cannot be undone; you can sign up again later.</p>
     <form id="delete-form" class="card" novalidate>
       <label class="field" for="delete-value">Your key or your email</label>
       <input id="delete-value" name="value" type="text" autocomplete="off" spellcheck="false" placeholder="pg1_… or you@example.com">

@@ -21,7 +21,9 @@ import {
 } from '../lib/plans.mjs';
 import { meterCheck, resolveCaller, MeterError, __clearKeyCacheForTests, __setDefaultKeyStoreForTests, meterFailureStats, __resetMeterFailureLogForTests } from '../lib/checkMeter.mjs';
 import { createMemoryKeyStore, createFreeKey, licenceAccount, hashApiKey, keyHint, generateApiKey, freeKeySubject, hashEmail } from '../lib/apiKeys.mjs';
-import { resolveLicencePlan, verifyGumroadProduct, __clearLicenceCachesForTests } from '../lib/paymentGate.mjs';
+import { resolveLicencePlan, verifyGumroadProduct, partnerHashes, licenceKeySha256, __clearLicenceCachesForTests } from '../lib/paymentGate.mjs';
+import crypto from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import mcpHandler, { handleCheckAgentMessage, handleCheckRepoTrap, resetAgentMessageRateLimit, resetRepoTrapRateLimit, TOOL_DEFINITIONS, __setX402GateForTests } from '../api/mcp.mjs';
 import repoTrapRest from '../api/repo-trap.mjs';
 import a2aHandler from '../api/a2a.mjs';
@@ -324,13 +326,15 @@ function mockLicenceService(t, answers) {
   __clearLicenceCachesForTests();
   return calls;
 }
-const PRODUCTS = { GUMROAD_PRODUCT_BUILDER: 'prod-builder', GUMROAD_PRODUCT_TEAM: 'prod-team' };
+const sha = (k) => crypto.createHash('sha256').update(k).digest('hex');
+// Frits's presign-guard licence is on the Partner allow-list (by hash).
+const PRODUCTS = { GUMROAD_PRODUCT_BUILDER: 'prod-builder', GUMROAD_PRODUCT_TEAM: 'prod-team', PG1_PARTNER_LICENCE_HASHES: `${sha('frits')}, ${'f'.repeat(64)}` };
 const ok = (purchase = {}) => ({ success: true, purchase });
 const no = { success: false, message: 'That license does not exist for the provided product.' };
 
-test('licences map to plans by product; the Partner product is checked first and alone when valid', async (t) => {
-  const calls = mockLicenceService(t, (product, key) => (product === 'prod-partner' && key === 'frits') || (product === 'prod-builder' && key === 'b') || (product === 'prod-team' && key === 't') ? ok() : no);
-  assert.deepEqual(await resolveLicencePlan('frits', { env: PRODUCTS }), { valid: true, tier: 'partner' });
+test('licences map to plans by product; the original product is checked first and alone when valid', async (t) => {
+  const calls = mockLicenceService(t, (product, key) => (product === 'prod-partner' && (key === 'frits' || key === 'other-original')) || (product === 'prod-builder' && key === 'b') || (product === 'prod-team' && key === 't') ? ok() : no);
+  assert.deepEqual(await resolveLicencePlan('frits', { env: PRODUCTS }), { valid: true, tier: 'partner', product: 'original' });
   assert.deepEqual(calls.map((c) => c.product), ['prod-partner'], 'a Partner key never reaches the other products');
   assert.deepEqual(await resolveLicencePlan('b', { env: PRODUCTS }), { valid: true, tier: 'builder' });
   assert.deepEqual(await resolveLicencePlan('t', { env: PRODUCTS }), { valid: true, tier: 'team' });
@@ -341,6 +345,51 @@ test('licences map to plans by product; the Partner product is checked first and
   const before = calls.length;
   assert.equal((await resolveLicencePlan('b', { env: {} })).valid, false);
   assert.equal(calls.length - before, 1);
+});
+
+test('Partner is an allow-list of licence hashes: Frits (listed) unlimited; any other original licence counts as Builder', async (t) => {
+  mockLicenceService(t, (product, key) => (product === 'prod-partner' && (key === 'frits' || key === 'other-original' || key === 'cancelled-partner')) && key !== 'cancelled-partner' ? ok() : no);
+  // Listed (with spaces or capitals in the env, as pasted): Partner.
+  assert.equal((await resolveLicencePlan('frits', { env: { PG1_PARTNER_LICENCE_HASHES: ` ${sha('frits').toUpperCase()} ` } })).tier, 'partner');
+  assert.equal(licenceKeySha256('  frits  '), sha('frits'), 'the hash is of the trimmed key, as the header is read');
+  // Not listed: a valid licence of the original product is Builder on the metered checks, not unlimited.
+  assert.deepEqual(await resolveLicencePlan('other-original', { env: PRODUCTS }), { valid: true, tier: 'builder', product: 'original' });
+  // With no allow-list at all, nobody is Partner (not even Frits) until the hash is set.
+  assert.equal((await resolveLicencePlan('frits', { env: {} })).tier, 'builder');
+  // A listed hash whose licence no longer verifies is not Partner (nor anything else).
+  assert.equal((await resolveLicencePlan('cancelled-partner', { env: { PG1_PARTNER_LICENCE_HASHES: sha('cancelled-partner') } })).valid, false);
+  // Malformed entries are ignored.
+  assert.deepEqual([...partnerHashes({ PG1_PARTNER_LICENCE_HASHES: 'nothex, , abc' })], []);
+});
+
+test('an unlisted original licence: Builder quota on the metered checks (switch on), its old behaviour everywhere else', async (t) => {
+  withSalt(t);
+  resetAgentMessageRateLimit();
+  const store = createMemoryKeyStore();
+  const key = 'OLD-ORIGINAL-LICENCE';
+  const d = deps(store, ON, { resolveLicence: async () => ({ valid: true, tier: 'builder', product: 'original' }) });
+  const out = {};
+  await handleCheckAgentMessage(msg, ctx('198.51.100.40', { licenseKey: key, meterOut: out }), d);
+  assert.equal(out.tier, 'builder');
+  assert.equal(out.headers['X-PG1-Quota'], '10000', 'counted against 10,000 a month, not unlimited');
+  store.usage.set(`${licenceAccount(key)}|2026-11`, 10000);
+  await assert.rejects(() => handleCheckAgentMessage(msg, ctx('198.51.100.40', { licenseKey: key }), d), (e) => e.code === 'quota_exceeded');
+  // Switch off: exactly as before 1.23.0 (no quota, no hourly limit for a licence).
+  resetAgentMessageRateLimit();
+  const off = deps(createMemoryKeyStore(), OFF, { resolveLicence: async () => ({ valid: true, tier: 'builder', product: 'original' }) });
+  for (let i = 0; i < 80; i++) await handleCheckAgentMessage(msg, ctx('198.51.100.41', { licenseKey: key }), off);
+  // Everywhere else the licence check is the one it always was (verifyGumroadLicense, the original product only).
+  const src = readFileSync(new URL('../lib/paymentGate.mjs', import.meta.url), 'utf8');
+  assert.match(src, /export async function verifyGumroadLicense\(licenseKey\) \{\n  return verifyGumroadProduct\(licenseKey, process\.env\.GUMROAD_PRODUCT_ID\);/);
+});
+
+test('Frits (listed Partner): unlimited on the metered checks with the switch on, never counted', async (t) => {
+  withSalt(t);
+  resetAgentMessageRateLimit();
+  const store = createMemoryKeyStore();
+  const d = deps(store, ON, { resolveLicence: (k, o) => resolveLicencePlan(k, { ...o, env: { PG1_PARTNER_LICENCE_HASHES: sha('frits') }, verifyLegacy: async () => ({ valid: true }), verifyProduct: async () => ({ valid: false }) }) });
+  for (let i = 0; i < 120; i++) { const out = {}; await handleCheckAgentMessage(msg, ctx('198.51.100.42', { licenseKey: 'frits', meterOut: out }), d); assert.equal(out.tier, 'partner'); }
+  assert.equal(store.usage.size, 0);
 });
 
 test('licence results are cached 24 h; a cancelled or refunded subscription loses its plan at the next check', async (t) => {

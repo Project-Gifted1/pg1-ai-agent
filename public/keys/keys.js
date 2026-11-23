@@ -51,11 +51,16 @@
       btn.disabled = true; setStatus(status, 'Creating your key…');
       try {
         var r = await post('/api/keys/signup', { email: email, consent: true, marketing: $('marketing').checked, challenge_token: challengeToken || undefined });
-        if (r.status === 201 && r.data.key) {
+        // The same answer whether or not the email already had a key; a key
+        // comes back only when one was created.
+        if (r.status === 200 && r.data.key) {
           setStatus(status, 'Key created. It is shown once: copy it from the dialog.', 'ok');
           form.reset();
           showKey(r.data.key);
           r.data.key = '';
+        } else if (r.status === 200) {
+          form.reset();
+          setStatus(status, (r.data.message || 'If this email can get a key, it has been issued; check the page.') + ' No key appeared? This email may already have one: rotate it with your current key below, or ask for deletion and sign up again.', 'ok');
         } else {
           setStatus(status, r.data.message || 'The key could not be created. Try again.', 'err');
         }

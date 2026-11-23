@@ -134,11 +134,14 @@ test('/keys and /pricing at phone width, in a real browser', { skip, timeout: 12
     await page.click('.secret-once [data-act="close"]');
     assert.equal(await page.locator('dialog.secret-once').count(), 0, 'closing removes the dialog');
 
-    // The same email again: refused with a plain message.
+    // The same email again: the same answer as a fresh signup (it never says
+    // whether the email is registered), no key, and how to rotate or delete.
     await page.fill('#email', 'phone@example.com');
     await page.check('#consent');
     await page.click('#signup-btn');
-    await page.waitForFunction(() => /already has a free key/.test(document.getElementById('signup-status').textContent));
+    await page.waitForFunction(() => /If this email can get a key, it has been issued; check the page\. No key appeared\?/.test(document.getElementById('signup-status').textContent));
+    assert.equal(await page.locator('dialog.secret-once').count(), 0, 'no key shown');
+    assert.doesNotMatch(await page.textContent('#signup-status'), /already has|registered|exists/i);
 
     // Rotate: a new key in the dialog, the old one revoked.
     await page.fill('#rotate-key', key);
@@ -150,15 +153,33 @@ test('/keys and /pricing at phone width, in a real browser', { skip, timeout: 12
     assert.equal(await store.findActiveKey(hashApiKey(key)), null);
     await page.click('.secret-once [data-act="close"]');
 
-    // Delete by email.
+    // With only the email: a request is recorded, nothing is deleted now.
     await page.fill('#delete-value', 'phone@example.com');
     await page.click('#delete-form button[type="submit"]');
-    await page.waitForFunction(() => /deleted/.test(document.getElementById('delete-status').textContent));
+    await page.waitForFunction(() => /We'll delete your email and key within 30 days\./.test(document.getElementById('delete-status').textContent));
+    assert.ok(await store.findActiveKey(hashApiKey(newKey)), 'the key still works');
+    assert.equal(store.requests.length, 1);
+    // With the key: deleted at once.
+    await page.fill('#delete-value', newKey);
+    await page.click('#delete-form button[type="submit"]');
+    await page.waitForFunction(() => /are now deleted/.test(document.getElementById('delete-status').textContent));
     assert.equal(store.keys.length, 0);
 
     const keysText = await page.textContent('body');
     assert.doesNotMatch(keysText.replace(/never “safe”/g, ''), /\bsafe\b/i);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth) <= 360, 'no sideways scroll on /keys');
+
+    // The operator's licence-hash page: worked out in the browser, nothing sent.
+    const sent = [];
+    page.on('request', (r) => { if (r.method() !== 'GET') sent.push(r.url()); });
+    await page.goto(`${base}/keys/licence-hash.html`);
+    await page.fill('#licence', 'ABCD1234-EFGH5678');
+    await page.click('#hash-form button[type="submit"]');
+    await page.waitForFunction(() => /^[0-9a-f]{64}$/.test(document.getElementById('hash-out').textContent));
+    const { createHash } = await import('node:crypto');
+    assert.equal(await page.textContent('#hash-out'), createHash('sha256').update('ABCD1234-EFGH5678').digest('hex'));
+    assert.equal(await page.inputValue('#licence'), '', 'the field is cleared');
+    assert.deepEqual(sent, [], 'nothing is sent');
 
     // /pricing.
     await page.goto(`${base}/pricing`);
@@ -171,9 +192,8 @@ test('/keys and /pricing at phone width, in a real browser', { skip, timeout: 12
     await page.click('#plan-free a.cta');
     await page.waitForURL(/\/keys$/);
 
-    // The one expected failed request: the duplicate-email signup (409).
-    assert.deepEqual(problems.filter((p) => !/status of 409 \(Conflict\)/.test(p)), []);
-    assert.equal(problems.length, 1);
+    // No failed requests: a repeated signup answers 200, never 409.
+    assert.deepEqual(problems, []);
   } finally {
     if (browser) await browser.close();
     server.close();
