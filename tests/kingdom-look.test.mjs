@@ -72,6 +72,17 @@ test('slow frames give up effects first (occlusion, shadows, crowds, drone detai
   const l2 = createEffectLadder({ budgetMs: 33, window: 5, available: (r) => r !== 'gtao' && r !== 'shadows', onStep: (r) => s2.push(r) });
   for (let i = 0; i < 5; i++) l2.sample(60);
   assert.deepEqual(s2, ['crowds']);
+  // Frames slower than a second (a very slow phone, software 3D) still count:
+  // the ladder steps down instead of ignoring them.
+  const s3 = [];
+  const l3 = createEffectLadder({ budgetMs: 33, window: 5, onStep: (r) => s3.push(r) });
+  for (let i = 0; i < 5 * 3; i++) l3.sample(2500);
+  assert.deepEqual(s3, ['gtao', 'shadows', 'crowds']);
+  // One stall cannot outweigh a window of fast frames.
+  const s4 = [];
+  const l4 = createEffectLadder({ budgetMs: 33, window: 40, onStep: (r) => s4.push(r) });
+  l4.sample(60000); for (let i = 0; i < 39; i++) l4.sample(5);
+  assert.deepEqual(s4, []);
   // In the scene: the governor (a lower tier) only once the ladder and the scale are spent.
   assert.match(read('public/kingdom/kingdom-scene.js'), /if \(!ladder \|\| \(ladder\.atScale && \(!renderScale \|\| renderScale\.atMin\)\)\) governor\.sample\(ms, budget\);/);
 });

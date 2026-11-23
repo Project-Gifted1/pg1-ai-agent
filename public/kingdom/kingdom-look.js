@@ -153,8 +153,11 @@ export function createEffectLadder({ budgetMs = 1000 / 30, window = 30, rungs = 
     get rung() { return usable()[level] || null; },
     get atScale() { return usable()[level] === 'scale'; },
     sample(ms) {
-      if (!(ms > 0) || ms > 1000) return level;
-      n++; sum += ms;
+      if (!(ms > 0)) return level;
+      // A frame over a second still counts, as one second: a very slow
+      // device must step down too (dropping such frames left it stuck), and
+      // a single stall cannot outweigh the window.
+      n++; sum += Math.min(ms, 1000);
       if (n < window) return level;
       const avg = sum / n; n = 0; sum = 0;
       const list = usable();
