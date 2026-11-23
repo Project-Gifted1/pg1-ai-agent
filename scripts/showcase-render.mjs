@@ -51,14 +51,18 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, readdirSync
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { SHOTS, shotById, planShot, poseAt, frameCount, SHOWCASE_FPS, STILLS, stillById } from '../lib/showcase/shots.mjs';
+import { SHOTS, shotById as baseShotById, planShot, poseAt, frameCount, SHOWCASE_FPS, STILLS, stillById } from '../lib/showcase/shots.mjs';
+import { REEL_ID, REEL_SHOTS, REEL_WINDOW_DAYS, reelShotById, planReelShot, followPose, pickReelEvents, reelCounts, pickWeatherChange, weatherFromRecord } from '../lib/showcase/reel.mjs';
+
+// A Showcase shot or a reel shot (lib/showcase/reel.mjs), by id.
+const shotById = (id) => baseShotById(id) || (reelShotById(id) ? { ...reelShotById(id), scene: 'city', reel: true } : null);
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PUBLIC_DIR = join(ROOT, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.css': 'text/css; charset=utf-8', '.bin': 'application/octet-stream', '.ktx2': 'application/octet-stream' };
 
 export function parseArgs(argv) {
-  const o = { shots: SHOTS.map((s) => s.id), width: 1080, height: 1920, out: join(ROOT, 'showcase-out'), frames: null, warmup: 40, gpu: false, keepFrames: false, fps: SHOWCASE_FPS, jobs: 1, range: null, stills: null };
+  const o = { shots: SHOTS.map((s) => s.id), width: 1080, height: 1920, out: join(ROOT, 'showcase-out'), frames: null, warmup: 40, gpu: false, keepFrames: false, fps: SHOWCASE_FPS, jobs: 1, range: null, stills: null, reel: null, days: 1, epoch: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]; const v = () => argv[++i];
     if (a === '--shots') o.shots = v().split(',').map((x) => x.trim()).filter(Boolean);
@@ -71,8 +75,15 @@ export function parseArgs(argv) {
     else if (a === '--jobs') o.jobs = Math.max(1, Number(v()) | 0);
     else if (a === '--range') { const m = /^(\d+):(\d+)$/.exec(v()); if (!m || Number(m[1]) < 1 || Number(m[2]) < Number(m[1])) throw new Error('--range FIRST:LAST (1-based)'); o.range = [Number(m[1]), Number(m[2])]; }
     else if (a === '--keep-frames') o.keepFrames = true;
+    // --reel inside-city: the 24 Nov post's ten City shots, replaying the
+    // defence feed's last 7 days (lib/showcase/reel.mjs).
+    else if (a === '--reel') { const r = v(); if (r !== REEL_ID) throw new Error(`unknown reel ${r} (reels: ${REEL_ID})`); o.reel = r; o.days = REEL_WINDOW_DAYS; if (!argv.includes('--shots')) o.shots = REEL_SHOTS.map((x) => x.id); }
+    else if (a === '--days') o.days = Math.max(1, Math.min(7, Number(v()) | 0));
+    // --epoch ISO: the moment "now" is for the data (every parallel job reads the same window).
+    else if (a === '--epoch') { const t = Date.parse(v()); if (!Number.isFinite(t)) throw new Error('--epoch ISO time'); o.epoch = t; }
     else throw new Error(`unknown option ${a}`);
   }
+  if (o.reel && argv.includes('--shots')) for (const id of o.shots) if (!reelShotById(id)) throw new Error(`${id} is not a shot of the reel ${o.reel}`);
   if (o.stills) for (const id of o.stills) if (!stillById(id)) throw new Error(`unknown still ${id} (stills: ${STILLS.map((x) => x.id).join(', ')})`);
   for (const id of o.shots) if (!shotById(id)) throw new Error(`unknown shot ${id} (shots: ${SHOTS.map((s) => s.id).join(', ')})`);
   if (o.width % 2 || o.height % 2) throw new Error('--size must be even (yuv420p)');
@@ -91,8 +102,9 @@ export function readOnlyStore(store) {
 // Payments never appear in a showcase: no payment events of any kind.
 export const isPaymentEvent = (e) => !!e && (e.gadget === 'toll_bridge' || /pay|settle|402|x402/i.test(`${e.kind || ''} ${e.verdict || ''} ${e.check || ''}`) || e.verdict === 'JOB_PAID');
 
-export async function loadData(log) {
+export async function loadData(log, { days = 1, epoch = null } = {}) {
   const env = process.env;
+  const now = Number.isFinite(epoch) ? epoch : Date.now();
   const supUrl = String(env.SUPABASE_URL || '').trim(); const supKey = String(env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
   const live = !!(supUrl && supKey);
   const { createSandboxStore } = await import('../lib/sandbox/store.mjs');
@@ -125,14 +137,53 @@ export async function loadData(log) {
     try {
       const { buildDefenseFeed } = await import('../lib/defenseFeed.mjs');
       const { buildDefenseState } = await import('../lib/defenseState.mjs');
-      feed = await buildDefenseFeed({ supUrl, supKey, env: {}, now: Date.now() });
+      feed = await buildDefenseFeed({ supUrl, supKey, env: {}, now, windowMs: days * 86400000, maxEvents: days > 1 ? 5000 : undefined });
       try { feed.state = await buildDefenseState({ env }); } catch (e) { feed.state = null; }
       const all = Array.isArray(feed.events) ? feed.events.length : 0;
-      feed.events = (feed.events || []).filter((e) => !isPaymentEvent(e));
-      sources.city = `real PG1 events, last 24 h (${feed.events.length} shown of ${all}; payments left out)`;
+      // Never a payment; never a caller: hashes are left out of what the page gets.
+      feed.events = (feed.events || []).filter((e) => !isPaymentEvent(e)).map((e) => ({ ...e, caller_hash: null }));
+      sources.city = `real PG1 events, last ${days > 1 ? `${days} days` : '24 h'} to ${new Date(now).toISOString()} (${feed.events.length} shown of ${all}; payments and caller hashes left out)`;
     } catch (e) { log(`feed not readable: ${e.message}`); }
   }
-  return { worlds, feed, sources };
+  // The reel: which real events each shot replays, the counts captions may
+  // use, and Dublin's recorded weather (rain, then clearing).
+  let reel = null;
+  if (days > 1) {
+    const picks = pickReelEvents(feed.events, now);
+    const counts = reelCounts(feed.events, now);
+    const weather = await recordedWeather(now, log);
+    reel = { now: new Date(now).toISOString(), days, picks, counts, weather };
+    log(`reel: probe ${picks.probe ? `${picks.probe.id} ${picks.probe.country_code}` : 'none'}, signed ${picks.signed ? picks.signed.id : 'none'}, director ${picks.director.length}, countries ${counts.countries}, weather ${weather ? `${weather.change.rain.time} -> ${weather.change.clear.time} (${weather.source})` : 'none'}`);
+  }
+  return { worlds, feed, sources, reel };
+}
+
+// Dublin's recorded hourly weather for the window (Open-Meteo: the archive,
+// then the forecast API's past days), and a rain hour followed by clearing.
+// null when it cannot be read or holds no such change: the shot is left out.
+export async function recordedWeather(now, log = () => {}, fetchImpl = globalThis.fetch) {
+  const day = (ms) => new Date(ms).toISOString().slice(0, 10);
+  const q = 'latitude=53.3498&longitude=-6.2603&hourly=weather_code,cloud_cover,precipitation,is_day&timezone=Europe%2FDublin';
+  const urls = [
+    ['Open-Meteo archive (ERA5 reanalysis)', `https://archive-api.open-meteo.com/v1/archive?${q}&start_date=${day(now - REEL_WINDOW_DAYS * 86400000)}&end_date=${day(now)}`],
+    ['Open-Meteo forecast API, past days', `https://api.open-meteo.com/v1/forecast?${q}&past_days=${REEL_WINDOW_DAYS}&forecast_days=1`]
+  ];
+  for (const [source, url] of urls) {
+    for (let k = 0; k < 3; k++) {
+      try {
+        const r = await fetchImpl(url, { signal: AbortSignal.timeout(20000) });
+        const j = await r.json();
+        if (!r.ok || !j.hourly) throw new Error(j.reason || `HTTP ${r.status}`);
+        // Only hours already past (a record, never a forecast).
+        const cut = j.hourly.time.findIndex((t) => Date.parse(`${t}:00Z`) > now);
+        const hourly = cut < 0 ? j.hourly : Object.fromEntries(Object.entries(j.hourly).map(([kk, v]) => [kk, v.slice(0, cut)]));
+        const change = pickWeatherChange(hourly);
+        if (!change) { log(`weather: ${source} has no rain followed by clearing in the window`); return null; }
+        return { source, attribution: 'Weather data by Open-Meteo.com (CC BY 4.0)', change, rain: weatherFromRecord(change.rain), clear: weatherFromRecord(change.clear) };
+      } catch (e) { log(`weather: ${source} try ${k + 1}: ${e.message}`); await new Promise((res) => setTimeout(res, 2000 * (k + 1))); }
+    }
+  }
+  return null;
 }
 
 // --- the pages ------------------------------------------------------------------------------------
@@ -167,7 +218,7 @@ import { createEventStore } from '/kingdom/kingdom-data.js';
 const view = document.getElementById('view');
 const feed = await (await fetch('/showcase/feed')).json();
 const scene = await createKingdomScene(view, { coarse: false, showcase: true, tier: 'cinematic' });
-const store = createEventStore();
+const store = createEventStore({ max: 6000 });
 store.merge(feed);
 window.showcase = {
   scene,
@@ -185,6 +236,11 @@ window.showcase = {
   // The last few real events of the day (never a payment), as the City replays them on open.
   stage() { const list = store.list().filter((e) => !(e.gadget === 'toll_bridge' || /pay|settle|402/i.test(String(e.kind) + String(e.verdict)))).slice(0, 6).reverse(); if (list.length) scene.ingest(list.map((e) => ({ event: e, delta: e.count }))); return list.length; },
   junction: () => (scene.busiestJunction ? scene.busiestJunction() : null),
+  // The reel: replay exactly these real events (by id), follow them, set the clock and weather.
+  play(ids) { const list = ids.map((id) => store.get(id)).filter(Boolean); if (list.length) scene.ingest(list.map((e) => ({ event: e, delta: e.count }))); return list.map((e) => e.id); },
+  whereIs: (id) => scene.whereIs(id), eta: (id) => scene.eta(id), sealAt: () => scene.sealAt(), landmarks: () => scene.landmarks(),
+  director: (on) => scene.setDirector(!!on), focusOf: () => view.dataset.focus || '',
+  weatherNow: (w) => scene.setWeather(w ? { ...w, source: 'showcase' } : null),
   pose: (p) => scene.setShowcasePose(p),
   info: () => scene.showcaseInfo(),
   overlays: () => [...view.querySelectorAll('*')].filter((e) => e.tagName !== 'CANVAS' && e.getClientRects().length && getComputedStyle(e).visibility !== 'hidden' && (e.textContent || '').trim()).length,
@@ -393,6 +449,88 @@ async function renderShot(browser, origin, shot, opts, log) {
   return { id: shot.id, title: shot.title, frames: total, seconds: total / opts.fps, mp4, still, errors, plan: { move: shot.move }, diagnostics: infos };
 }
 
+// --- a reel shot (lib/showcase/reel.mjs) -----------------------------------------------------------
+
+// The public part of a real event, for the reel's captions and copy: never a
+// caller hash, an IP or anything else that identifies a caller.
+export const publicEvent = (e) => (e ? { id: e.id, time: e.time, last: e.last, kind: e.kind, gadget: e.gadget, role: e.role, severity: e.severity, country_code: e.country_code || null, check: e.check, verdict_code: e.verdict_code, reasons: (e.reasons || []).slice(0, 2), count: e.count } : null);
+const recordedMs = (iso) => Date.parse(`${iso}:00Z`); // Open-Meteo local time; Dublin is on GMT in November
+
+export async function renderReelShot(browser, origin, shot, opts, data, log) {
+  const reel = data.reel || {}; const picks = reel.picks || {}; const wx = reel.weather;
+  const need = { probe: picks.probe, signed: picks.signed, director: picks.director && picks.director.length >= 2 ? picks.director : null }[shot.replay];
+  if (shot.replay && !need) return { id: shot.id, title: shot.title, skipped: `no real ${shot.replay === 'signed' ? 'signed result' : shot.replay === 'probe' ? 'probe with a country' : 'events for the director'} in the last ${reel.days} days` };
+  if (shot.light === 'recorded' && !wx) return { id: shot.id, title: shot.title, skipped: 'no recorded Dublin rain followed by clearing could be read for the window' };
+  const dir = join(opts.out, shot.id); const framesDir = join(dir, 'frames');
+  rmSync(dir, { recursive: true, force: true }); mkdirSync(framesDir, { recursive: true });
+  const ctx = await browser.newContext({ viewport: { width: opts.width, height: opts.height }, deviceScaleFactor: 1, isMobile: false, hasTouch: false, colorScheme: 'dark', reducedMotion: 'no-preference' });
+  await ctx.addInitScript(CLOCK_SCRIPT);
+  const page = await ctx.newPage(); const errors = [];
+  page.on('pageerror', (e) => errors.push(String(e && e.message || e)));
+  await page.goto(`${origin}/showcase/city.html`, { waitUntil: 'load', timeout: 180000 });
+  for (const t0 = Date.now(); ;) {
+    if (errors.length) throw new Error(`${shot.id}: page error: ${errors[0]}`);
+    if (await page.evaluate(() => !!(window.showcase && window.showcase.ready() && window.showcase.frames() > 2))) break;
+    if (Date.now() - t0 > 600000) throw new Error(`${shot.id}: the scene was not ready in 10 minutes`);
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  const dayNight = shot.light === 'day-to-night' ? [dublinEpoch(15, 50), dublinEpoch(17, 25)] : null;
+  const epoch = dayNight ? dayNight[0] : shot.light === 'recorded' ? recordedMs(wx.change.rain.time) : shot.light === 'night' ? dublinEpoch(23, 10) : dublinEpoch(22, 0);
+  const weather = shot.light === 'recorded' ? wx.rain : shot.weather;
+  await page.evaluate((o) => window.showcase.setup(o), { light: 'live', weather, epoch });
+  await page.evaluate(() => window.__showcase.lock());
+  const { HERO_BEARING } = await import('../public/kingdom/kingdom-world.js').catch(() => ({ HERO_BEARING: 0.16 }));
+  const plan = planReelShot(shot.id, { heroBearing: HERO_BEARING, landmarks: await page.evaluate(() => window.showcase.landmarks()), junction: await page.evaluate(() => window.showcase.junction()) });
+  const total = opts.frames || frameCount(shot.seconds, opts.fps);
+  const step = 1000 / opts.fps;
+  if (!plan.director) await page.evaluate((p) => window.showcase.pose(p), poseAt(plan, 0));
+  let stable = 0; let last = '';
+  for (let i = 0; i < 200 && (i < opts.warmup || stable < 5); i++) {
+    const k = await page.evaluate(() => { window.__showcase.advance(100); const x = window.showcase.info(); return `${x.programs}|${x.textures}`; });
+    stable = k === last ? stable + 1 : 0; last = k;
+  }
+  const overlays = await page.evaluate(() => window.showcase.overlays());
+  if (overlays) throw new Error(`${shot.id}: ${overlays} overlay element(s) visible`);
+  // The real events this shot replays, and the run-up so the moment lands in the shot.
+  const ids = shot.replay === 'director' ? need.map((e) => e.id) : need ? [need.id] : [];
+  const played = ids.length ? await page.evaluate((x) => window.showcase.play(x), ids) : [];
+  if (ids.length && played.length !== ids.length) throw new Error(`${shot.id}: ${ids.length - played.length} real event(s) not in the page's store`);
+  // The run-up: the actors move on without drawing (scene.runActors), then
+  // a few frames settle before the first saved one.
+  const settle = () => page.evaluate(() => { for (let i = 0; i < 3; i++) window.__showcase.advance(1000 / 30); });
+  // A probe: from its origin until it is 2.2 s from the gate (the shot sees it arrive and the Gate Wardens turn it back).
+  if (shot.replay === 'probe') { const left = await page.evaluate((id) => { for (let i = 0; i < 600; i++) { const eta = window.showcase.eta(id); if (eta == null || eta <= 2.2) return eta; window.showcase.scene.runActors(0.1); } return window.showcase.eta(id); }, ids[0]); log(`${shot.id}: run-up done, ${left == null ? 'no group' : `${left.toFixed(1)} s to the gate`}`); await settle(); }
+  if (shot.replay === 'signed') await page.evaluate(() => { for (let i = 0; i < 4; i++) window.__showcase.advance(100); });
+  // Director: on, its first cut at once; 5 s on (clock and actors) the next cut lands 1.5 s into the shot.
+  if (plan.director) { await page.evaluate(() => { window.showcase.pose(null); window.showcase.director(true); window.__showcase.advance(100); window.__showcase.skip(5000); window.showcase.scene.runActors(5); }); await settle(); }
+  const focuses = new Set(); const t0 = Date.now(); const infos = {}; let cleared = false;
+  for (let i = 0; i < total; i++) {
+    const t = total > 1 ? i / (total - 1) : 0;
+    let pose = plan.director ? null : poseAt(plan, t);
+    if (pose && plan.follow === 'event') pose = followPose(pose, await page.evaluate((id) => window.showcase.whereIs(id), ids[0]), t);
+    if (pose && plan.follow === 'seal') pose = followPose(pose, await page.evaluate(() => window.showcase.sealAt()), t);
+    if (dayNight) await page.evaluate((ms) => window.__showcase.setDate(ms), dayNight[0] + (dayNight[1] - dayNight[0]) * t);
+    if (shot.light === 'recorded' && !cleared && t >= 0.42) { cleared = true; await page.evaluate((w) => window.showcase.weatherNow(w), wx.clear); }
+    await page.evaluate(([p, ms]) => { if (p) window.showcase.pose(p); window.__showcase.advance(ms); }, [pose, step]);
+    await page.screenshot({ path: join(framesDir, `${String(i + 1).padStart(5, '0')}.png`), type: 'png', timeout: 600000 });
+    const info = await page.evaluate(() => window.showcase.info());
+    checkShowcaseFrame(info, opts);
+    if (plan.director) focuses.add(await page.evaluate(() => window.showcase.focusOf()));
+    if (i === 0) { infos.first = info; log(`${shot.id}: ${diagLine(info)}`); }
+    if (i === total - 1) infos.last = info;
+    if (i === 0 || (i + 1) % 15 === 0 || i === total - 1) log(`${shot.id}: frame ${i + 1}/${total} (${((Date.now() - t0) / 1000 / (i + 1)).toFixed(1)} s a frame)`);
+  }
+  await ctx.close();
+  const stillIdx = Math.min(total, Math.max(1, Math.round(total * 0.66)));
+  const still = join(opts.out, `${shot.id}.png`);
+  writeFileSync(still, readFileSync(join(framesDir, `${String(stillIdx).padStart(5, '0')}.png`)));
+  const mp4 = join(opts.out, `${shot.id}.mp4`);
+  encode(framesDir, mp4, opts.fps);
+  if (!opts.keepFrames) rmSync(framesDir, { recursive: true, force: true });
+  const replayed = ids.map((id) => publicEvent((data.feed.events || []).find((e) => e.id === id)));
+  return { id: shot.id, title: shot.title, frames: total, seconds: total / opts.fps, mp4, still, errors, plan: { move: shot.move }, diagnostics: infos, replayed, director_cuts: plan.director ? [...focuses].filter(Boolean).length : undefined, light: shot.light, weather: shot.light === 'recorded' ? { ...wx.change, source: wx.source, attribution: wx.attribution } : weather };
+}
+
 export const diagLine = (x) => `canvas ${x.canvas.join('x')}, CSS ${x.css.join('x')} at DPR ${x.dpr}, tier ${x.tier} (source ${x.tierSource}), render scale ${x.renderScale}, settings.pixelRatio ${x.settingsPixelRatio}, governor ${x.governor}, probe ${x.probe}, coarse ${x.coarse}, deviceMemory ${x.deviceMemory}, WebGL ${x.webglRenderer}`;
 
 // One still at full resolution: the scene set up as for its shot, the pose
@@ -458,7 +596,7 @@ export async function main(argv = process.argv.slice(2)) {
   const log = (m) => console.log(`[showcase] ${m}`);
   mkdirSync(opts.out, { recursive: true });
   const { chromium } = await import('playwright');
-  const data = await loadData(log);
+  const data = await loadData(log, { days: opts.days, epoch: opts.epoch });
   for (const [k, v] of Object.entries(data.sources)) log(`${k}: ${v}`);
   const { server, origin } = await startServer(data);
   let executablePath;
@@ -479,13 +617,16 @@ export async function main(argv = process.argv.slice(2)) {
     try {
       for (let job = queue.shift(); job; job = queue.shift()) {
         log(`${job.id}: rendering at ${opts.width} x ${opts.height}, ${opts.fps} fps`);
-        results[job.i] = await renderShot(browser, origin, shotById(job.id), opts, log);
+        const sh = shotById(job.id);
+        results[job.i] = sh.reel ? await renderReelShot(browser, origin, sh, opts, data, log) : await renderShot(browser, origin, sh, opts, log);
+        if (results[job.i].skipped) log(`${job.id}: left out: ${results[job.i].skipped}`);
       }
     } finally { await browser.close(); }
   };
   try { await Promise.all(Array.from({ length: Math.min(opts.jobs, opts.shots.length) }, worker)); } finally { server.close(); }
-  const manifest = { generated_at: new Date().toISOString(), size: `${opts.width}x${opts.height}`, fps: opts.fps, profile: 'showcase', encoder: 'H.264 (libx264), -preset veryfast, CRF 18, yuv420p', shots: results.map((r) => ({ id: r.id, title: r.title, frames: r.frames, seconds: r.seconds, move: r.plan.move, data: data.sources[r.id === 'city-night' || r.id === 'city-rain' ? 'city' : r.id === 'deep-space' ? 'space' : r.id], mp4: r.mp4 && r.mp4.slice(opts.out.length + 1), still: r.still && r.still.slice(opts.out.length + 1), range: r.range || null, page_errors: r.errors, diagnostics: r.diagnostics })) };
+  const manifest = { generated_at: new Date().toISOString(), size: `${opts.width}x${opts.height}`, fps: opts.fps, profile: 'showcase', render_scale: 1, encoder: 'H.264 (libx264), -preset veryfast, CRF 18, yuv420p', ...(opts.reel ? { reel: opts.reel, data: data.sources.city, window: data.reel ? { now: data.reel.now, days: data.reel.days } : null, counts: data.reel ? data.reel.counts : null, weather_record: data.reel && data.reel.weather ? { ...data.reel.weather.change, source: data.reel.weather.source, attribution: data.reel.weather.attribution } : null } : {}), shots: results.map((r) => (r.skipped ? { id: r.id, title: r.title, skipped: r.skipped } : { id: r.id, title: r.title, frames: r.frames, seconds: r.seconds, move: r.plan.move, data: r.replayed ? data.sources.city : data.sources[r.id === 'city-night' || r.id === 'city-rain' ? 'city' : r.id === 'deep-space' ? 'space' : r.id], mp4: r.mp4 && r.mp4.slice(opts.out.length + 1), still: r.still && r.still.slice(opts.out.length + 1), range: r.range || null, page_errors: r.errors, diagnostics: r.diagnostics, ...(r.replayed ? { replayed: r.replayed } : {}), ...(r.director_cuts !== undefined ? { director_cuts: r.director_cuts } : {}), ...(r.weather ? { weather: r.weather } : {}) })) };
   writeFileSync(join(opts.out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
+  if (opts.reel) writeFileSync(join(opts.out, `manifest-${opts.shots.join('+')}.json`), JSON.stringify(manifest, null, 2) + '\n');
   log(`done: ${readdirSync(opts.out).filter((f) => /\.(mp4|png)$/.test(f)).join(', ')}`);
   return manifest;
 }

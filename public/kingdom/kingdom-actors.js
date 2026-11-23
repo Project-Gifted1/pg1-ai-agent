@@ -593,6 +593,17 @@ export function createActors(THREE, scene, world, settings) {
     return null;
   }
 
+  // Seconds until an event's group reaches its mark (0 once it has; null if
+  // nothing is playing for it): the Showcase starts a shot just before.
+  function eta(id) {
+    const g = groups.get(id);
+    if (!g) return null;
+    if (g.phase !== 'advance') return 0;
+    let worst = 0;
+    for (const a of g.agents) { const d = Math.hypot(a.tx - a.x, a.ty - a.y, a.tz - a.z); worst = Math.max(worst, (a.delay > 0 ? a.delay : 0) + d / Math.max(1, a.speed)); }
+    return worst;
+  }
+
   const ray = new THREE.Raycaster();
   function pick(ndc, camera) {
     ray.setFromCamera(ndc, camera);
@@ -606,7 +617,9 @@ export function createActors(THREE, scene, world, settings) {
   return {
     // The frame-time ladder (kingdom-look.js): drones without rotors, glows and trails.
     setLean(on) { for (const c of crowds) c.lean = !!on; },
-    stage, update, whereIs, pick, setSentinels,
+    stage, update, whereIs, eta, pick, setSentinels,
+    // The seal in flight (Showcase: the Seal Forge shot follows it), or null.
+    sealAt() { const p = props.find((x) => x.kind === 'seal'); return p ? { x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z } : null; },
     set onFire(fn) { onFire = typeof fn === 'function' ? fn : null; },
     setLanterns(n) { lanternsLit = Math.max(0, Math.min(world.lanterns.length, Number(n) || 0)); return lanternsLit; },
     commanderTo(p) { if (p) { cmd.mode = 'hover'; cmd.target = insideCity({ x: p.x, y: Math.max((p.y || 0) + 30, 50), z: p.z }, CITY_R - 40); cmd.until = performance.now() + 15000; } else if (cmd.mode === 'hover') { cmd.mode = 'docked'; cmd.target = { ...DOCK }; } },

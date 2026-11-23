@@ -905,6 +905,15 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     },
     // For screenshots: the junction with the longest queue now.
     busiestJunction: () => life.traffic.busiest(),
+    // Showcase (read only): where an event's actors are, how soon they arrive,
+    // the seal in flight, and the city's landmarks for a scripted camera.
+    whereIs: (id) => actors.whereIs(id),
+    eta: (id) => actors.eta(id),
+    // Showcase: move the actors on by `seconds` without drawing (the run-up
+    // before a replayed real event reaches its mark; nothing is added).
+    runActors(seconds) { let tt = (performance.now() - t0) / 1000; for (let k = 0; k < Math.min(1200, Math.round(seconds / 0.1)); k++) { tt += 0.1; actors.update(0.1, tt, camera, { storm: 0 }); } },
+    sealAt: () => actors.sealAt(),
+    landmarks: () => ({ deckY: world.deckY, emblemY: world.emblemY, tip: world.tip ? [world.tip.x, world.tip.y, world.tip.z] : null, forge: [world.forge.group.position.x, world.forge.group.position.y, world.forge.group.position.z], harbour: [world.harbour.point.x, world.harbour.point.y, world.harbour.point.z] }),
     // For screenshots: the tallest towers near the centre (x, z, height, width).
     towers: () => world.roofSpots.filter((r) => r.ring === 'near').slice(0, 12).map((r) => ({ x: Math.round(r.x), z: Math.round(r.z), h: Math.round(r.h), w: Math.round(r.w) })),
     // For tuning: what each named object costs (renderables, triangles), largest first.

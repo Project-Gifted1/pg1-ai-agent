@@ -110,3 +110,37 @@ refused and the ordinary tier is kept (`tests/showcase.test.mjs`).
   their templates; period-correct (canoes, earthworks and gates, the river).
 
 CI runs only a 2-frame smoke test (`tests/browser/showcase-smoke.browser.test.mjs`).
+
+## The reel: "Inside PG1 City" (24 November 2026)
+
+`lib/showcase/reel.mjs` holds ten City shots (4.5 s; director mode 6 s), each
+replaying real data only:
+
+| Shot | What it replays |
+| --- | --- |
+| `crown-tower` | PG1's real state (beacons, shield); no event staged |
+| `probe-arrives` | the latest probe with a country in the last 7 days, followed from its origin to the Gate Wardens |
+| `seal-forge` | the latest signed result (left out if PG1 signed none in the window) |
+| `junction-traffic`, `river-bridge`, `drone-patrol`, `city-wide` | the city's own life and PG1's state; no event staged |
+| `dublin-weather` | Dublin's recorded hourly weather (Open-Meteo archive, else the forecast API's past days): the latest rain hour followed by clearing, at its own hour |
+| `day-to-night` | the clock run from 15:50 to 17:25 Dublin time |
+| `director` | director mode on, with up to four of the window's most important real events |
+
+Run it on GitHub: **PG1 Showcase render** with `reel: inside-city`. A plan job
+fixes one "now", then every shot renders on its own runner at once, all reading
+the same 7-day window (`--epoch`). Locally, for one shot:
+
+```sh
+node scripts/showcase-render.mjs --reel inside-city --shots crown-tower --epoch 2026-11-23T20:00:00Z
+```
+
+A shot whose kind of event did not happen in the window is left out, and its
+manifest says why. The run-up before an event shot (a probe flying in) is
+drawn at 270 x 480. Every saved frame is still checked at the output size.
+The page never gets a caller hash.
+
+The post (`docs/social/2026-11-24/`) is built from the jobs' artifacts:
+
+```sh
+node scripts/social-inside-city.mjs --from reel-artifacts --out docs/social/2026-11-24
+```

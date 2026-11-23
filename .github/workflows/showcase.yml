@@ -13,6 +13,12 @@ name: PG1 Showcase render
 # that refuses every write (never stepped, reset or changed); without them
 # the City is calm and the universe shot uses the universe template.
 # manifest.json says which data each shot used.
+#
+# Reel mode (reel: inside-city, the 24 Nov post): the ten City shots of
+# lib/showcase/reel.mjs, each on its own runner at once, all replaying the
+# same real 7-day window of the defence feed (one epoch for every job).
+# Each job's artifact holds its MP4, still and manifest; the post is built
+# from them with scripts/social-inside-city.mjs.
 
 on:
   workflow_dispatch:
@@ -37,6 +43,16 @@ on:
         required: false
         default: false
         type: boolean
+      reel:
+        description: A reel instead of the shots above (inside-city), one runner a shot
+        required: false
+        default: ''
+        type: string
+      reel_shots:
+        description: The reel's shots, comma-separated (empty for all ten)
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -46,7 +62,71 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Reel mode: the shot list and one "now" for every job's data window.
+  plan:
+    if: inputs.reel != ''
+    runs-on: ubuntu-24.04
+    outputs:
+      shots: ${{ steps.p.outputs.shots }}
+      epoch: ${{ steps.p.outputs.epoch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: p
+        env:
+          REEL: ${{ inputs.reel }}
+          REEL_SHOTS: ${{ inputs.reel_shots }}
+        run: |
+          node -e "import('./lib/showcase/reel.mjs').then(m => { if (process.env.REEL !== m.REEL_ID) throw new Error('unknown reel'); const all = m.REEL_SHOTS.map(s => s.id); const want = (process.env.REEL_SHOTS || '').split(',').map(s => s.trim()).filter(Boolean); for (const w of want) if (!all.includes(w)) throw new Error('unknown shot ' + w); console.log('shots=' + JSON.stringify(want.length ? want : all)); })" >> "$GITHUB_OUTPUT"
+          echo "epoch=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
+  reel:
+    if: inputs.reel != ''
+    needs: plan
+    name: reel ${{ matrix.shot }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        shot: ${{ fromJSON(needs.plan.outputs.shots) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium (version pinned by package-lock.json) and ffmpeg
+        run: |
+          npx playwright install --with-deps chromium
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - name: Render ${{ matrix.shot }} (software 3D, real 7-day window, read only)
+        env:
+          REEL: ${{ inputs.reel }}
+          SHOT: ${{ matrix.shot }}
+          EPOCH: ${{ needs.plan.outputs.epoch }}
+          SUPABASE_URL: ${{ inputs.read_pg1_data && secrets.SUPABASE_URL || '' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ inputs.read_pg1_data && secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
+        run: node scripts/showcase-render.mjs --reel "$REEL" --shots "$SHOT" --epoch "$EPOCH" --out showcase-out
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pg1-reel-${{ github.run_number }}-${{ matrix.shot }}
+          path: |
+            showcase-out/*.mp4
+            showcase-out/*.png
+            showcase-out/manifest-*.json
+          if-no-files-found: warn
+          retention-days: 30
+
   render:
+    if: inputs.reel == ''
     name: render
     # Pinned: Playwright 1.56.1 cannot install Chromium on ubuntu-latest.
     runs-on: ubuntu-24.04
