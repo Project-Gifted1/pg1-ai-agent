@@ -19,7 +19,7 @@ import {
   PLANS, TIERS, METERED_TOOLS, PAY_PER_CHECK_PRICE, PAY_PER_CHECK_USD, KEYS_URL, PRICING_URL,
   isPaidChecksOn, periodFor, hourlyLimitFor, quotaFor, decide, planHeaders, METERED_DESCRIPTION_NOTE
 } from '../lib/plans.mjs';
-import { meterCheck, resolveCaller, MeterError, __clearKeyCacheForTests, __setDefaultKeyStoreForTests } from '../lib/checkMeter.mjs';
+import { meterCheck, resolveCaller, MeterError, __clearKeyCacheForTests, __setDefaultKeyStoreForTests, meterFailureStats, __resetMeterFailureLogForTests } from '../lib/checkMeter.mjs';
 import { createMemoryKeyStore, createFreeKey, licenceAccount, hashApiKey, keyHint, generateApiKey, freeKeySubject, hashEmail } from '../lib/apiKeys.mjs';
 import { resolveLicencePlan, verifyGumroadProduct, __clearLicenceCachesForTests } from '../lib/paymentGate.mjs';
 import mcpHandler, { handleCheckAgentMessage, handleCheckRepoTrap, resetAgentMessageRateLimit, resetRepoTrapRateLimit, TOOL_DEFINITIONS, __setX402GateForTests } from '../api/mcp.mjs';
@@ -263,11 +263,18 @@ test('Partner (the original licence, e.g. presign-guard): unlimited, never count
   assert.equal(store.usage.size, 0);
 });
 
-test('fails open: an unreachable store serves the check uncounted; an unverifiable licence is never asked to pay', async (t) => {
+test('fails open: an unreachable store serves the check uncounted (and logs it); an unverifiable licence is never asked to pay', async (t) => {
   withSalt(t);
   resetAgentMessageRateLimit();
+  __resetMeterFailureLogForTests();
+  const warn = console.warn;
+  const warned = [];
+  console.warn = (...a) => warned.push(a.join(' '));
+  t.after(() => { console.warn = warn; });
   const broken = { ...createMemoryKeyStore(), takeUsage: async () => { throw new Error('down'); }, findActiveKey: async () => { throw new Error('down'); } };
   for (let i = 0; i < 30; i++) await handleCheckAgentMessage(msg, ctx('198.51.100.21'), deps(broken, ON));
+  assert.equal(warned.filter((w) => /\[meter\] usage_take_failed: check served uncounted/.test(w)).length, 30, 'every uncounted check is logged');
+  assert.equal(meterFailureStats().uncounted, 29, 'the ERROR LOG row is rate-limited and counts the rest');
   resetAgentMessageRateLimit();
   const store = createMemoryKeyStore();
   const d = deps(store, ON, { resolveLicence: async () => ({ valid: false, reason: 'verification_unavailable' }) });
