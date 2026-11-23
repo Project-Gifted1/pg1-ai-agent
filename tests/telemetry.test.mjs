@@ -25,7 +25,7 @@ delete process.env.CDP_API_KEY_ID;
 delete process.env.CDP_API_KEY_SECRET;
 
 const { default: handler, __setX402FacilitatorForTests } = await import('../api/mcp.mjs');
-const { recordTelemetry, buildTelemetryRow } = await import('../lib/telemetry.mjs');
+const { recordTelemetry, buildTelemetryRow, __resetTelemetryQueueForTests } = await import('../lib/telemetry.mjs');
 
 const SUP_URL = 'https://supabase.test';
 const TELEMETRY_URL = `${SUP_URL}/rest/v1/agent_telemetry`;
@@ -70,6 +70,8 @@ async function callTool(name, args, { headers, meta } = {}) {
 // `rows`; `telemetryBehaviour` lets a test make them fail; anything else is
 // handled by `otherFetch` (or rejected).
 function setup(t, { telemetryBehaviour = 'ok', otherFetch } = {}) {
+  // The write queue is per instance: start each test with it empty.
+  __resetTelemetryQueueForTests();
   const prev = { url: process.env.SUPABASE_URL, key: process.env.SUPABASE_SERVICE_ROLE_KEY, fetch: global.fetch };
   process.env.SUPABASE_URL = SUP_URL;
   process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-test';

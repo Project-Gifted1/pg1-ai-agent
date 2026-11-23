@@ -71,6 +71,7 @@ afterEach(() => {
   if (prev.key === undefined) delete process.env.SUPABASE_SERVICE_ROLE_KEY; else process.env.SUPABASE_SERVICE_ROLE_KEY = prev.key;
   globalThis.fetch = prev.fetch;
   __resetTelemetryQueueForTests();
+  __setTelemetryRetryDelaysForTests(null);
 });
 
 test('the retry policy fits the invocation: backoff 0.5 s then 2 s, within an 8 s budget', () => {
@@ -101,59 +102,78 @@ test('a network failure and a 503 are retried too; a 4xx is not', async () => {
   assert.equal(f.drops[0].rows_dropped, 1);
 });
 
-test('batch flush: rows recorded together go out as one insert of up to 20, one per row shape', async () => {
+test('batch flush: with an insert in flight, new rows wait and go out together (up to 20), one insert per row shape', async () => {
   const { attempts } = installFetch([201]);
   const pending = [];
   for (let i = 0; i < 5; i++) pending.push(recordTelemetry({ endpoint: '/api/mcp', toolName: 'check_domain_age', status: 'ok', latencyMs: i }));
+  assert.equal(attempts.length, 1, 'the first row goes out at once, as before');
+  assert.ok(!Array.isArray(attempts[0]), 'one row alone: an object');
   await Promise.all(pending);
-  assert.equal(attempts.length, 1, 'five rows, one insert');
-  assert.ok(Array.isArray(attempts[0]));
-  assert.deepEqual(attempts[0].map((r) => r.latency_ms), [0, 1, 2, 3, 4]);
+  assert.equal(attempts.length, 2, 'the other four waited for it and went out as one insert');
+  assert.deepEqual(attempts[1].map((r) => r.latency_ms), [1, 2, 3, 4]);
 
   attempts.length = 0;
   const many = [];
-  for (let i = 0; i < 45; i++) many.push(recordTelemetry({ endpoint: '/api/mcp', status: 'ok' }));
+  for (let i = 0; i < 46; i++) many.push(recordTelemetry({ endpoint: '/api/mcp', status: 'ok' }));
   await Promise.all(many);
-  assert.deepEqual(attempts.map((a) => a.length), [TELEMETRY_BATCH_MAX, TELEMETRY_BATCH_MAX, 5]);
+  assert.deepEqual(attempts.map((a) => (Array.isArray(a) ? a.length : 1)), [1, TELEMETRY_BATCH_MAX, TELEMETRY_BATCH_MAX, 5], '46 rows, 4 inserts');
 
   attempts.length = 0;
-  // Different columns (a country, an initialize row): separate inserts, as PostgREST needs one shape.
+  // Different columns (a country): separate inserts, as PostgREST needs one shape.
   await Promise.all([
+    recordTelemetry({ endpoint: '/api/mcp', status: 'ok' }),
     recordTelemetry({ endpoint: '/api/mcp', status: 'ok' }),
     recordTelemetry({ endpoint: '/api/mcp', status: 'ok' }),
     recordTelemetry({ endpoint: '/api/mcp', status: 'ok', countryCode: 'IE' })
   ]);
-  assert.equal(attempts.length, 2);
-  assert.ok(attempts.some((a) => !Array.isArray(a) && a.country_code === 'IE'), 'a single row is sent as an object');
+  assert.equal(attempts.length, 3, 'the first row, then one insert per shape');
+  assert.ok(attempts.some((a) => !Array.isArray(a) && a.country_code === 'IE'));
+  assert.ok(attempts.some((a) => Array.isArray(a) && a.length === 2));
+});
 
-  attempts.length = 0;
-  await recordTelemetry({ endpoint: '/api/mcp', status: 'ok' });
-  assert.ok(!Array.isArray(attempts[0]), 'one row alone: an object, as before');
+test('a slow database gets fewer inserts: rows recorded during a slow insert share the next one', async () => {
+  let release;
+  const attempts = [];
+  globalThis.fetch = async (url, opts = {}) => {
+    if (String(url) !== TELEMETRY_URL) return Response.json([]);
+    attempts.push(JSON.parse(opts.body));
+    if (attempts.length === 1) await new Promise((r) => { release = r; });
+    return new Response(null, { status: 201 });
+  };
+  const rows = [recordTelemetry({ endpoint: '/api/mcp', status: 'ok' })];
+  for (let i = 0; i < 12; i++) rows.push(recordTelemetry({ endpoint: '/api/a2a', status: 'ok' }));
+  assert.equal(attempts.length, 1, '12 rows wait for the slow insert');
+  release();
+  await Promise.all(rows);
+  assert.equal(attempts.length, 2);
+  assert.equal(attempts[1].length, 12);
 });
 
 test('the dropped-row count: how many rows, over what period, in the ERROR LOG and the drop log', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.UTC(2026, 10, 22, 10, 2, 0) });
   const { attempts, errors, drops } = installFetch(['timeout']);
+  // Three rows: the first goes alone, the other two wait and go together.
   await Promise.all([1, 2, 3].map(() => recordTelemetry({ endpoint: '/api/mcp', status: 'ok' })));
-  assert.equal(attempts.length, 3, 'one batch of 3 rows, tried 3 times');
-  assert.equal(errors.length, 1);
+  assert.equal(attempts.length, 6, 'two inserts, each tried 3 times');
+  assert.deepEqual(drops.map((d) => d.rows_dropped), [1, 2], 'every dropped row recorded');
+  assert.deepEqual(drops[0], { first_dropped_at: '2026-11-22T10:02:00.000Z', last_dropped_at: '2026-11-22T10:02:00.000Z', rows_dropped: 1, reason: 'telemetry_insert_timeout' });
+  assert.equal(errors.length, 1, 'one warning per 15 minutes');
   assert.equal(errors[0].reason, 'telemetry_insert_timeout');
-  assert.equal(errors[0].message, 'agent_telemetry insert got no answer (timeout) after 3 tries: 3 rows dropped at 2026-11-22 10:02:00 UTC.');
-  assert.deepEqual(drops, [{ first_dropped_at: '2026-11-22T10:02:00.000Z', last_dropped_at: '2026-11-22T10:02:00.000Z', rows_dropped: 3, reason: 'telemetry_insert_timeout' }]);
+  assert.equal(errors[0].message, 'agent_telemetry insert got no answer (timeout) after 3 tries: 1 row dropped at 2026-11-22 10:02:00 UTC.');
 
-  // Inside the 15-minute window: no new warning, but every drop is recorded,
-  // and the next warning covers all of them with their period.
+  // Inside the window: no new warning, but every drop is recorded, and the
+  // next warning covers all of them with their period.
   t.mock.timers.tick(60 * 1000);
   await recordTelemetry({ endpoint: '/api/mcp', status: 'ok' });
   t.mock.timers.tick(120 * 1000);
-  await Promise.all([1, 2].map(() => recordTelemetry({ endpoint: '/api/mcp', status: 'ok' })));
+  await recordTelemetry({ endpoint: '/api/mcp', status: 'ok' });
   assert.equal(errors.length, 1);
-  assert.deepEqual(drops.map((d) => d.rows_dropped), [3, 1, 2]);
-  assert.equal(telemetryDropStats().window.rows, 3);
+  assert.equal(telemetryDropStats().window.rows, 4, '2 + 1 + 1 since the warning');
   t.mock.timers.tick(TELEMETRY_FAILURE_LOG_INTERVAL_MS);
   await recordTelemetry({ endpoint: '/api/mcp', status: 'ok' });
   assert.equal(errors.length, 2);
-  assert.equal(errors[1].message, 'agent_telemetry insert got no answer (timeout) after 3 tries: 4 rows dropped between 2026-11-22 10:03:00 and 2026-11-22 10:20:00 UTC.');
+  assert.equal(errors[1].message, 'agent_telemetry insert got no answer (timeout) after 3 tries: 5 rows dropped between 2026-11-22 10:02:00 and 2026-11-22 10:20:00 UTC.');
+  assert.equal(drops.reduce((n, d) => n + d.rows_dropped, 0), 6, 'the drop log has all 6 rows');
   assert.equal(telemetryDropStats().window, null, 'the window starts again after a warning');
 });
 

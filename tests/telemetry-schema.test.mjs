@@ -215,6 +215,7 @@ const pgrst204 = () => new Response(JSON.stringify({
 
 beforeEach(() => {
   useSupabase();
+  telemetry.__resetTelemetryQueueForTests();
   __resetTelemetryFailureLogForTests();
   __clearAuthRateLimitState();
 });
@@ -352,6 +353,7 @@ test('every route answers exactly the same when the insert is rejected (the live
     const { inserts } = installFetch(insert);
     for (const [name, call] of Object.entries(ROUTE_CALLS)) {
       await new Promise((r) => setTimeout(r, 30)); // rows queued by the call before have gone out
+      telemetry.__resetTelemetryQueueForTests(); // a mock insert that never settles must not hold the next route's row
       const before = inserts.length;
       const { res, ms } = await runRoute(call);
       await new Promise((r) => setTimeout(r, 30)); // the queue flushes on the next turn (some routes record after their own awaits)
