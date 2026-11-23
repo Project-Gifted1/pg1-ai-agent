@@ -33,12 +33,12 @@ export const SLIDES = Object.freeze([
   { id: 'cover', file: 'slide-1-cover.png', still: 'cover', tag: '23 November 2026', title: 'What PG1 shipped', line: 'PG1 City, PG1 Universe, and new free checks for agents.' },
   // The recap: every feature in one checklist (no still: the dark card with the shield).
   { id: 'recap', file: 'slide-2-whats-new.png', still: null, tag: '', title: "What's new", line: '', items: [
-    { name: 'check_repo_trap', text: 'Checks a downloaded project before your coding agent runs it.' },
-    { name: 'check_agent_message', text: 'Flags hidden instructions and payment redirects in agent messages.' },
-    { name: 'A2A 1.0', text: 'Other AI agents send PG1 tasks over the standard protocol.' },
+    { name: 'check_repo_trap', text: 'Checks a project before your agent runs it.' },
+    { name: 'check_agent_message', text: 'Flags hidden instructions in agent messages.' },
+    { name: 'A2A 1.0', text: 'Other AI agents can send PG1 tasks.' },
     { name: 'PG1 City', text: "PG1's real activity, live in a 3D city." },
     { name: 'PG1 Universe', text: 'Simulated worlds, including Benin–Warri c. 1610.' },
-    { name: 'Passkey + signed results', text: 'Passkey sign-in; every tool result signed (Ed25519).' }
+    { name: 'Passkey + signed results', text: 'Passkey sign-in; every tool result signed.' }
   ] },
   { id: 'check-repo-trap', file: 'slide-3-check-repo-trap.png', still: 'tower-cluster', tag: 'New free check · v1.22.0', title: 'check_repo_trap', line: "Checks a downloaded project's files before your coding agent runs anything from it: look-alike standard-library files, startup hooks, install scripts, executables and encoded payloads. For anyone letting an agent work on code they didn't write." },
   { id: 'check-agent-message', file: 'slide-4-check-agent-message.png', still: 'promenade', tag: 'Free check · v1.21', title: 'check_agent_message', line: 'Reads agent messages and skill.md files before your agent does. Flags hidden instructions and wallet or payment redirects aimed at the reader, and skips lines that only name, quote or negate a risk. Rule-based, no AI model.' },
@@ -88,11 +88,11 @@ function recapHtml(h) {
   return `<!doctype html><html><head><meta charset="utf-8"><style>${BASE_CSS()}
 body{position:relative;overflow:hidden;background:radial-gradient(120% 70% at 50% 30%,#17140a 0%,#0b0b0d 45%,#070708 100%)}
 .top{position:absolute;left:84px;top:78px;font-size:34px}.c{position:absolute;right:84px;top:64px;width:120px;height:120px}
-.title{position:absolute;left:84px;top:200px;font-size:96px}
-ul{position:absolute;left:84px;right:84px;top:360px;list-style:none;padding:0;display:flex;flex-direction:column;gap:30px}
-li{display:flex;gap:26px;align-items:flex-start;padding:22px 26px;border:1px solid rgba(243,198,35,.22);border-radius:22px;background:rgba(255,255,255,.035)}
+.title{position:absolute;left:84px;top:190px;font-size:88px}
+ul{position:absolute;left:84px;right:84px;top:330px;list-style:none;padding:0;display:flex;flex-direction:column;gap:18px}
+li{display:flex;gap:26px;align-items:flex-start;padding:16px 24px;border:1px solid rgba(243,198,35,.22);border-radius:22px;background:rgba(255,255,255,.035)}
 .k{flex:none;width:46px;height:46px;border-radius:50%;background:#f3c623;color:#070708;font-weight:700;font-size:30px;display:flex;align-items:center;justify-content:center;margin-top:4px}
-.n{font-weight:700;font-size:34px;color:#fff;line-height:1.15}.t{font-size:30px;color:#d3d3da;line-height:1.3;margin-top:6px}
+.n{font-weight:700;font-size:34px;color:#fff;line-height:1.15}.t{font-size:30px;color:#d3d3da;line-height:1.3;margin-top:4px;white-space:nowrap}
 .foot{position:absolute;left:84px;right:84px;bottom:66px;display:flex;justify-content:space-between;font-size:26px;color:#a9a9b3}
 </style></head><body><div class="top mark">${crown()}PG1</div><div class="c">${SHIELD}</div><div class="title">${esc(h.title)}</div>
 <ul>${h.items.map((it) => `<li><span class="k">✓</span><div><div class="n">${esc(it.name)}</div><div class="t">${esc(it.text)}</div></div></li>`).join('')}</ul>
