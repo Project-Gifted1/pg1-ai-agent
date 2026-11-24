@@ -484,7 +484,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     let base = 0;
     if (l.ring === 'near' && l.h > 70) { add('box', l.x, 0, l.z, l.w * 1.35, 9, l.d * 1.35, { style: STYLES.podium }); base = 9; detail.podiums.push({ x: l.x, z: l.z, w: l.w * 1.35, d: l.d * 1.35, ry }); }
     // The shopping centre and the shop units: shop fronts all round, awnings, and the centre's glass atrium.
-    if (l.kind) { detail.podiums.push({ x: l.x, z: l.z, w: l.w, d: l.d, ry }); if (l.kind === 'mall') add('box', l.x, l.h, l.z, l.w * 0.45, 7, l.d * 0.4, { style: STYLES.glass }); }
+    if (l.kind) { detail.podiums.push({ x: l.x, z: l.z, w: l.w, d: l.d, ry, kind: l.kind }); if (l.kind === 'mall') add('box', l.x, l.h, l.z, l.w * 0.45, 7, l.d * 0.4, { style: STYLES.glass }); }
     if (l.ring === 'near' || l.ring === 'mid' || l.ring === 'river') detail.lots.push(l);
     const h = l.h - base;
     if (l.shape === 'setback') {
@@ -966,15 +966,17 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     const cu = { uTime: { value: 0 }, uCover: { value: 0.32 }, uDark: { value: 0 }, uLight: { value: 1 }, uWarm: { value: new THREE.Color(0xff9a5a) }, uSunXZ: { value: new THREE.Vector2(-1, 0) }, uScale: { value: scale }, uSpeed: { value: speed } };
     const c = named(new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000), new THREE.ShaderMaterial({
       uniforms: cu, transparent: true, depthWrite: false, fog: false,
-      vertexShader: 'varying vec2 vU; void main(){ vU = position.xy; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-      fragmentShader: `uniform float uTime; uniform float uCover; uniform float uDark; uniform float uLight; uniform vec3 uWarm; uniform vec2 uSunXZ; uniform float uScale; uniform float uSpeed; varying vec2 vU;
+      vertexShader: 'varying vec2 vU; varying vec3 vCW; void main(){ vU = position.xy; vCW = (modelMatrix*vec4(position,1.0)).xyz; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader: `uniform float uTime; uniform float uCover; uniform float uDark; uniform float uLight; uniform vec3 uWarm; uniform vec2 uSunXZ; uniform float uScale; uniform float uSpeed; varying vec2 vU; varying vec3 vCW;
         float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float n(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
         float fbm(vec2 p){ float t = 0.0; float a = 0.5; for (int i = 0; i < 5; i++){ t += a*n(p); p *= 2.03; a *= 0.5; } return t; }
         void main(){ vec2 p = vU / uScale + vec2(uTime*0.004, uTime*0.0025) * uSpeed; float d = fbm(p); float c = smoothstep(1.0 - uCover, 1.0 - uCover + 0.3, d); float edge = 1.0 - smoothstep(2500.0, 4200.0, length(vU));
           vec2 w = vec2(vU.x, -vU.y); float toward = smoothstep(-0.2, 0.9, dot(normalize(w + 1e-3), normalize(uSunXZ)));
           vec3 lit = mix(vec3(0.26, 0.28, 0.38), uWarm, toward * (1.0 - uDark) * (0.5 + 0.5 * (1.0 - d)));
-          vec3 col = mix(lit, vec3(0.13, 0.14, 0.17), uDark) * (0.3 + 0.7 * uLight); gl_FragColor = vec4(col, c * edge * 0.85); }`
+          vec3 col = mix(lit, vec3(0.13, 0.14, 0.17), uDark) * (0.3 + 0.7 * uLight); // Seen at a grazing angle the layer fades into the sky (no hard seam where it meets the horizon).
+          float graze = smoothstep(0.04, 0.32, abs(normalize(vCW - cameraPosition).y));
+          gl_FragColor = vec4(col, c * edge * graze * 0.85); }`
     })), 'clouds');
     c.rotation.x = Math.PI / 2; c.position.y = y; c.renderOrder = 2;
     scene.add(c); cloudLayers.push(cu);
@@ -983,7 +985,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   const tmp = new THREE.Vector3();
   const cool = new THREE.Color(0x9fb8ff);
   const env = { night: 0 };
-  let emblemPulse = 0;
+  let emblemPulse = 0; let emblemLit = 1;
   let cloudLag = 0;
   let wetNow = 0;
   let cloudClock = 0;
@@ -1003,6 +1005,8 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     root, gates, portcullis, vaultDoors, beacons, lanterns, forge: { group: forge, seal: sealMat }, harbour: { bearing: Math.atan2(harbourPoint.x, -harbourPoint.z), point: harbourPoint },
     tollBarrier: barrier, toll, dome: domeUniforms, domeMesh: dome, preflight, crane, xray, deckY: DECK_Y, tip: tip.position, roofSpots,
     fogBearing, keep, sun, hemi, sky, windows: facade.userData.windows, env, buildingCount: lots.length,
+    // Street-level retail podiums (the shopping centre, the shop units, the towers' podiums): kingdom-shops.js.
+    retail: detail.podiums.map((p) => ({ ...p })),
     obstacles: makeObstacleIndex(obstacles), mirror, brandTex, emblemY,
     emblemMeshes: emblems3d.map((e) => e.group),
     setBillboards(stats) { drawBillboards(stats); },
@@ -1022,6 +1026,8 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     get billboardText() { return billboards[0] ? billboards[0].text : []; },
     // A gadget fired: the emblem pulses once in gold; on a high-severity
     // event it brightens and the shield's ripple starts from it.
+    // The Showcase: the emblem's own glow (1 live; lower so a still keeps the shield's shape).
+    setEmblemGlow(k) { emblemLit = Math.max(0, Math.min(1, Number(k) || 0)); },
     pulseEmblem(high = false) {
       emblemPulse = high ? 1.6 : 1;
       if (high) { const p = new THREE.Vector3(0, emblemY, radiusAt(emblemY)).normalize(); domeUniforms.uHit.value.copy(p); domeUniforms.uHitT.value = 0; }
@@ -1115,9 +1121,9 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       // The emblem: its gold edge glows at dusk and night; a pulse when a gadget fires.
       emblemPulse = Math.max(0, emblemPulse - dt * 0.9);
       const dark = Math.max(dusk, moon);
-      for (const e of emblems3d) { e.gold.emissiveIntensity = 0.12 + 0.35 * dark + 1.4 * emblemPulse; e.edge.opacity = Math.min(1, 0.35 + 0.65 * dark + emblemPulse); }
+      for (const e of emblems3d) { e.gold.emissiveIntensity = (0.12 + 0.35 * dark + 1.4 * emblemPulse) * emblemLit; e.edge.opacity = Math.min(1, 0.35 + 0.65 * dark + emblemPulse) * (0.5 + 0.5 * emblemLit); }
       if (hologram) { hologram.uniforms.uTime.value = t; hologram.uniforms.uAlpha.value = Math.max(0, moon - 0.35) * 1.4 + emblemPulse * 0.3; hologram.mesh.rotation.y = t * 0.15; hologram.mesh.visible = hologram.uniforms.uAlpha.value > 0.01; }
-      if (emblemGlow) emblemGlow.material.opacity = 0.12 + 0.3 * dark + 0.4 * emblemPulse;
+      if (emblemGlow) emblemGlow.material.opacity = (0.12 + 0.3 * dark + 0.4 * emblemPulse) * emblemLit * emblemLit;
       if (inlay) inlay.material.opacity = 0.55 + 0.4 * dark;
     }
   };

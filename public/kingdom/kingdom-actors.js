@@ -341,15 +341,21 @@ export function createActors(THREE, scene, world, settings) {
   let shieldLoad = 0;
   let lanternsLit = 0;
 
+  // Showcase and social renders (setLabelBox): plain words only (no
+  // internal names or raw reason codes), and every label kept whole inside
+  // a box of the frame (NDC), shrunk if it is wider than the box.
+  let labelBox = null;
   function label(text, pos, color, ttl = 6) {
+    if (!text) return;
     const sp = textSprite(THREE, text, color);
     sp.position.set(pos.x, pos.y, pos.z);
     sp.scale.multiplyScalar(phone ? 3.2 : 2.6);
     root.add(sp);
-    labels.push({ sp, ttl, y0: pos.y });
+    labels.push({ sp, ttl, y0: pos.y, x0: pos.x, z0: pos.z, s0: sp.scale.clone() });
     if (labels.length > 8) { const old = labels.shift(); root.remove(old.sp); old.sp.material.map.dispose(); old.sp.material.dispose(); }
   }
-  const defenceLabel = (e, pos) => label(defenceLine(e), pos, '#f3c623');
+  const defenceLabel = (e, pos) => label(defenceLine(e, { plain: !!labelBox }), pos, '#f3c623');
+  const reasonTag = (code, pos) => { if (!labelBox) label(reasonLabel(code), pos, '#ff6a4a', 5); };
 
   // Allies.
   function spawnAllyBoat(event, crowd) {
@@ -388,7 +394,7 @@ export function createActors(THREE, scene, world, settings) {
         root.add(beam); props.push({ mesh: beam, kind: 'flash', ttl: 3, peak: beam.material.opacity });
         for (const a of group.agents) a.burn = 1;
         // The poisoned content's hidden text is the enemy's: in its red.
-        if (e.reasons[0]) label(reasonLabel(e.reasons[0]), { x: lp.x, y: lp.y + 7, z: lp.z }, '#ff6a4a', 5);
+        if (e.reasons[0]) reasonTag(e.reasons[0], { x: lp.x, y: lp.y + 7, z: lp.z });
         break;
       }
       case 'repo_scanner': {
@@ -399,7 +405,7 @@ export function createActors(THREE, scene, world, settings) {
         cage.position.set(group.cx, group.cy + 30, group.cz);
         root.add(cage); props.push({ mesh: cage, kind: 'net', goalY: group.cy, ttl: 6 });
         for (const a of group.agents) a.sink = 1;
-        if (e.reasons[0]) label(reasonLabel(e.reasons[0]), { x: lp.x, y: lp.y + 7, z: lp.z }, '#ff6a4a', 5);
+        if (e.reasons[0]) reasonTag(e.reasons[0], { x: lp.x, y: lp.y + 7, z: lp.z });
         break;
       }
       case 'supply_inspector': world.xray.material.opacity = 0.6; world.crane.rotation.y = 0.5; for (const a of group.agents) a.sink = 1; break;
@@ -507,6 +513,21 @@ export function createActors(THREE, scene, world, settings) {
 
   const camTmp = new THREE.Vector3();
   let pg1MaxR = 0;
+  const fitV = new THREE.Vector3(); const fitC = new THREE.Vector3();
+  function fitLabel(sp, cam) {
+    const b = labelBox;
+    cam.updateMatrixWorld(); fitC.setFromMatrixPosition(cam.matrixWorld);
+    cam.getWorldDirection(fitV); const depth = fitV.dot(sp.position.clone().sub(fitC));
+    if (depth <= cam.near) { sp.material.opacity = 0; return; }
+    const tanH = Math.tan((cam.fov * Math.PI) / 360);
+    let hw = sp.scale.x / 2 / (depth * tanH * cam.aspect); let hh = sp.scale.y / 2 / (depth * tanH);
+    const room = (b.x1 - b.x0) / 2 * 0.98;
+    if (hw > room) { const k = room / hw; sp.scale.multiplyScalar(k); hw *= k; hh *= k; }
+    fitV.copy(sp.position).project(cam);
+    const cx = Math.min(b.x1 - hw, Math.max(b.x0 + hw, fitV.x));
+    const cy = Math.min(b.y1 - hh, Math.max(b.y0 + hh, fitV.y));
+    if (cx !== fitV.x || cy !== fitV.y) { fitV.x = cx; fitV.y = cy; sp.position.copy(fitV.unproject(cam)); }
+  }
   const moveTo = (a, t, sp, dt) => { const dx = t.x - a.x; const dy = t.y - a.y; const dz = t.z - a.z; const d = Math.hypot(dx, dy, dz); if (d > 0.3) { const k = Math.min(1, (sp * dt) / d); a.x += dx * k; a.y += dy * k; a.z += dz * k; if (Math.hypot(dx, dz) > 0.5) a.heading = Math.atan2(dx, dz); } return d; };
   function update(dt, t, camera, { storm = 0 } = {}) {
     camTmp.copy(camera.position);
@@ -580,7 +601,7 @@ export function createActors(THREE, scene, world, settings) {
       if (pr.ttl <= 0) { root.remove(pr.mesh); pr.mesh.geometry.dispose(); pr.mesh.material.dispose(); }
     }
     for (let i = props.length - 1; i >= 0; i--) if (props[i].ttl <= 0) props.splice(i, 1);
-    for (const l of labels) { l.ttl -= dt; l.sp.position.y = l.y0 + Math.min(4, (6 - l.ttl) * 0.6); l.sp.material.opacity = Math.min(1, Math.max(0, l.ttl)); }
+    for (const l of labels) { l.ttl -= dt; l.sp.position.set(l.x0, l.y0 + Math.min(4, (6 - l.ttl) * 0.6), l.z0); l.sp.scale.copy(l.s0); l.sp.material.opacity = Math.min(1, Math.max(0, l.ttl)); if (labelBox) fitLabel(l.sp, camera); }
     for (let i = labels.length - 1; i >= 0; i--) if (labels[i].ttl <= 0) { root.remove(labels[i].sp); labels[i].sp.material.map.dispose(); labels[i].sp.material.dispose(); labels.splice(i, 1); }
     for (const c of PG1_UNITS) for (const a of c.agents) { const rr = Math.hypot(a.x, a.z); if (rr > pg1MaxR) pg1MaxR = rr; }
     // The underglow: faint, at night only.
@@ -627,6 +648,9 @@ export function createActors(THREE, scene, world, settings) {
     // The frame-time ladder (kingdom-look.js): drones without rotors, glows and trails.
     setLean(on) { for (const c of crowds) c.lean = !!on; },
     stage, update, whereIs, eta, pick, setSentinels,
+    // { x0, x1, y0, y1 } in NDC (-1..1), or null (the live City: labels where they happen).
+    setLabelBox(b) { labelBox = b ? { ...b } : null; },
+    labelRects(cam) { return labels.filter((l) => l.sp.material.opacity > 0.05).map((l) => { const v = l.sp.position.clone(); cam.updateMatrixWorld(); const c = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld); const f = new THREE.Vector3(); cam.getWorldDirection(f); const depth = f.dot(v.clone().sub(c)); const tanH = Math.tan((cam.fov * Math.PI) / 360); v.project(cam); const hw = l.sp.scale.x / 2 / (depth * tanH * cam.aspect); const hh = l.sp.scale.y / 2 / (depth * tanH); return { x0: v.x - hw, x1: v.x + hw, y0: v.y - hh, y1: v.y + hh }; }); },
     // Every flying agent's position (tests: tests/browser/kingdom-flight.browser.test.mjs).
     flyers() { const out = []; crowds.forEach((c, ci) => { if (c.fly) for (const a of c.agents) if (!(a.delay > 0)) out.push({ crowd: ci, x: a.x, y: a.y, z: a.z }); }); return out; },
     // The seal in flight (Showcase: the Seal Forge shot follows it), or null.

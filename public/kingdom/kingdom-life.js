@@ -31,6 +31,8 @@
 // the phone tiers, never none.
 
 import { RIVER, PLAZA_R, inRiver } from './kingdom-world.js';
+import { walkerGeometry, walkerMaterial, walkerAttributes, walkerLook, WALKER_RANGE, WALKER_CAP } from './kingdom-people.js';
+import { createShops, plazaArcade, facadeUnits } from './kingdom-shops.js';
 import { createTraffic, GRID, ROAD_W, STOP_BACK, JUNCTION_HALF, ZEBRA_IN, ZEBRA_W, signalFor, LANE_OFFSET } from './kingdom-traffic.js';
 
 export const TRAM_Z = -200;
@@ -103,6 +105,8 @@ export function createLife(THREE, scene, world, settings) {
   const basic = (color, o = {}) => new THREE.MeshBasicMaterial({ color, ...o });
   const dyn = (m) => { m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); return m; };
   const r = rng(77);
+  // The close-range detail (walkers, shop fronts, modelled boats): High, Cinematic and the Showcase on a computer only.
+  const detailed = !phone && !settings.coarse && !settings.legacy && !settings.leanCity && !settings.lowFigures;
   const softTex = (() => { const cv = document.createElement('canvas'); cv.width = cv.height = 64; const g = cv.getContext('2d'); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t; })();
 
   // --- traffic: the lane simulation, drawn ---
@@ -245,6 +249,9 @@ export function createLife(THREE, scene, world, settings) {
       rect(z0 + 2.2, z0 + 4.6, 0, 0.42, 2.2, BOGIE), rect(z1 - 4.6, z1 - 2.2, 0, 0.42, 2.2, BOGIE)
     );
     if (c % 2 === 0) tramParts.push(rect(zc - 0.1, zc + 0.1, 3.75, 4.6, 1.6, ROOFGREY), rect(zc - 0.7, zc + 0.7, 4.55, 4.65, 1.7, ROOFGREY)); // pantograph
+    // Window mullions and the door seals (desktop tiers): the glass reads as windows, not a band.
+    if (detailed) { for (let zz = z0 + 1.6; zz < z1 - 1.0; zz += 1.55) if (Math.abs(zz - (zc - 4.6)) > 1.0 && Math.abs(zz - (zc + 4.6)) > 1.0) tramParts.push(rect(zz - 0.07, zz + 0.07, 1.3, 2.7, 2.7, [0.2, 0.22, 0.25])); for (const dz of [-4.6, 4.6]) tramParts.push(rect(zc + dz - 0.04, zc + dz + 0.04, 0.45, 2.75, 2.71, [0.35, 0.37, 0.4])); }
+    if (detailed && c % 2 === 0) tramParts.push(rect(zc - 0.9, zc + 0.9, 4.05, 4.15, 0.12, ROOFGREY), rect(zc - 0.5, zc + 0.5, 4.3, 4.4, 0.12, ROOFGREY)); // pantograph arms
     if (c < 4) tramParts.push(rect(z1, z1 + TRAM_GAP, 0.5, 3.0, 2.3, BOGIE));  // bellows
   }
   for (const s of [-1, 1]) {
@@ -268,8 +275,24 @@ export function createLife(THREE, scene, world, settings) {
   const wakeTex = (() => { const cv = document.createElement('canvas'); cv.width = 64; cv.height = 128; const g = cv.getContext('2d'); for (let y = 0; y < 128; y++) { const kk = 1 - y / 128; const half = 4 + (y / 128) * 26; g.fillStyle = `rgba(255,255,255,${0.5 * kk})`; g.fillRect(32 - half, y, 3, 1); g.fillRect(32 + half - 3, y, 3, 1); } const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t; })();
   const wakeMat = new THREE.MeshBasicMaterial({ map: wakeTex, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false });
   const boats = traffic.boats;
-  const boatHull = dyn(named(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 2, 1), std(LIFE_COLOURS.boat), Math.max(1, boats.length)), 'water-taxis-and-ferries'));
-  const boatCabin = dyn(named(new THREE.InstancedMesh(new THREE.BoxGeometry(1, 2, 1), std(0x2a4a68, { emissive: LIFE_COLOURS.cabin, emissiveIntensity: 0.8 }), Math.max(1, boats.length)), 'boat-cabins'));
+  // Desktop tiers: modelled boats (in the same unit space as the boxes they
+  // replace: 1 wide, 1 long, 2 high, scaled per boat): a hull with a pointed
+  // bow, a dark bottom and white topsides, a teak gunwale; a cabin with a
+  // lit window band between mullions, an overhanging roof and a mast.
+  const boatGeos = detailed ? (() => {
+    const plan = (inset = 0) => { const sh = new THREE.Shape(); const w = 0.5 - inset; sh.moveTo(-w, 0.5 - inset * 0.4); sh.lineTo(w, 0.5 - inset * 0.4); sh.lineTo(w, -0.12); sh.lineTo(w * 0.55, -0.4); sh.lineTo(0, -0.5 + inset * 0.6); sh.lineTo(-w * 0.55, -0.4); sh.lineTo(-w, -0.12); return sh; }; // closed by the shape itself (a repeated point makes zero-area faces: NaN normals)
+    const layer = (y0, y1, inset, col) => { const g = new THREE.ExtrudeGeometry(plan(inset), { depth: y1 - y0, bevelEnabled: false, curveSegments: 1 }); g.rotateX(-Math.PI / 2); g.translate(0, y0, 0); return { g, col }; };
+    const hull = vehicleGeo([layer(-1, -0.35, 0.04, [0.09, 0.13, 0.2]), layer(-0.35, 0.8, 0, [0.92, 0.93, 0.94]), layer(0.8, 0.98, -0.015, [0.45, 0.3, 0.18]), layer(0.98, 1.0, 0.05, [0.7, 0.66, 0.6])]);
+    const box = (x0, x1, y0, y1, z0, z1, col, glow = 0) => { const g = new THREE.BoxGeometry(x1 - x0, y1 - y0, z1 - z0); g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); return { g, col, glow }; };
+    const cab = [box(-0.5, 0.5, -1, -0.25, -0.5, 0.5, [0.94, 0.95, 0.96]), box(-0.49, 0.49, -0.25, 0.5, -0.49, 0.49, [0.16, 0.2, 0.24], 1), box(-0.55, 0.55, 0.5, 0.68, -0.56, 0.56, [0.9, 0.91, 0.92]), box(-0.03, 0.03, 0.68, 1.5, 0.2, 0.26, [0.75, 0.76, 0.78])];
+    for (let k = -3; k <= 3; k++) cab.push(box(-0.505, 0.505, -0.25, 0.5, k * 0.14 - 0.012, k * 0.14 + 0.012, [0.9, 0.91, 0.92]));
+    return { hull, cabin: vehicleGeo(cab) };
+  })() : null;
+  const boatCabMat = std(0x2a4a68, { emissive: LIFE_COLOURS.cabin, emissiveIntensity: 0.8 });
+  const boatLit = { value: 0.3 };
+  if (boatGeos) { boatCabMat.color.setHex(0xffffff); boatCabMat.vertexColors = true; boatCabMat.emissive.setHex(0x000000); boatCabMat.onBeforeCompile = (sh) => { sh.uniforms.uLit = boatLit; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 aGlow;\nvarying vec3 vGlow;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = aGlow;'); sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vGlow;\nuniform float uLit;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGlow * uLit;'); }; boatCabMat.customProgramCacheKey = () => 'pg1-boat-cabin'; }
+  const boatHull = dyn(named(new THREE.InstancedMesh(boatGeos ? boatGeos.hull : new THREE.BoxGeometry(1, 2, 1), boatGeos ? std(0xffffff, { vertexColors: true, roughness: 0.35 }) : std(LIFE_COLOURS.boat), Math.max(1, boats.length)), 'water-taxis-and-ferries'));
+  const boatCabin = dyn(named(new THREE.InstancedMesh(boatGeos ? boatGeos.cabin : new THREE.BoxGeometry(1, 2, 1), boatCabMat, Math.max(1, boats.length)), 'boat-cabins'));
   const wakeGeo = new THREE.PlaneGeometry(10, 34); wakeGeo.rotateX(-Math.PI / 2); wakeGeo.translate(0, 0, -24);
   const wakes = dyn(named(new THREE.InstancedMesh(wakeGeo, wakeMat, Math.max(1, boats.length)), 'boat-wakes'));
   root.add(boatHull); root.add(boatCabin); root.add(wakes);
@@ -334,7 +357,7 @@ export function createLife(THREE, scene, world, settings) {
   for (const m of [planeBody, strobes, heliBody, heliRotor]) if (m) m.frustumCulled = false;
   // The lights of every boat on the river (not on a phone's lean city):
   // a white masthead, red on the left, green on the right; one mesh.
-  const boatLights = !phone && !settings.leanCity ? named(new THREE.InstancedMesh(new THREE.SphereGeometry(0.45, 6, 4), basic(0xffffff), Math.max(1, boats.length * 3)), 'boat-lights') : null;
+  const boatLights = !phone && !settings.leanCity ? named(new THREE.InstancedMesh(new THREE.SphereGeometry(detailed ? 0.28 : 0.45, 8, 6), basic(0xffffff), Math.max(1, boats.length * 3)), 'boat-lights') : null;
   if (boatLights) boatLights.frustumCulled = false;
   if (boatLights) { for (let i = 0; i < boats.length * 3; i++) boatLights.setColorAt(i, lightCol.setHex(i % 3 === 0 ? 0xfff3d6 : i % 3 === 1 ? 0xff6a20 : 0x30ff6a)); root.add(boatLights); }
   const nBirds = phone ? 24 : 60;
@@ -378,6 +401,22 @@ export function createLife(THREE, scene, world, settings) {
   const figures = dyn(named(new THREE.InstancedMesh(personGeo, personMaterial(THREE), nFig), 'pedestrians'));
   for (let i = 0; i < nFig; i++) figures.setColorAt(i, new THREE.Color(LIFE_COLOURS.figure[i % LIFE_COLOURS.figure.length]));
   root.add(figures);
+  // Near the camera, on the High, Cinematic and Showcase tiers only: the
+  // detailed walkers (kingdom-people.js: limbs with a walk cycle, varied
+  // clothes, heights and bags). A phone keeps the light figures alone.
+  const walkCap = !detailed ? 0 : settings.profile === 'showcase' ? WALKER_CAP.showcase : settings.tier === 'cinematic' ? WALKER_CAP.cinematic : WALKER_CAP.balanced;
+  let walkers = null; let walkAttr = null;
+  if (walkCap) {
+    const wg = walkerGeometry(THREE); walkAttr = walkerAttributes(THREE, walkCap);
+    wg.setAttribute('aWalk', walkAttr.walk); wg.setAttribute('aLegs', walkAttr.legs); wg.setAttribute('aSkin', walkAttr.skin); wg.setAttribute('aHair', walkAttr.hair);
+    walkers = dyn(named(new THREE.InstancedMesh(wg, walkerMaterial(THREE), walkCap), 'pedestrians-near'));
+    walkers.count = 0; walkers.frustumCulled = false; walkers.castShadow = true;
+    walkers.setColorAt(0, new THREE.Color(0xffffff)); root.add(walkers);
+  }
+  const walkCol = new THREE.Color();
+  // Modelled shop fronts (kingdom-shops.js) on the same tiers: round the
+  // plaza's edge, the shopping centre, the shop parade and the podiums near the centre.
+  const shops = detailed ? createShops(THREE, root, [...plazaArcade(PLAZA_R), ...facadeUnits((world.retail || []).filter((p) => p.kind || Math.hypot(p.x, p.z) < 460))]) : null;
   const umbGeo = new THREE.ConeGeometry(0.55, 0.3, 8); umbGeo.translate(0, 2.05, 0);
   const umbrellas = dyn(named(new THREE.InstancedMesh(umbGeo, std(0xffffff, { roughness: 0.6 }), nFig), 'umbrellas'));
   for (let i = 0; i < nFig; i++) umbrellas.setColorAt(i, new THREE.Color(LIFE_COLOURS.umbrella[i % LIFE_COLOURS.umbrella.length]));
@@ -527,8 +566,8 @@ export function createLife(THREE, scene, world, settings) {
       for (const [lane, list] of lanes) list.slice(0, 3).forEach((b, k) => { b.x = x - lane.dir * (k * spread + 40); });
       return boats.filter((b) => Math.abs(b.x - x) < spread * 3).length;
     },
-    counts: () => ({ vehicles: traffic.vehicles.length, people: people.length + zebraPeds.length + stopPeople.length + cafes.length * 2 + buskers.length, boats: traffic.boats.length, planes: planes.length, birds: nBirds, gulls: nGulls, cyclists: nBikes, trams: traffic.trams.length, overlaps: traffic.overlaps().length }),
-    update(dt, t, { dark = 0, dusk = 0, light = 1, hour = 19.5, wet = 0, rain = 0, wind = 0, external = [] } = {}) {
+    counts: () => ({ walkersNear: walkers ? walkers.count : 0, shopUnits: shops ? shops.count : 0, vehicles: traffic.vehicles.length, people: people.length + zebraPeds.length + stopPeople.length + cafes.length * 2 + buskers.length, boats: traffic.boats.length, planes: planes.length, birds: nBirds, gulls: nGulls, cyclists: nBikes, trams: traffic.trams.length, overlaps: traffic.overlaps().length }),
+    update(dt, t, { dark = 0, dusk = 0, light = 1, hour = 19.5, wet = 0, rain = 0, wind = 0, external = [], cam = null } = {}) {
       traffic.step(Math.min(dt, 0.1), { external });
       // Signal heads.
       let sigDirty = false;
@@ -584,10 +623,11 @@ export function createLife(THREE, scene, world, settings) {
         set(boatHull, i, b.x, -2.8, b.z, b.heading, b.wid, 1, b.len); set(boatCabin, i, b.x, -0.9, b.z, b.heading, b.wid * 0.8, 1, b.len * 0.42); set(wakes, i, b.x, -3.05, b.z, b.heading, sc, 1, sc * Math.min(1.2, 0.3 + b.v / 6));
       });
       boatHull.instanceMatrix.needsUpdate = true; boatCabin.instanceMatrix.needsUpdate = true; wakes.instanceMatrix.needsUpdate = true;
-      boatCabin.material.emissiveIntensity = 0.35 + 1.4 * dark;
+      if (boatGeos) boatLit.value = 0.2 + 0.75 * dark; else boatCabin.material.emissiveIntensity = 0.35 + 1.4 * dark;
       if (boatPools) { boats.forEach((b, i) => set(boatPools, i, b.x, -3.0, b.z, b.heading, b.wid / 6, 1, b.len / 18)); boatPools.instanceMatrix.needsUpdate = true; boatPoolMat.opacity = 0.22 * Math.max(0, dark - 0.2); boatPools.visible = dark > 0.25; }
       if (boatLights) {
-        boatLights.material.color.setRGB(1, 1, 1).multiplyScalar(1 + 2 * dark);
+        // Bright enough to read as lamps, never a blob of glow (the Showcase's bloom starts above 1).
+        boatLights.material.color.setRGB(1, 1, 1).multiplyScalar(detailed ? 1 + 0.5 * dark : 1 + 2 * dark);
         boats.forEach((b, i) => { const s = Math.sin(b.heading); const c = Math.cos(b.heading); const side = b.wid * 0.52; set(boatLights, i * 3, b.x + s * b.len * 0.1, 1.6, b.z + c * b.len * 0.1); set(boatLights, i * 3 + 1, b.x + c * side, -0.6, b.z - s * side); set(boatLights, i * 3 + 2, b.x - c * side, -0.6, b.z + s * side); });
         boatLights.instanceMatrix.needsUpdate = true; boatLights.visible = dark > 0.25;
       }
@@ -630,14 +670,28 @@ export function createLife(THREE, scene, world, settings) {
       // People. Index fi runs over every figure; umbrellas follow some in the rain.
       let fi = 0; let di = 0;
       const umbShare = Math.min(0.85, rain * 1.2 + (wet > 0.5 ? 0.15 : 0));
-      const put = (x, y, z, ry, seed) => {
+      let ni = 0; const R2 = WALKER_RANGE * WALKER_RANGE;
+      // stride: 1 walking, 0 standing, -1 never detailed (seated at a café).
+      const put = (x, y, z, ry, seed, stride = 1) => {
         // A step: the stride's phase from the distance walked (about 0.75 m a
         // step), so a walker rises a little mid-stride and sways side to side
         // in time with their pace, and someone standing still stands still.
         const ph = (Math.abs(x) + Math.abs(z)) * (Math.PI / 0.75) + seed;
-        const bob = Math.abs(Math.sin(ph)) * 0.045;
-        set(figures, fi, x, y + bob, z, ry, 1, 1, 1, 0, Math.sin(ph) * 0.035);
-        if (((seed * 2654435761) >>> 0) / 4294967296 < umbShare) set(umbrellas, fi, x, y, z, ry); else hide(umbrellas, fi);
+        const bob = Math.abs(Math.sin(ph)) * 0.045 * Math.max(0, stride);
+        const umb = ((seed * 2654435761) >>> 0) / 4294967296 < umbShare;
+        if (walkers && stride >= 0 && cam && ni < walkCap && (x - cam.x) ** 2 + (z - cam.z) ** 2 < R2) {
+          // Near: a detailed walker in place of the light figure.
+          const lk = walkerLook(seed); const hgt = lk.height;
+          set(walkers, ni, x, y + bob * 0.6, z, ry, lk.build, hgt, lk.build);
+          walkAttr.walk.setXYZW(ni, ph, stride, umb ? 0 : lk.bag, lk.coat);
+          walkAttr.legs.setXYZ(ni, ...lk.trousers); walkAttr.skin.setXYZ(ni, ...lk.skin); walkAttr.hair.setXYZ(ni, ...lk.hair);
+          walkers.setColorAt(ni, walkCol.setHex(lk.top));
+          ni++; hide(figures, fi);
+          if (umb) set(umbrellas, fi, x, y + (hgt - 1) * 1.75, z, ry); else hide(umbrellas, fi);
+        } else {
+          set(figures, fi, x, y + bob, z, ry, 1, 1, 1, 0, Math.sin(ph) * 0.035 * Math.max(0, stride));
+          if (umb) set(umbrellas, fi, x, y, z, ry); else hide(umbrellas, fi);
+        }
         fi++;
       };
       people.forEach((p, i) => {
@@ -649,7 +703,7 @@ export function createLife(THREE, scene, world, settings) {
         put(x, y + Math.abs(Math.sin(t * 6 + i)) * 0.05, z, ry, i);
       });
       zebraPeds.forEach((p, i) => {
-        put(p.x, 0.05 + (p.state === 'cross' ? Math.abs(Math.sin(t * 7 + i)) * 0.05 : 0), p.z, p.heading, i + 7919);
+        put(p.x, 0.05 + (p.state === 'cross' ? Math.abs(Math.sin(t * 7 + i)) * 0.05 : 0), p.z, p.heading, i + 7919, p.state === 'cross' ? 1 : 0);
         if (p.dog) { set(dogs, di++, p.x + Math.cos(p.heading) * 0.8, 0.02, p.z - Math.sin(p.heading) * 0.8, p.heading); }
       });
       // People at bus stops: off and on while a bus waits at their stop.
@@ -657,10 +711,10 @@ export function createLife(THREE, scene, world, settings) {
       stopPeople.forEach((p, i) => {
         const goal = dwelling.has(p.link) ? 1 : 0; p.board += (goal - p.board) * Math.min(1, dt * 0.6);
         p.x = p.home.x + (p.kerb.x - p.home.x) * p.board; p.z = p.home.z + (p.kerb.z - p.home.z) * p.board;
-        put(p.x, 0.05, p.z, 0, i + 104729);
+        put(p.x, 0.05, p.z, 0, i + 104729, p.board > 0.02 && p.board < 0.98 ? 1 : 0);
       });
       // Café tables (two seated each) and the buskers, swaying.
-      cafes.forEach((c, i) => { put(c.x + 0.8, -0.3, c.z, Math.PI / 2, i * 3 + 11); put(c.x - 0.8, -0.3, c.z, -Math.PI / 2, i * 3 + 12); });
+      cafes.forEach((c, i) => { put(c.x + 0.8, -0.3, c.z, Math.PI / 2, i * 3 + 11, -1); put(c.x - 0.8, -0.3, c.z, -Math.PI / 2, i * 3 + 12, -1); });
       buskers.forEach((b, i) => { set(figures, fi, b.x, 0.05, b.z, Math.PI + Math.sin(t * 2.2 + i) * 0.15, 1, 1, 1, Math.sin(t * 2.2 + i * 1.7) * 0.06, 0); hide(umbrellas, fi); fi++; });
       // A few dogs on leads along the embankment.
       for (let n = 0; n < 6; n++) { const pos = ((t * 1.2 + n * 230) % 1400) - 700; set(dogs, di++, pos, 0.02, RIVER.z - RIVER.half - 1.4, Math.PI / 2); put(pos - 1.2, 0.05, RIVER.z - RIVER.half - 2, Math.PI / 2, n + 31); }
@@ -669,6 +723,8 @@ export function createLife(THREE, scene, world, settings) {
       const shown = density < 1 ? Math.floor(fi * density) : fi;
       figures.count = shown; umbrellas.count = shown; umbrellas.visible = umbShare > 0.01; dogs.visible = di > 0 && density >= 1;
       figures.instanceMatrix.needsUpdate = true; umbrellas.instanceMatrix.needsUpdate = true; dogs.instanceMatrix.needsUpdate = true;
+      if (shops) shops.update(cam, hour >= 8 && hour < 21.5 ? 1 : 0.15, dark);
+      if (walkers) { walkers.count = density < 1 ? Math.floor(ni * density) : ni; walkers.instanceMatrix.needsUpdate = true; if (walkers.instanceColor) walkers.instanceColor.needsUpdate = true; for (const a of Object.values(walkAttr)) a.needsUpdate = true; }
       // Cyclists: ordered along their track, never through each other.
       for (const north of [true, false]) {
         const lane = bikes.filter((b) => (b.dir > 0) === north).sort((a, b) => (b.x - a.x) * (north ? 1 : -1));
@@ -685,7 +741,8 @@ export function createLife(THREE, scene, world, settings) {
       // Street lights come on at sunset; their pools on the (wet) road.
       lampHeadMat.color.setHex(dark > 0.35 ? LIFE_COLOURS.lamp : 0x6a6252);
       // Wet roads mirror the lamps: the pools brighten (the merged mesh shares this material).
-      poolMat.opacity = Math.max(0, dark - 0.25) * (0.55 + 0.6 * wet);
+      // Desktop detail: softer pools (the wet streets and bloom already carry the lamps).
+      poolMat.opacity = Math.max(0, dark - 0.25) * (0.55 + 0.6 * wet) * (detailed ? 0.5 : 1);
       // Shop signs: lit from opening to late evening (world.setShopLights).
       if (world.setShopLights) world.setShopLights(hour >= 7.5 && hour < 23.5 ? 1 : hour >= 23.5 || hour < 1 ? 0.25 : 0);
       // Fountains.

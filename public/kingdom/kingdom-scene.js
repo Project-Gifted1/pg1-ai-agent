@@ -34,7 +34,7 @@ import { createControls } from '../sandbox/controls.js';
 import { createWaterMaterial } from '../sandbox/water.js';
 import { buildWorld, RIVER, HERO_BEARING, TOWER_TOP } from './kingdom-world.js';
 import { createActors } from './kingdom-actors.js';
-import { createLife } from './kingdom-life.js';
+import { createLife, TRAM_Z } from './kingdom-life.js';
 import { loadBrand, BRAND_SVG_URL } from './kingdom-emblem.js';
 import { dublinSun, daylight, pickDirectorEvent, normalizeState, windowRatios, dublinHour, weatherLook, GADGET_META } from './kingdom-data.js';
 import { createWeatherFx } from './kingdom-weather.js';
@@ -73,6 +73,11 @@ export const HOME_VIEW_PHONE = Object.freeze({ target: [0, 150, 0], dist: 570, t
 // No emblem may come nearer the camera than this in the hero shot (metres).
 export const EMBLEM_CLEARANCE = 150;
 
+// Where the Showcase keeps in-scene labels (NDC): whole, inside the frame,
+// in the upper middle: clear of the mark and the mini-globe at the top, the
+// lower third and event card at the bottom, and the flag row of a slide
+// cropped from the frame (scripts/social-inside-city.mjs).
+export const SHOWCASE_LABEL_BOX = Object.freeze({ x0: -0.9, x1: 0.9, y0: 0.2, y1: 0.5 });
 export const KINGDOM_TIERS = Object.freeze(['legacy', 'phone', 'balanced', 'cinematic']);
 // On screen: Low, Medium, High (picked automatically) and Cinematic (by hand
 // only). The ids stay as they were (a choice kept on a device still holds).
@@ -184,7 +189,7 @@ export function kingdomSettings(tier, { coarse = false, memory = 0 } = {}) {
       Object.assign(base, { leanDrones: true, lowFigures: true, ambientSprites: false, leanCity: true });
     }
   }
-  return Object.freeze({ tier, ...base, look, ease: v ? v.ease : 5 });
+  return Object.freeze({ tier, ...base, look, ease: v ? v.ease : 5, coarse: !!coarse });
 }
 
 // SHOWCASE (scripts/showcase-render.mjs): the offline profile, on a computer
@@ -197,7 +202,7 @@ export function kingdomShowcaseSettings({ coarse = false } = {}) {
   if (coarse) return null;
   const c = kingdomSettings('cinematic', { coarse: false });
   const S = SHOWCASE_SETTINGS;
-  return Object.freeze({ ...c, shadows: S.shadowMapSize, post: Object.freeze({ aa: 'taa', taaSamples: S.taaSamples, settle: true, bloom: true, gtao: true, gtaoSamples: S.gtaoSamples, gtaoScale: 1, dof: true, grade: 'night' }), fogScale: 0.45, targetFps: S.targetFps, pixelRatio: S.pixelRatio, renderScale: false, profile: SHOWCASE, ease: S.ease });
+  return Object.freeze({ ...c, shadows: S.shadowMapSize, post: Object.freeze({ aa: 'taa', taaSamples: S.taaSamples, settle: true, bloom: true, gtao: true, gtaoSamples: S.gtaoSamples, gtaoScale: 1, dof: true, grade: 'night' }), fogScale: 0.3, targetFps: S.targetFps, pixelRatio: S.pixelRatio, renderScale: false, profile: SHOWCASE, ease: S.ease });
 }
 
 // Height fog: the scene's exponential fog, thicker low down (blue hour),
@@ -411,6 +416,10 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   } catch (e) { /* the scene's light is enough */ }
   const actors = createActors(THREE, scene, world, settings);
   actors.onFire = (g, e) => { if (onGadget) onGadget(g, e); };
+  // Showcase and social renders: labels in plain words, whole, inside the frame's label band.
+  if (offline) actors.setLabelBox(SHOWCASE_LABEL_BOX);
+  // Showcase: the emblem lit, never a smear of glow over the shield.
+  if (offline && world.setEmblemGlow) world.setEmblemGlow(0.55);
   const life = createLife(THREE, scene, world, settings);
   if (settings.crowdDensity) life.setDensity(settings.crowdDensity);
   // Wet streets without a mirror (kingdom-wet.js), on the tiers that have them.
@@ -584,6 +593,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   let raf = 0; let last = 0; let running = true; let t0 = performance.now(); let threat = 'calm'; let storm = 0; let alarm = 0;
   const sunDir = new THREE.Vector3();
   let camLift = 0; let camInside = 0; let paused = false;
+  let fogScaleNow = settings.fogScale || 1; let lastNight = 0;
   const legacyWatch = createLegacyWatch(LEGACY_DROP);
   // The effect ladder (kingdom-look.js EFFECT_LADDER), on a phone: what goes
   // first when frames run slow. Each rung is undone when they recover.
@@ -659,7 +669,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     scene.fog.color.setRGB(0.14 + 0.32 * light * (1 - dusk) + 0.08 * dusk, 0.19 + 0.36 * light * (1 - dusk) + 0.05 * dusk, 0.36 + 0.36 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.4);
     // The live fog follows the real weather, scaled and capped (kingdom-look.js
     // liveFog); with PG1_FOG_START the first 400 m stay clear. The Showcase keeps its own.
-    scene.fog.density = settings.noFog ? 0 : offline ? (fogBase + storm * 0.0005 + look.fog * 0.0024) * (settings.fogScale || 1) : liveFog({ fogBase, storm, fog: look.fog });
+    scene.fog.density = settings.noFog ? 0 : offline ? (fogBase + storm * 0.0005 + look.fog * 0.0024) * fogScaleNow : liveFog({ fogBase, storm, fog: look.fog });
     renderer.toneMappingExposure = 0.7 + 0.22 * light * (1 - dusk);
     wx.update(dt, t, look, { target: controls.target, sunDir, light, dusk });
     world.setWet(wx.state.wet);
@@ -669,9 +679,9 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     // The night HDRI as the environment (loaded lazily, small) at night; the sky's by day.
     if (nightEnv && !ladderOff.has('hdri')) { const night = Math.max(dusk, 1 - light) > 0.5; if (night && scene.environment !== nightEnv) { scene.environment = nightEnv; scene.environmentIntensity = 0.35; } else if (!night && scene.environment === nightEnv) { scene.environment = envRT ? envRT.texture : null; scene.environmentIntensity = 0.9; } }
     if (!lazyStarted && (Number(container.dataset.frames) || 0) > 20) { lazyStarted = true; loadLazy(); }
-    if (now - envAt > 180000) { envAt = now; refreshEnv(); if (post && post.setNight) post.setNight(Math.max(dusk, 1 - light)); }
+    if (now - envAt > 180000) { envAt = now; refreshEnv(); lastNight = Math.max(dusk, 1 - light); if (post && post.setNight) post.setNight(lastNight); }
     actors.update(dt, t, camera, { storm: alarm });
-    life.update(dt, t, { dark: Math.max(dusk, 1 - light), dusk, light, hour: lightMode === 'dusk' ? 19.5 : dublinHour(Date.now()), wet: wx.state.wet, rain: wx.state.rain, wind: wx.state.wind, external: actors.riverBoats ? actors.riverBoats() : [] });
+    life.update(dt, t, { dark: Math.max(dusk, 1 - light), dusk, light, hour: lightMode === 'dusk' ? 19.5 : dublinHour(Date.now()), wet: wx.state.wet, rain: wx.state.rain, wind: wx.state.wind, external: actors.riverBoats ? actors.riverBoats() : [], cam: camera.position });
     // Windows by the hour in Dublin, and the day's weather (scenery), every few seconds.
     if (now - ambientAt > 5000) {
       ambientAt = now;
@@ -790,10 +800,20 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     },
     // While the feed is disconnected nothing new plays.
     // Showcase: the scripted camera (null gives it back; the director stays off meanwhile).
+    debugScene: () => scene, debugPost: () => post,
+    debugCamera: () => ({ pos: camera.position.toArray(), target: controls.target.toArray(), camLift }),
+    setLabelBox(b) { actors.setLabelBox(b); },
+    labelRects: () => actors.labelRects(camera),
     setShowcasePose(p) { if (p) { setDirector(false); controls.minDist = Math.min(controls.minDist, p.dist); controls.maxDist = Math.max(controls.maxDist, p.dist); } showcasePose = p || null; },
     profile: () => (offline ? SHOWCASE : null),
     // Showcase: the grade's mood ('night', 'rain').
-    setShowcaseLook({ mood } = {}) { if (post && post.setGrade && showLook) post.setGrade(mood, showLook); },
+    // fogScale: the Showcase fog (a still keeps distant buildings' shape with less); bloom: its strength (1 the reel's).
+    setShowcaseLook({ mood, fogScale, bloom, emblem } = {}) {
+      if (mood && post && post.setGrade && showLook) post.setGrade(mood, showLook);
+      if (Number.isFinite(fogScale)) fogScaleNow = fogScale;
+      if (Number.isFinite(bloom) && post && post.setBloomScale) { post.setBloomScale(bloom); if (post.setNight) post.setNight(lastNight); }
+      if (Number.isFinite(emblem)) world.setEmblemGlow(emblem);
+    },
     showcaseInfo: () => (() => {
       const gl = renderer.getContext(); let unmasked = null;
       try { const ext = gl.getExtension('WEBGL_debug_renderer_info'); unmasked = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER); } catch (e) { unmasked = null; }
@@ -908,7 +928,8 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
       return { look: settings.look || null, fogDensity: scene.fog.density, fogAt400: settings.noFog || offline ? null : fogFactorAt(400, scene.fog.density, FOG_CLEAR_M), renderScale: renderScale ? renderScale.scale : 1, minScale: coarse ? minRenderScale({ coarse }) : null, ladder: [...ladderOff], sharpen: post && post.sharpening ? post.sharpening : 0, tier, label: KINGDOM_TIER_LABEL[tier], source: begin.source, probeMs: debugInfo.probeMs, calls: lastInfo.calls, triangles: lastInfo.triangles, textures: seen.size, maxTexture: maxTex, gpuMemoryMB: Math.round((texBytes + geoBytes + fbBytes) / 1048576), targetFps: settings.targetFps, pixelRatio: renderer.getPixelRatio(), life: life.counts(), weather: wx.counts() };
     },
     // For screenshots: the junction with the longest queue now.
-    busiestJunction: () => life.traffic.busiest(),
+    // Showcase: the busiest junction away from the tram viaduct (it would cross the frame).
+    busiestJunction: () => life.traffic.busiest({ avoid: { z: TRAM_Z, half: 90 } }) || life.traffic.busiest(),
     // Showcase (read only): where an event's actors are, how soon they arrive,
     // the seal in flight, and the city's landmarks for a scripted camera.
     whereIs: (id) => actors.whereIs(id),

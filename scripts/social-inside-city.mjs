@@ -35,8 +35,12 @@ import { cardHtml, BASE_CSS, SHIELD, esc, crown, MARK } from './social-build.mjs
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 export const POST_DATE = '24 November 2026';
 export const REEL_FILE = 'reel-1080x1920.mp4';
-export const XFADE_S = 0.5;
+// Short fades (0.2 s): no long double images between shots.
+export const XFADE_S = 0.2;
 export const REEL_TARGET_S = 30;
+// The reel is a release asset, never in git (.gitignore).
+export const RELEASE_TAG = 'social-2026-11-24';
+export const REEL_URL = `https://github.com/Project-Gifted1/pg1-ai-agent/releases/download/${RELEASE_TAG}/reel-1080x1920.mp4`;
 
 // --- the words -------------------------------------------------------------------------------------
 
@@ -46,10 +50,12 @@ export const dayRange = (fromIso, toIso) => `${DAY.format(new Date(fromIso))}–
 const flagOf = (cc) => (/^[A-Z]{2}$/.test(cc || '') ? String.fromCodePoint(...[...cc].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)) : '');
 const VERDICT = { UNKNOWN_TOOL: 'unknown tool probe', UNKNOWN_METHOD: 'unknown method probe', INVALID_JSON: 'malformed call', MALFORMED_REQUEST: 'malformed call', SIGNED: 'result signed', SEAL_VERIFIED: 'seal matched to the key' };
 const GADGET = { gate_wardens: 'Gate Wardens', seal_forge: 'Seal Forge', truth_lens: 'Truth Lens', phishing_net: 'Phishing Net', rate_shield: 'Rate Shield', repo_scanner: 'Repo Trap Scanner', supply_inspector: 'Supply Inspector', preflight_ward: 'Preflight Array', repair_crews: 'Repair Crews', beacons: 'Watchtower Beacons', passkey_vault: 'Passkey Vault', sanctions_gate: 'Sanctions Gate', allies: 'Allies' };
+export const plainVerdict = (e) => VERDICT[e.verdict_code] || String(e.verdict_code || '').toLowerCase().replace(/_/g, ' ');
 // One real event as the reel's card shows it: no caller, no IP.
 export function eventCardLine(e) {
   if (!e) return '';
-  const what = `${GADGET[e.gadget] || e.gadget} · ${e.check}: ${VERDICT[e.verdict_code] || String(e.verdict_code || '').toLowerCase().replace(/_/g, ' ')}`;
+  // Never an internal name (the tool or route, e.g. mcp_router): the gadget and the verdict in words.
+  const what = `${GADGET[e.gadget] || e.gadget} · ${plainVerdict(e)}`;
   return `${e.country_code ? `${e.country_code} · ` : ''}${what}${e.count > 1 ? ` ×${e.count}` : ''}`;
 }
 
@@ -61,7 +67,7 @@ export function slides(m) {
     { id: 'cover', file: 'slide-1-cover.png', shot: 'city-wide', tag: POST_DATE, title: 'Inside PG1 City', line: "A tour of the live 3D city that shows PG1's real activity: probes, checks and signed results. Every event in it is real." },
     { id: 'tower', file: 'slide-2-crown-tower.png', shot: 'crown-tower', tag: 'The crown tower', title: 'The PG1 shield', line: "The tallest tower carries PG1's shield, drawn from the brand file itself. Its beacons follow PG1's real state: one lights when a report lands, and one stays lit for each approval waiting." },
     { id: 'events', file: 'slide-3-real-events.png', shot: 'probe-arrives', tag: Number.isFinite(c.countries) && c.countries > 0 ? `From ${c.countries} countries · ${range}` : 'Real events', title: 'Real probes and checks', line: 'Every arrival is one event PG1 logged: unknown tools and methods, malformed calls, flagged checks. Its origin country shows as a flag and an arc on the mini-globe, and the Gate Wardens turn probes back.', flags: (c.country_codes || []).slice(0, 8) },
-    { id: 'signed', file: 'slide-4-signed-results.png', shot: 'seal-forge', fallbackShot: 'city-day', tag: 'Signed results', title: 'Every result signed', line: "When PG1 signs a tool result (Ed25519), the Seal Forge stamps a seal that rises into the tower. Anyone can check a result offline with PG1's public key, or with verify_result." },
+    { id: 'signed', file: 'slide-4-signed-results.png', shot: 'seal-forge', fallbackShot: 'city-day', tag: 'Signed results', title: 'Signed results you can check', line: "When PG1 signs a tool result (Ed25519), the Seal Forge stamps a seal that rises into the tower. Anyone can check a result offline with PG1's public key, or with verify_result." },
     { id: 'traffic-weather', file: 'slide-5-traffic-weather.png', shot: 'junction-traffic', fallbackShot: 'street-level', tag: 'Traffic and weather', title: 'Lanes, rain and real weather', line: "Cars keep to their lanes, queue at red lights and clear on green. The sky follows Dublin's real weather and time of day; in rain the streets turn wet and mirror the lights." },
     { id: 'river-drones', file: 'slide-6-river-drones.png', shot: 'drone-patrol', tag: 'River and drones', title: 'The river and the patrols', line: "Boats pass under the arched bridge, with lamp pools along the promenade. PG1's drones patrol in rings round the tower, one for each live check, with navigation lights at night." },
     { id: 'end', file: 'slide-7-link-in-bio.png', shot: null, tag: '', title: 'Link in bio', line: 'Free checks for AI agents.' }
@@ -111,7 +117,7 @@ export function readRenders(from) {
   const byId = new Map();
   for (const m of manifests) for (const s of m.shots) byId.set(s.id, s);
   const pick = (name) => files.find((f) => f.endsWith(`/${name}`));
-  const shots = REEL_SHOTS.map((def) => { if (REEL_CUTS[def.id]) return { id: def.id, missing: `cut in the edit: ${REEL_CUTS[def.id]}` }; const s = byId.get(def.id); if (!s) return { id: def.id, missing: 'not rendered' }; if (s.skipped) return { id: def.id, missing: s.skipped }; const mp4 = pick(`${def.id}.mp4`); const png = pick(`${def.id}.png`); if (!mp4 || !png) return { id: def.id, missing: 'files not found' }; return { ...s, def, mp4, png, clipSeconds: probe(mp4).seconds }; });
+  const shots = REEL_SHOTS.map((def) => { if (REEL_CUTS[def.id]) return { id: def.id, missing: `cut in the edit: ${REEL_CUTS[def.id]}` }; const s = byId.get(def.id); if (!s) return { id: def.id, missing: 'not rendered' }; if (s.skipped) return { id: def.id, missing: s.skipped }; const mp4 = pick(`${def.id}.mp4`); const png = pick(`${def.id}-still-2x.png`) || pick(`${def.id}.png`); if (!mp4 || !png) return { id: def.id, missing: 'files not found' }; return { ...s, def, mp4, png, clipSeconds: probe(mp4).seconds }; });
   return { window: first.window, counts: first.counts, weather_record: first.weather_record, data: first.data, shots };
 }
 
@@ -146,7 +152,9 @@ html,body{background:transparent}
 </style></head><body><div class="m">${MARK}</div>${card}<div class="l">${crown()}<span>${esc(caption)}</span></div>${globe}</body></html>`;
 }
 
-const crop1350 = (png, out) => ff(['-i', png, '-vf', 'crop=1080:1350:0:300', out]);
+// A still: the 2x render downscaled to 1080 wide (Lanczos), then the slide's crop.
+const to1080 = (png, out) => ff(['-i', png, '-vf', 'scale=1080:1920:flags=lanczos', out]);
+const crop1350 = (png, out) => ff(['-i', png, '-vf', 'scale=1080:1920:flags=lanczos,crop=1080:1350:0:300', out]);
 const dataUrl = (f) => `data:image/png;base64,${readFileSync(f).toString('base64')}`;
 
 export async function build({ from, out }) {
@@ -188,10 +196,6 @@ export async function build({ from, out }) {
     const info = probe(reel);
     if (info.width !== 1080 || info.height !== 1920) throw new Error(`reel is ${info.width}x${info.height}`);
     // The contact sheet: one frame of the reel per shot (mid-segment).
-    let t = 0; const frames = [];
-    for (const [i, p] of plan.entries()) { const f = join(tmp, `cs-${i}.png`); ff(['-ss', (t + p.seconds / 2).toFixed(2), '-i', reel, '-frames:v', '1', '-vf', 'scale=270:480', f]); frames.push(f); t += p.seconds - XFADE_S; }
-    const cols = Math.min(5, frames.length);
-    ff([...frames.flatMap((f) => ['-i', f]), '-filter_complex', `${frames.map((_, i) => `[${i}:v]`).join('')}xstack=inputs=${frames.length}:layout=${frames.map((_, i) => `${(i % cols) * 270}_${Math.floor(i / cols) * 480}`).join('|')}:fill=black`, '-frames:v', '1', '-q:v', '3', join(out, 'contact-sheet.jpg')]);
     // The carousel and the Story.
     const sl = slides(m);
     const still = (id) => (ready.find((s) => s.id === id) || {}).png || null;
@@ -204,8 +208,13 @@ export async function build({ from, out }) {
       if (h.flags && h.flags.length) html = html.replace('<div class="body">', `<div class="body"><div class="flags">${h.flags.map(flagOf).join(' ')}</div>`).replace('</style>', '.flags{font-family:"Noto Color Emoji";font-size:54px;letter-spacing:.08em;margin-bottom:24px}</style>');
       await shoot(html, 1080, 1350, join(out, h.file));
     }
-    const coverBg = still('city-wide') || still('crown-tower');
+    const coverSrc = still('city-wide') || still('crown-tower'); let coverBg = null;
+    if (coverSrc) { coverBg = join(tmp, 'story-bg.png'); to1080(coverSrc, coverBg); }
     await shoot(cardHtml(sl[0], coverBg ? dataUrl(coverBg) : null, { hgt: 1920 }), 1080, 1920, join(out, 'story-1080x1920.png'));
+    // The contact sheet: a frame of the reel every 0.5 s (numbered by time),
+    // then every slide and the Story (scripts/contact-sheet.mjs).
+    const { contactSheet } = await import('./contact-sheet.mjs');
+    contactSheet({ reel, stills: [...sl.map((h) => join(out, h.file)), join(out, 'story-1080x1920.png')], out: join(out, 'contact-sheet.jpg'), every: 0.5 });
     writeFileSync(join(out, 'copy.md'), copyMd(m, sl, plan, used, info));
     return { reel: info, plan, missing: m.shots.filter((s) => s.missing).map((s) => ({ id: s.id, why: s.missing })) };
   } finally { await browser.close(); server.close(); rmSync(tmp, { recursive: true, force: true }); }
@@ -213,7 +222,7 @@ export async function build({ from, out }) {
 
 export function copyMd(m, sl, plan, used, info) {
   const c = m.counts || {}; const w = m.weather_record;
-  const shotRows = REEL_SHOTS.map((def) => { const s = m.shots.find((x) => x.id === def.id) || {}; const p = plan.find((x) => x.id === def.id); return `| ${def.title} | ${s.missing ? `left out: ${s.missing}` : `"${captionFor(def, c)}"`} | ${p ? `${p.seconds.toFixed(1)} s` : '-'} | ${(s.replayed || []).map((e) => `${e.kind} ${e.country_code || ''} ${e.check} ${e.verdict_code} (${DAY_TIME.format(new Date(e.last || e.time))})`.replace(/\s+/g, ' ')).join('; ') || (def.id === 'dublin-weather' && w ? `recorded weather ${w.rain.time} → ${w.clear.time}` : 'none (no event staged)')} |`; });
+  const shotRows = REEL_SHOTS.map((def) => { const s = m.shots.find((x) => x.id === def.id) || {}; const p = plan.find((x) => x.id === def.id); return `| ${def.title} | ${s.missing ? `left out: ${s.missing}` : `"${captionFor(def, c)}"`} | ${p ? `${p.seconds.toFixed(1)} s` : '-'} | ${(s.replayed || []).map((e) => `${e.kind.replace(/_/g, ' ')} ${e.country_code || ''} ${GADGET[e.gadget] || ''}: ${plainVerdict(e)} (${DAY_TIME.format(new Date(e.last || e.time))})`.replace(/\s+/g, ' ')).join('; ') || (def.id === 'dublin-weather' && w ? `recorded weather ${w.rain.time} → ${w.clear.time}` : 'none (no event staged)')} |`; });
   return `# Inside PG1 City · ${POST_DATE}
 
 Built by \`scripts/social-inside-city.mjs\` from the Showcase render (\`scripts/showcase-render.mjs --reel inside-city\`: desktop profile, showcase quality, render scale 1.0, no UI overlays, no clock or debug labels).
@@ -227,6 +236,8 @@ Built by \`scripts/social-inside-city.mjs\` from the Showcase render (\`scripts/
 - **Privacy:** no caller hash, IP or anything identifying a caller is in the renders, the reel or this file.
 
 ## Reel (\`${REEL_FILE}\`)
+
+Download: [${REEL_FILE}](${REEL_URL}) (release asset \`${RELEASE_TAG}\`; the MP4 is kept out of git).
 
 ${info.seconds.toFixed(1)} s, ${info.width} x ${info.height}, H.264 (libx264 -preset veryfast -crf 18), yuv420p, 30 fps, ${XFADE_S} s crossfades, no audio.
 

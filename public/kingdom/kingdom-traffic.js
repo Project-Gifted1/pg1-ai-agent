@@ -513,9 +513,10 @@ export function createTraffic({ density = 1, seed = 11, cols = 6, rowsNorth = 4,
     step, overlaps,
     signal: (j, axis) => signalFor(j, axis, t),
     // The junction with the most vehicles waiting at it right now (for the camera).
-    busiest() {
+    // avoid: { z, half } keeps the pick clear of a band (the tram viaduct) so it frames open sky.
+    busiest({ avoid = null } = {}) {
       let best = null; let n = -1;
-      for (const j of net.junctions) { if (j.edge) continue; const q = j.in.reduce((k, l) => k + this.queueAt(l), 0); if (q > n) { n = q; best = j; } }
+      for (const j of net.junctions) { if (j.edge) continue; if (avoid && Math.abs(j.z - avoid.z) < avoid.half) continue; const q = j.in.reduce((k, l) => k + this.queueAt(l), 0); if (q > n) { n = q; best = j; } }
       return best ? { x: best.x, z: best.z, queued: n } : null;
     },
     queueAt(link) { let n = 0; for (const v of link.vehicles) if (v.v < 0.5 && link.stopAt - v.s < 60) n++; return n; }

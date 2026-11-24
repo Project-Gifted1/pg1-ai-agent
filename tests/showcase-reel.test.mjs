@@ -110,7 +110,13 @@ test('the post: encoding, length, slide words', async () => {
   const words = sl.map((h) => `${h.tag} ${h.title} ${h.line}`).join(' ') + REEL_SHOTS.map((s) => s.caption).join(' ');
   for (const bad of [/\battack/i, /\bhostile/i, /\braiders?\b/i, /\bsafe\b/i, /©/, /\boutage|\bdown\b/i, /\b(claude|anthropic|gemini|openai|gpt|llama|mistral|groq)\b/i]) assert.ok(!bad.test(words), String(bad));
   for (const h of sl.slice(1, 6)) { const n = h.line.split(/\s+/).length; assert.ok(n <= 42, `${h.id}: ${n} words`); assert.ok(h.line.split(/(?<=\.)\s/).length >= 2 && h.line.split(/(?<=\.)\s/).length <= 3, `${h.id}: 2-3 sentences`); }
-  assert.match(b.eventCardLine({ country_code: 'DE', gadget: 'gate_wardens', check: 'mcp_router', verdict_code: 'UNKNOWN_METHOD', count: 3 }), /^DE · Gate Wardens · mcp_router: unknown method probe ×3$/);
+  // Never an internal name (the tool or route the probe hit) in social output.
+  assert.equal(b.eventCardLine({ country_code: 'DE', gadget: 'gate_wardens', check: 'mcp_router', verdict_code: 'UNKNOWN_METHOD', count: 3 }), 'DE · Gate Wardens · unknown method probe ×3');
+  const { defenceLine } = await import('../public/kingdom/kingdom-data.js');
+  const plain = defenceLine({ gadget: 'gate_wardens', kind: 'probe', role: 'attacker', check: 'mcp_router', verdict: 'UNKNOWN_METHOD', reasons: ['HIDDEN_INSTRUCTION'] }, { plain: true });
+  assert.equal(plain, 'Gate Wardens: unknown method probe');
+  const { SHOWCASE_LABEL_BOX: box } = await import('../public/kingdom/kingdom-scene.js');
+  assert.ok(box.x0 >= -0.95 && box.x1 <= 0.95 && box.y0 >= 0.1 && box.y1 <= 0.55, 'labels inside the frame, in the band above a slide\'s flag row and below the mark and globe');
 });
 
 test('the 24 Nov post, once built, keeps its rules', { skip: !existsSync(new URL('../docs/social/2026-11-24/copy.md', import.meta.url)) && 'not built yet' }, () => {
@@ -118,6 +124,7 @@ test('the 24 Nov post, once built, keeps its rules', { skip: !existsSync(new URL
   assert.ok(!/caller_hash|\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/.test(copy), 'no caller hash, no IP');
   assert.ok(!/\b(attack|hostile|raiders?|safe)\b/i.test(copy.replace(/`[^`]*`/g, '')), 'wording');
   assert.ok(!/©/.test(copy)); assert.match(copy, /Project-Gifted1™/);
+  assert.ok(!/mcp_router|check_[a-z_]+ (malicious|clean)|\b[A-Z]+_[A-Z_]+\b/.test(copy.replace(/`[^`]*`/g, '')), 'no internal names or raw codes outside code spans');
 });
 
 test('an airliner crosses the view high and far, never beside a building', async () => {

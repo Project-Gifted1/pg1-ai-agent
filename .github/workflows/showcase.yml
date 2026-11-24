@@ -58,6 +58,16 @@ on:
         required: false
         default: ''
         type: string
+      release_tag:
+        description: Publish a post's reel as a release asset under this tag (e.g. social-2026-11-24), built from release_run's reel artifacts; nothing is rendered
+        required: false
+        default: ''
+        type: string
+      release_run:
+        description: The run id whose reel artifacts the release is built from
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -137,7 +147,7 @@ jobs:
           retention-days: 30
 
   render:
-    if: inputs.reel == ''
+    if: inputs.reel == '' && inputs.release_tag == ''
     name: render
     # Pinned: Playwright 1.56.1 cannot install Chromium on ubuntu-latest.
     runs-on: ubuntu-24.04
@@ -178,4 +188,51 @@ jobs:
             showcase-out/manifest.json
             showcase-out/social/
           if-no-files-found: warn
+          retention-days: 30
+
+  # Release mode: the post built from an earlier reel run's artifacts
+  # (scripts/social-inside-city.mjs, the same build as by hand), and its
+  # reel published as a release asset: MP4s stay out of git. The built post
+  # (slides, Story, contact sheet, copy.md) is uploaded as the artifact.
+  release:
+    if: inputs.release_tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium (version pinned by package-lock.json), ffmpeg and the flag font
+        run: |
+          npx playwright install --with-deps chromium
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-noto-color-emoji
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.release_run }}
+          github-token: ${{ github.token }}
+          pattern: pg1-reel-*
+          path: reel-artifacts
+      - name: Build the post
+        run: node scripts/social-inside-city.mjs --from reel-artifacts --out post
+      - name: Publish the reel as a release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          if ! printf '%s' "$TAG" | grep -Eq '^social-[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then echo "release_tag must be social-YYYY-MM-DD" >&2; exit 1; fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Social post $TAG" --notes "The reel for the post (docs/social/, copy.md). Rendered by the PG1 Showcase render, run ${{ inputs.release_run }}."
+          gh release upload "$TAG" post/reel-1080x1920.mp4 --repo "$GITHUB_REPOSITORY" --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pg1-post-${{ inputs.release_tag }}
+          path: post/
           retention-days: 30

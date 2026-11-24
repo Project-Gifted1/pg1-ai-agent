@@ -52,7 +52,7 @@ import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { SHOTS, shotById as baseShotById, planShot, poseAt, frameCount, SHOWCASE_FPS, STILLS, stillById, cameraPosition } from '../lib/showcase/shots.mjs';
-import { REEL_ID, REEL_SHOTS, REEL_WINDOW_DAYS, reelShotById, planReelShot, followPose, pickReelEvents, reelCounts, pickWeatherChange, weatherFromRecord } from '../lib/showcase/reel.mjs';
+import { REEL_ID, REEL_SHOTS, REEL_WINDOW_DAYS, STILL_SCALE, STILL_LOOK, reelShotById, planReelShot, followPose, pickReelEvents, reelCounts, pickWeatherChange, weatherFromRecord } from '../lib/showcase/reel.mjs';
 
 // A Showcase shot or a reel shot (lib/showcase/reel.mjs), by id.
 const shotById = (id) => baseShotById(id) || (reelShotById(id) ? { ...reelShotById(id), scene: 'city', reel: true } : null);
@@ -62,7 +62,7 @@ const PUBLIC_DIR = join(ROOT, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.css': 'text/css; charset=utf-8', '.bin': 'application/octet-stream', '.ktx2': 'application/octet-stream' };
 
 export function parseArgs(argv) {
-  const o = { shots: SHOTS.map((s) => s.id), width: 1080, height: 1920, out: join(ROOT, 'showcase-out'), frames: null, warmup: 40, gpu: false, keepFrames: false, fps: SHOWCASE_FPS, jobs: 1, range: null, stills: null, reel: null, days: 1, epoch: null };
+  const o = { shots: SHOTS.map((s) => s.id), width: 1080, height: 1920, out: join(ROOT, 'showcase-out'), frames: null, warmup: 40, gpu: false, keepFrames: false, fps: SHOWCASE_FPS, jobs: 1, range: null, stills: null, reel: null, days: 1, epoch: null, at: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]; const v = () => argv[++i];
     if (a === '--shots') o.shots = v().split(',').map((x) => x.trim()).filter(Boolean);
@@ -75,6 +75,8 @@ export function parseArgs(argv) {
     else if (a === '--jobs') o.jobs = Math.max(1, Number(v()) | 0);
     else if (a === '--range') { const m = /^(\d+):(\d+)$/.exec(v()); if (!m || Number(m[1]) < 1 || Number(m[2]) < Number(m[1])) throw new Error('--range FIRST:LAST (1-based)'); o.range = [Number(m[1]), Number(m[2])]; }
     else if (a === '--keep-frames') o.keepFrames = true;
+    // --at T (0..1): a reel shot's one frame at T, for a look before the full render (no MP4).
+    else if (a === '--at') { o.at = Number(v()); if (!(o.at >= 0 && o.at <= 1)) throw new Error('--at 0..1'); }
     // --reel inside-city: the 24 Nov post's ten City shots, replaying the
     // defence feed's last 7 days (lib/showcase/reel.mjs).
     else if (a === '--reel') { const r = v(); if (r !== REEL_ID) throw new Error(`unknown reel ${r} (reels: ${REEL_ID})`); o.reel = r; o.days = REEL_WINDOW_DAYS; if (!argv.includes('--shots')) o.shots = REEL_SHOTS.map((x) => x.id); }
@@ -474,6 +476,8 @@ export function skyPoint(pose) {
 }
 
 export const publicEvent = (e) => (e ? { id: e.id, time: e.time, last: e.last, kind: e.kind, gadget: e.gadget, role: e.role, severity: e.severity, country_code: e.country_code || null, check: e.check, verdict_code: e.verdict_code, reasons: (e.reasons || []).slice(0, 2), count: e.count } : null);
+// The reel's look (kingdom-scene.js setShowcaseLook): its fog, bloom and emblem glow.
+export const REEL_LOOK = Object.freeze({ fogScale: 0.3, bloom: 1, emblem: 0.55 });
 const recordedMs = (iso) => Date.parse(`${iso}:00Z`); // Open-Meteo local time; Dublin is on GMT in November
 
 export async function renderReelShot(browser, origin, shot, opts, data, log) {
@@ -498,6 +502,7 @@ export async function renderReelShot(browser, origin, shot, opts, data, log) {
   const epoch = dayNight ? dayNight[0] : shot.light === 'recorded' ? recordedMs(wx.change.rain.time) : shot.light === 'day' ? dublinEpoch(13, 0) : shot.light === 'night' ? dublinEpoch(23, 10) : dublinEpoch(22, 0);
   const weather = shot.light === 'recorded' ? wx.rain : shot.weather;
   await page.evaluate((o) => window.showcase.setup(o), { light: 'live', weather, epoch });
+  await page.evaluate((look) => window.showcase.scene.setShowcaseLook(look), { ...REEL_LOOK, mood: shot.light === 'day' ? 'day' : weather && /rain|drizzle/.test(weather.state) ? 'rain' : 'night' });
   await page.evaluate(() => window.__showcase.lock());
   const { HERO_BEARING } = await import('../public/kingdom/kingdom-world.js').catch(() => ({ HERO_BEARING: 0.16 }));
   const plan = planReelShot(shot.id, { heroBearing: HERO_BEARING, landmarks: await page.evaluate(() => window.showcase.landmarks()), junction: await page.evaluate(() => window.showcase.junction()), trams: await page.evaluate(() => window.showcase.scene.trams()) });
@@ -532,7 +537,10 @@ export async function renderReelShot(browser, origin, shot, opts, data, log) {
   // Director: on, its first cut at once; 5 s on (clock and actors) the next cut lands 1.5 s into the shot.
   if (plan.director) { await page.evaluate(() => { window.showcase.pose(null); window.showcase.director(true); window.__showcase.advance(100); window.__showcase.skip(5000); window.showcase.scene.runActors(5); }); await settle(); }
   const focuses = new Set(); const t0 = Date.now(); const infos = {}; let cleared = false;
-  for (let i = 0; i < total; i++) {
+  const stillIdx = Math.min(total, Math.max(1, Math.round(total * ((plan.still && plan.still.t) || 0.66)))); let stillFile = null; let lastPose = null;
+  const from = opts.at === null ? 0 : Math.round(opts.at * (total - 1));
+  if (from > 0) await page.evaluate((ms) => { window.__showcase.skip(ms); }, from * step);
+  for (let i = from; i < (opts.at === null ? total : from + 1); i++) {
     const t = total > 1 ? i / (total - 1) : 0;
     let pose = plan.director ? null : poseAt(plan, t);
     if (pose && plan.follow === 'event') pose = followPose(pose, await page.evaluate((id) => window.showcase.whereIs(id), ids[0]), t);
@@ -540,24 +548,40 @@ export async function renderReelShot(browser, origin, shot, opts, data, log) {
     if (pose && plan.follow === 'tram') pose = followPose(pose, await page.evaluate(() => { const tr = window.showcase.scene.trams()[0]; return tr ? { x: tr.x - tr.dir * 40, y: 17, z: tr.z } : null; }), t);
     if (dayNight) await page.evaluate((ms) => window.__showcase.setDate(ms), dayNight[0] + (dayNight[1] - dayNight[0]) * t);
     if (shot.light === 'recorded' && !cleared && t >= 0.42) { cleared = true; await page.evaluate((w) => window.showcase.weatherNow(w), wx.clear); }
+    lastPose = pose;
     await page.evaluate(([p, ms]) => { if (p) window.showcase.pose(p); window.__showcase.advance(ms); }, [pose, step]);
     await page.screenshot({ path: join(framesDir, `${String(i + 1).padStart(5, '0')}.png`), type: 'png', timeout: 600000 });
     const info = await page.evaluate(() => window.showcase.info());
     checkShowcaseFrame(info, opts);
     if (plan.director) focuses.add(await page.evaluate(() => window.showcase.focusOf()));
-    if (i === 0) { infos.first = info; log(`${shot.id}: ${diagLine(info)}`); }
+    if (i === from) { infos.first = info; log(`${shot.id}: ${diagLine(info)}`); }
     if (i === total - 1) infos.last = info;
     if (i === 0 || (i + 1) % 15 === 0 || i === total - 1) log(`${shot.id}: frame ${i + 1}/${total} (${((Date.now() - t0) / 1000 / (i + 1)).toFixed(1)} s a frame)`);
   }
+  // The still (slides, Story): one more frame after the shot, drawn at 2x
+  // with the still's look (lighter fog, less bloom) and its own pose where
+  // the plan has one (else the pose at the still's moment; a follow shot
+  // keeps its last pose). Downscaled to 1080 wide by the post builder.
+  if (opts.at === null && STILL_SCALE > 1) {
+    const sp = plan.director ? null : plan.still && plan.still.pose ? plan.still.pose : plan.follow ? lastPose : poseAt(plan, (plan.still && plan.still.t) || 0.66);
+    await page.setViewportSize({ width: opts.width * STILL_SCALE, height: opts.height * STILL_SCALE });
+    await page.evaluate(([p, look]) => { window.showcase.scene.setShowcaseLook(look); if (p) window.showcase.pose(p); }, [sp, STILL_LOOK]);
+    await new Promise((r) => setTimeout(r, 500));
+    await page.evaluate((ms) => window.__showcase.advance(ms), step);
+    stillFile = join(opts.out, `${shot.id}-still-${STILL_SCALE}x.png`);
+    await page.screenshot({ path: stillFile, type: 'png', timeout: 1800000 });
+    checkShowcaseFrame(await page.evaluate(() => window.showcase.info()), { width: opts.width * STILL_SCALE, height: opts.height * STILL_SCALE });
+    log(`${shot.id}: still at ${STILL_SCALE}x (${opts.width * STILL_SCALE} x ${opts.height * STILL_SCALE})`);
+  }
   await ctx.close();
-  const stillIdx = Math.min(total, Math.max(1, Math.round(total * 0.66)));
+  if (opts.at !== null) { const f = join(opts.out, `${shot.id}-at-${opts.at}.png`); writeFileSync(f, readFileSync(join(framesDir, `${String(from + 1).padStart(5, '0')}.png`))); return { id: shot.id, title: shot.title, frames: 1, seconds: 0, mp4: null, still: f, errors, plan: { move: shot.move }, diagnostics: infos, replayed: [], light: shot.light }; }
   const still = join(opts.out, `${shot.id}.png`);
   writeFileSync(still, readFileSync(join(framesDir, `${String(stillIdx).padStart(5, '0')}.png`)));
   const mp4 = join(opts.out, `${shot.id}.mp4`);
   encode(framesDir, mp4, opts.fps);
   if (!opts.keepFrames) rmSync(framesDir, { recursive: true, force: true });
   const replayed = ids.map((id) => publicEvent((data.feed.events || []).find((e) => e.id === id)));
-  return { id: shot.id, title: shot.title, frames: total, seconds: total / opts.fps, mp4, still, errors, plan: { move: shot.move }, diagnostics: infos, replayed, director_cuts: plan.director ? [...focuses].filter(Boolean).length : undefined, light: shot.light, weather: shot.light === 'recorded' ? { ...wx.change, source: wx.source, attribution: wx.attribution } : weather };
+  return { id: shot.id, title: shot.title, frames: total, seconds: total / opts.fps, mp4, still, errors, plan: { move: shot.move }, diagnostics: infos, replayed, director_cuts: plan.director ? [...focuses].filter(Boolean).length : undefined, still2x: stillFile, light: shot.light, weather: shot.light === 'recorded' ? { ...wx.change, source: wx.source, attribution: wx.attribution } : weather };
 }
 
 export const diagLine = (x) => `canvas ${x.canvas.join('x')}, CSS ${x.css.join('x')} at DPR ${x.dpr}, tier ${x.tier} (source ${x.tierSource}), render scale ${x.renderScale}, settings.pixelRatio ${x.settingsPixelRatio}, governor ${x.governor}, probe ${x.probe}, coarse ${x.coarse}, deviceMemory ${x.deviceMemory}, WebGL ${x.webglRenderer}`;
@@ -653,7 +677,7 @@ export async function main(argv = process.argv.slice(2)) {
     } finally { await browser.close(); }
   };
   try { await Promise.all(Array.from({ length: Math.min(opts.jobs, opts.shots.length) }, worker)); } finally { server.close(); }
-  const manifest = { generated_at: new Date().toISOString(), size: `${opts.width}x${opts.height}`, fps: opts.fps, profile: 'showcase', render_scale: 1, encoder: 'H.264 (libx264), -preset veryfast, CRF 18, yuv420p', ...(opts.reel ? { reel: opts.reel, data: data.sources.city, window: data.reel ? { now: data.reel.now, days: data.reel.days } : null, counts: data.reel ? data.reel.counts : null, weather_record: data.reel && data.reel.weather ? { ...data.reel.weather.change, source: data.reel.weather.source, attribution: data.reel.weather.attribution } : null } : {}), shots: results.map((r) => (r.skipped ? { id: r.id, title: r.title, skipped: r.skipped } : { id: r.id, title: r.title, frames: r.frames, seconds: r.seconds, move: r.plan.move, data: r.replayed ? data.sources.city : data.sources[r.id === 'city-night' || r.id === 'city-rain' ? 'city' : r.id === 'deep-space' ? 'space' : r.id], mp4: r.mp4 && r.mp4.slice(opts.out.length + 1), still: r.still && r.still.slice(opts.out.length + 1), range: r.range || null, page_errors: r.errors, diagnostics: r.diagnostics, ...(r.replayed ? { replayed: r.replayed } : {}), ...(r.director_cuts !== undefined ? { director_cuts: r.director_cuts } : {}), ...(r.weather ? { weather: r.weather } : {}) })) };
+  const manifest = { generated_at: new Date().toISOString(), size: `${opts.width}x${opts.height}`, fps: opts.fps, profile: 'showcase', render_scale: 1, encoder: 'H.264 (libx264), -preset veryfast, CRF 18, yuv420p', ...(opts.reel ? { reel: opts.reel, data: data.sources.city, window: data.reel ? { now: data.reel.now, days: data.reel.days } : null, counts: data.reel ? data.reel.counts : null, weather_record: data.reel && data.reel.weather ? { ...data.reel.weather.change, source: data.reel.weather.source, attribution: data.reel.weather.attribution } : null } : {}), shots: results.map((r) => (r.skipped ? { id: r.id, title: r.title, skipped: r.skipped } : { id: r.id, title: r.title, frames: r.frames, seconds: r.seconds, move: r.plan.move, data: r.replayed ? data.sources.city : data.sources[r.id === 'city-night' || r.id === 'city-rain' ? 'city' : r.id === 'deep-space' ? 'space' : r.id], mp4: r.mp4 && r.mp4.slice(opts.out.length + 1), still: r.still && r.still.slice(opts.out.length + 1), ...(r.still2x ? { still2x: r.still2x.slice(opts.out.length + 1) } : {}), range: r.range || null, page_errors: r.errors, diagnostics: r.diagnostics, ...(r.replayed ? { replayed: r.replayed } : {}), ...(r.director_cuts !== undefined ? { director_cuts: r.director_cuts } : {}), ...(r.weather ? { weather: r.weather } : {}) })) };
   writeFileSync(join(opts.out, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
   if (opts.reel) writeFileSync(join(opts.out, `manifest-${opts.shots.join('+')}.json`), JSON.stringify(manifest, null, 2) + '\n');
   log(`done: ${readdirSync(opts.out).filter((f) => /\.(mp4|png)$/.test(f)).join(', ')}`);

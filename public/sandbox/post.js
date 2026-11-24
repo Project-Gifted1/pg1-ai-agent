@@ -78,7 +78,7 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     gtao._overrideVisibility = function () { hideFlat(); scene.traverse((o) => { if (o.visible && isFlat(o)) { o.visible = false; this._visibilityCache.push(o); } }); };
     composer.addPass(gtao);
   }
-  let bloom = null;
+  let bloom = null; let bloomScale = 1;
   if (settings.bloom) {
     bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.28, 0.45, 0.92);
     composer.addPass(bloom);
@@ -170,8 +170,11 @@ export async function createPost(THREE, renderer, scene, camera, settings) {
     get sharpening() { return finish ? finish.uniforms.uSharp.value : 0; },
     // Night makes the windows and lamps the brightest things on screen: a little more bloom.
     // (Never down to the stars' brightness: STAR_PEAK in environment.js.)
-    // Showcase: bloom on lights only (a high threshold), a little stronger.
-    setNight(n) { if (bloom) { bloom.strength = (0.22 + n * 0.35) * (skyView ? 0.5 : 1); bloom.threshold = Math.max(STAR_BLOOM_FLOOR, 0.95 - n * 0.2); if (settings.grade) { bloom.strength *= 1.25; bloom.threshold = 0.97; bloom.radius = 0.6; } } },
+    // Showcase: bloom on the brightest lights only (HDR above 1), weak and
+    // tight, so nothing turns to a glowing blob and nothing washes out; a
+    // still can lower it further (bloomScale).
+    setBloomScale(k) { bloomScale = Math.max(0, Number(k) || 0); },
+    setNight(n) { if (bloom) { bloom.strength = (0.22 + n * 0.35) * (skyView ? 0.5 : 1); bloom.threshold = Math.max(STAR_BLOOM_FLOOR, 0.95 - n * 0.2); if (settings.grade) { bloom.strength = (0.12 + n * 0.16) * (skyView ? 0.5 : 1) * bloomScale; bloom.threshold = 1.0; bloom.radius = 0.32; } } },
     dispose() { for (const p of composer.passes) if (p.dispose) p.dispose(); composer.dispose(); }
   };
 }
