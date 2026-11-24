@@ -9260,6 +9260,31 @@
       if (!items.length) return '';
       return `<div class="usage-sec" data-section="approvals"><div class="usage-h" role="heading" aria-level="4">Waiting for approval</div><ul class="report-approvals">${items.map((a) => `<li class="report-approval" data-id="${escapeHTML(a.id)}" data-source="${a.source === 'action' ? 'action' : 'task'}"><div class="report-approval-title">${escapeHTML(String(a.title || ''))}</div>${a.reason ? `<div class="report-approval-reason">${escapeHTML(String(a.reason))}</div>` : ''}<div class="report-approval-actions">${a.approvable === false ? '<span class="report-approval-note">Cannot be approved as it stands</span>' : '<button type="button" class="report-approve" onclick="reportDecide(this, \'approve\')">Approve</button>'}<button type="button" class="report-decline" onclick="reportDecide(this, \'decline\')">Decline</button></div></li>`).join('')}</ul></div>`;
     }
+    // A report card is a snapshot: when one is shown, its items are read
+    // again (op task_status). An item that is no longer waiting (a listing the
+    // registry has caught up with: "resolved, nothing to publish") loses its
+    // buttons and says why; an approved publish shows its run's real result.
+    const REPORT_FINAL = { done: 'is-approved', failed: 'is-failed', declined: 'is-declined', expired: 'is-declined' };
+    async function refreshReportApprovals(list) {
+      if (!list || list.dataset.refreshed) return;
+      list.dataset.refreshed = '1';
+      const lis = [...list.querySelectorAll('.report-approval[data-source="task"]')];
+      if (!lis.length) return;
+      let data = null;
+      try { data = await watchesRequest({ op: 'task_status', ids: lis.map((li) => li.dataset.id) }); } catch (e) { return; }
+      for (const it of (data && data.items) || []) {
+        const li = lis.find((x) => x.dataset.id === it.id);
+        if (!li) continue;
+        if (it.status === 'needs_approval') continue;
+        li.querySelectorAll('button').forEach((b) => b.remove());
+        if (REPORT_FINAL[it.status]) li.classList.add(REPORT_FINAL[it.status]);
+        const note = li.querySelector('.report-approval-result') || li.appendChild(Object.assign(document.createElement('div'), { className: 'report-approval-result' }));
+        note.textContent = it.detail || (it.status === 'approved' ? 'Approved; running.' : `Now ${it.status}.`);
+        // Still running: ask again shortly, up to ten minutes.
+        if (it.status === 'approved') { const n = Number(list.dataset.polls || 0); if (n < 30) { list.dataset.polls = String(n + 1); setTimeout(() => { delete list.dataset.refreshed; refreshReportApprovals(list); }, 20000); } }
+      }
+    }
+    try { new MutationObserver(() => { document.querySelectorAll('.report-approvals:not([data-refreshed])').forEach((l) => refreshReportApprovals(l)); }).observe(document.body, { childList: true, subtree: true }); } catch (e) { /* old browser: the buttons stay, the server still checks */ }
     async function reportDecide(btn, decision) {
       const li = btn.closest('.report-approval');
       if (!li) return;
@@ -9269,6 +9294,8 @@
         const data = await watchesRequest({ op: 'task_decide', id: li.dataset.id, source: li.dataset.source, decision });
         msg = (data && data.message) || (decision === 'approve' ? 'Approved.' : 'Declined.');
         li.classList.add(decision === 'approve' ? 'is-approved' : 'is-declined');
+        // A publish was started (or the item resolved itself): follow its real result on the card.
+        if (data && (data.decision === 'approved' || data.decision === 'resolved')) { const list = li.closest('.report-approvals'); if (list && data.decision === 'approved') setTimeout(() => { delete list.dataset.refreshed; refreshReportApprovals(list); }, 20000); }
       } catch (e) {
         msg = 'The decision could not be sent. Try again.';
         li.querySelectorAll('button').forEach((b) => { b.disabled = false; });

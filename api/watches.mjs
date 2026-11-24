@@ -43,6 +43,7 @@
 
 import { createOperatorStore, reportCardFromRow } from '../lib/operator/store.mjs';
 import { decideTask } from '../lib/operator/tasks.mjs';
+import { resolveStaleListings, refreshPublishRun } from '../lib/operator/listing.mjs';
 import { createOperatorGithub } from '../lib/operator/merge.mjs';
 import { approvedMerger } from '../lib/operator/run.mjs';
 import { startLabExperiment } from '../lib/lab/chat.mjs';
@@ -184,6 +185,23 @@ async function autonomousOp(body, res, store, opStore = null) {
     if (!opStore) return res.status(503).json({ error: 'unavailable', message: 'Reports are not set up on this deployment.' });
     const out = await decideTaskForOperator(id, body.decision, opStore);
     return res.status(out.ok ? 200 : 409).json({ ok: out.ok, decision: out.decision || null, message: out.message });
+  }
+  if (body.op === 'task_status') {
+    // A report card's items as they stand now (a card is a snapshot): listing
+    // approvals are checked against the live registry first and closed if it
+    // has caught up; an approved publish shows its run's real result.
+    const ids = (Array.isArray(body.ids) ? body.ids : []).map((x) => String(x)).filter((x) => UUID_RE.test(x)).slice(0, 20);
+    if (!opStore || !ids.length) return res.status(200).json({ ok: true, items: [] });
+    await resolveStaleListings({ opStore, fetchImpl: globalThis.fetch, ids, env: process.env, audit: getSupabaseCreds() }).catch(() => []);
+    const gh = createOperatorGithub({ env: process.env });
+    const items = [];
+    for (const id of ids) {
+      let t = await opStore.getTask(id).catch(() => null);
+      if (!t) continue;
+      if (t.kind === 'listing' && t.status === 'approved') { const r = await refreshPublishRun({ task: t, gh, opStore }).catch(() => null); if (r) t = { ...t, ...r }; }
+      items.push({ id: t.id, status: t.status, detail: String(t.detail || '').slice(0, 300), run_url: (t.approval && t.approval.run && t.approval.run.url) || null });
+    }
+    return res.status(200).json({ ok: true, items });
   }
   if (body.op === 'auto_log') {
     const before = typeof body.before === 'string' && !Number.isNaN(Date.parse(body.before)) ? new Date(body.before).toISOString() : null;
