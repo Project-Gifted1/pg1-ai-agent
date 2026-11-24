@@ -68,7 +68,7 @@ export function slides(m) {
     { id: 'tower', file: 'slide-2-crown-tower.png', shot: 'crown-tower', tag: 'The crown tower', title: 'The PG1 shield', line: "The tallest tower carries PG1's shield, drawn from the brand file itself. Its beacons follow PG1's real state: one lights when a report lands, and one stays lit for each approval waiting." },
     { id: 'events', file: 'slide-3-real-events.png', shot: 'probe-arrives', tag: Number.isFinite(c.countries) && c.countries > 0 ? `From ${c.countries} countries · ${range}` : 'Real events', title: 'Real probes and checks', line: 'Every arrival is one event PG1 logged: unknown tools and methods, malformed calls, flagged checks. Its origin country shows as a flag and an arc on the mini-globe, and the Gate Wardens turn probes back.', flags: (c.country_codes || []).slice(0, 8) },
     { id: 'signed', file: 'slide-4-signed-results.png', shot: 'seal-forge', fallbackShot: 'city-day', tag: 'Signed results', title: 'Signed results you can check', line: "When PG1 signs a tool result (Ed25519), the Seal Forge stamps a seal that rises into the tower. Anyone can check a result offline with PG1's public key, or with verify_result." },
-    { id: 'traffic-weather', file: 'slide-5-traffic-weather.png', shot: 'junction-traffic', fallbackShot: 'street-level', tag: 'Traffic and weather', title: 'Lanes, rain and real weather', line: "Cars keep to their lanes, queue at red lights and clear on green. The sky follows Dublin's real weather and time of day; in rain the streets turn wet and mirror the lights." },
+    { id: 'traffic-weather', file: 'slide-5-traffic-weather.png', shot: 'junction-traffic', fallbackShot: 'street-level', tag: 'Traffic and weather', title: 'Lanes, rain and real weather', line: "Cars keep to their lanes, queue at red lights and clear on green. The sky follows the real weather and time of day; in rain the streets turn wet and mirror the lights." },
     { id: 'river-drones', file: 'slide-6-river-drones.png', shot: 'drone-patrol', tag: 'River and drones', title: 'The river and the patrols', line: "Boats pass under the arched bridge, with lamp pools along the promenade. PG1's drones patrol in rings round the tower, one for each live check, with navigation lights at night." },
     { id: 'end', file: 'slide-7-link-in-bio.png', shot: null, tag: '', title: 'Link in bio', line: 'Free checks for AI agents.' }
   ];
@@ -98,6 +98,11 @@ const probe = (f) => { const r = spawnSync('ffprobe', ['-v', 'error', '-show_ent
 // Director mode follows one real event into a dark close-up of the river;
 // the whole-city shot replays the same director events and reads better.
 export const REEL_CUTS = Object.freeze({ director: 'its follow camera ends in a dark close-up on the river; the whole-city shot replays the same director events' });
+// The reel's cut (24 Nov re-cut), in order: six shots, each with its lower
+// third (lib/showcase/reel.mjs captions; the first on screen from frame one).
+// The other rendered shots are used for the carousel only.
+export const REEL_ORDER = Object.freeze(['crown-tower', 'probe-arrives', 'river-bridge', 'drone-patrol', 'dublin-weather', 'city-wide']);
+export const reelCut = (ready) => REEL_ORDER.map((id) => ready.find((s) => s.id === id)).filter(Boolean);
 
 export function segmentPlan(shots) {
   const n = shots.length; if (!n) return [];
@@ -139,7 +144,7 @@ function overlayHtml(shot, m) {
   const caption = captionFor(shot.def, m.counts);
   const ev = shot.replayed && shot.replayed[0];
   const card = shot.id === 'probe-arrives' || shot.id === 'seal-forge' ? `<div class="ev"><div class="evk">Real event · ${esc(DAY_TIME.format(new Date(ev.last || ev.time)))}</div><div class="evl">${ev.country_code ? `<span class="fl">${flagOf(ev.country_code)}</span>` : ''}${esc(eventCardLine(ev))}</div></div>`
-    : shot.id === 'dublin-weather' && shot.weather ? `<div class="ev"><div class="evk">Recorded Dublin weather · not live</div><div class="evl">${esc(DAY_TIME.format(new Date(`${shot.weather.rain.time}:00Z`)))} rain → ${esc(DAY_TIME.format(new Date(`${shot.weather.clear.time}:00Z`)).split(', ').pop())} clearing</div></div>`
+    : shot.id === 'dublin-weather' && shot.weather ? `<div class="ev"><div class="evk">Recorded weather · not live</div><div class="evl">${esc(DAY_TIME.format(new Date(`${shot.weather.rain.time}:00Z`)))} rain → ${esc(DAY_TIME.format(new Date(`${shot.weather.clear.time}:00Z`)).split(', ').pop())} clearing</div></div>`
     : shot.id === 'director' ? `<div class="ev"><div class="evk">Director mode · real events</div><div class="evl">${(shot.replayed || []).map((e) => esc(GADGET[e.gadget] || e.gadget)).join(' · ')}</div></div>` : '';
   const globe = shot.id === 'probe-arrives' && ev && ev.country_code ? `<canvas id="g" width="300" height="300"></canvas><script type="module">import { createGlobe } from '/kingdom/kingdom-globe.js'; const g = createGlobe(document.getElementById('g'), { flagPx: 30 }); g.draw({ origins: [], arcs: [{ cc: ${JSON.stringify(ev.country_code)}, age: 0.45 }], dpr: 1, t: 1 }); document.body.dataset.ready = '1';</script>` : '<script>document.body.dataset.ready = "1"</script>';
   return `<!doctype html><html><head><meta charset="utf-8"><style>${BASE_CSS()}
@@ -178,9 +183,11 @@ export async function build({ from, out }) {
   };
   try {
     // The reel.
-    const plan = segmentPlan(ready);
+    const cut = reelCut(ready);
+    if (!cut.length) throw new Error('no shot of the cut was rendered');
+    const plan = segmentPlan(cut);
     const segs = [];
-    for (const [i, s] of ready.entries()) {
+    for (const [i, s] of cut.entries()) {
       const ov = join(tmp, `ov-${i}.png`); await shoot(overlayHtml(s, m), 1080, 1920, ov, true);
       const seg = join(tmp, `seg-${i}.mp4`);
       ff(['-ss', '0.3', '-t', plan[i].seconds.toFixed(3), '-i', s.mp4, '-loop', '1', '-i', ov, '-filter_complex', '[0:v]scale=1080:1920,setsar=1,fps=30[v];[v][1:v]overlay=0:0:shortest=1,format=yuv420p', '-t', plan[i].seconds.toFixed(3), ...REEL_ENC, '-an', seg]);
@@ -223,9 +230,31 @@ export async function build({ from, out }) {
   } finally { await browser.close(); server.close(); rmSync(tmp, { recursive: true, force: true }); }
 }
 
+// The post's captions, word for word as approved; the counts are the
+// render's own (the feed window), never typed in.
+export function postCaptions(c) {
+  return `### Instagram / TikTok
+
+One week of real AI-agent activity, rendered as a city.
+
+${c.events} events from ${c.countries} countries: every probe and check PG1 logged, replayed as it happened.
+
+PG1 checks AI agents before they act. Free for agents and developers. Link in bio.
+
+#AIagents #AIsecurity #MCP #DevTools
+
+### X (link in the first reply)
+
+One week of real AI-agent activity, rendered as a city.
+
+${c.events} events. ${c.countries} countries. Every probe and check PG1 logged, replayed as it happened.
+
+PG1 checks AI agents before they act. Free for developers.`;
+}
+
 export function copyMd(m, sl, plan, used, info) {
   const c = m.counts || {}; const w = m.weather_record;
-  const shotRows = REEL_SHOTS.map((def) => { const s = m.shots.find((x) => x.id === def.id) || {}; const p = plan.find((x) => x.id === def.id); return `| ${def.title} | ${s.missing ? `left out: ${s.missing}` : `"${captionFor(def, c)}"`} | ${p ? `${p.seconds.toFixed(1)} s` : '-'} | ${(s.replayed || []).map((e) => `${e.kind.replace(/_/g, ' ')} ${e.country_code || ''} ${GADGET[e.gadget] || ''}: ${plainVerdict(e)} (${DAY_TIME.format(new Date(e.last || e.time))})`.replace(/\s+/g, ' ')).join('; ') || (def.id === 'dublin-weather' && w ? `recorded weather ${w.rain.time} → ${w.clear.time}` : 'none (no event staged)')} |`; });
+  const shotRows = REEL_ORDER.map((id) => REEL_SHOTS.find((d) => d.id === id)).map((def) => { const s = m.shots.find((x) => x.id === def.id) || {}; const p = plan.find((x) => x.id === def.id); return `| ${def.title} | ${s.missing ? `left out: ${s.missing}` : `"${captionFor(def, c)}"`} | ${p ? `${p.seconds.toFixed(1)} s` : '-'} | ${(s.replayed || []).map((e) => `${e.kind.replace(/_/g, ' ')} ${e.country_code || ''} ${GADGET[e.gadget] || ''}: ${plainVerdict(e)} (${DAY_TIME.format(new Date(e.last || e.time))})`.replace(/\s+/g, ' ')).join('; ') || (def.id === 'dublin-weather' && w ? `recorded weather ${w.rain.time} → ${w.clear.time}` : 'none (no event staged)')} |`; });
   return `# Inside PG1 City · ${POST_DATE}
 
 Built by \`scripts/social-inside-city.mjs\` from the Showcase render (\`scripts/showcase-render.mjs --reel inside-city\`: desktop profile, showcase quality, render scale 1.0, no UI overlays, no clock or debug labels).
@@ -244,17 +273,17 @@ Download: [${REEL_FILE}](${REEL_URL}) (release asset \`${RELEASE_TAG}\`; the MP4
 
 ${info.seconds.toFixed(1)} s, ${info.width} x ${info.height}, H.264 (libx264 -preset veryfast -crf 18), yuv420p, 30 fps, ${XFADE_S} s crossfades, no audio.
 
+${REEL_ORDER.length} shots in this order; each lower third is on screen for the whole shot, the first from the first frame. No city or place name in any caption or label.
+
 | Shot | Lower third | In the reel | Real data replayed |
 |---|---|---|---|
 ${shotRows.join('\n')}
 
-## Post caption (ready to paste)
+Rendered for the carousel only (not in the reel): ${REEL_SHOTS.filter((d) => !REEL_ORDER.includes(d.id) && !REEL_CUTS[d.id]).map((d) => d.title.toLowerCase()).join(', ')}.
 
-Inside PG1 City: a live 3D city drawn from PG1's real activity. ${c.events} real events in 7 days (${c.window ? `${dayRange(c.window.from, c.window.to)} ${new Date(c.window.to).getUTCFullYear()}` : 'the last 7 days'}), with probes and checks from ${c.countries} countries, replayed as they happened. Boats, trams, traffic and Dublin's recorded weather fill in the rest; every event in it is real.
+## Post captions (ready to paste)
 
-Free checks for AI agents: link in bio.
-
-Project-Gifted1™
+${postCaptions(c)}
 
 ## Carousel (1080 x 1350) and Story
 

@@ -6,7 +6,8 @@
  *     left out; never a payment; never a caller hash;
  *   - counts come from the same events, with their dates;
  *   - the weather shot replays a recorded rain hour, then clearing;
- *   - captions are 2-6 words; the slide text keeps the wording rules;
+ *   - captions are 2-8 words, never a city or place name; the reel is the
+ *     six-shot cut in order; the slide text keeps the wording rules;
  *   - the reel's encoding (H.264 veryfast CRF 18, yuv420p, 30 fps) and length.
  */
 
@@ -19,18 +20,43 @@ import { poseAt } from '../lib/showcase/shots.mjs';
 const NOW = Date.parse('2026-11-23T20:00:00Z');
 const ev = (o) => ({ id: Math.random().toString(16).slice(2, 18).padEnd(16, '0'), time: new Date(NOW - 3600000).toISOString(), last: new Date(NOW - 3600000).toISOString(), kind: 'probe', gadget: 'gate_wardens', role: 'attacker', severity: 'low', country_code: 'DE', caller_hash: 'abcdef12', check: 'mcp_router', verdict_code: 'UNKNOWN_METHOD', reasons: [], count: 3, ...o });
 
-test('thirteen shots (day and night), 4-6 s each, each with a plan and a 2-6 word caption', () => {
+test('thirteen shots (day and night), 4-6 s each, each with a plan and a 2-8 word caption', () => {
   assert.equal(REEL_SHOTS.length, 13);
   for (const l of ['day', 'night-rain', 'day-to-night', 'recorded']) assert.ok(REEL_SHOTS.some((s) => s.light === l), l);
   const ctx = { landmarks: { deckY: 60, emblemY: 240, forge: [-40, 0, 24] }, junction: { x: 10, z: -40 } };
   for (const s of REEL_SHOTS) {
     assert.ok(s.seconds >= 4 && s.seconds <= 6, s.id);
-    const words = captionFor(s, { countries: 12 }).split(/\s+/).filter(Boolean).length;
-    assert.ok(words >= 2 && words <= 6, `${s.id}: ${words} words`);
+    const words = captionFor(s, { countries: 12, events: 212 }).split(/\s+/).filter((w) => /\w/.test(w)).length;
+    assert.ok(words >= 2 && words <= 8, `${s.id}: ${words} words`);
     const plan = planReelShot(s.id, ctx);
     for (const t of [0, 0.5, 1]) { const p = poseAt(plan, t); assert.ok(p.dist > 0 && p.phi > 0.8 && p.phi < (p.free ? 1.75 : 1.6), `${s.id} ${t}`); } // eye-level (free) shots may look a little up at the tower
   }
-  assert.equal(captionFor(REEL_SHOTS.find((s) => s.id === 'probe-arrives'), { countries: 12 }), 'Probes from 12 countries');
+  assert.equal(captionFor(REEL_SHOTS.find((s) => s.id === 'probe-arrives'), { countries: 12, events: 212 }), '212 real events in 7 days');
+});
+
+test('the reel re-cut: six shots in order with their lower thirds; no city or place name in a caption or label', async () => {
+  const b = await import('../scripts/social-inside-city.mjs');
+  const counts = { countries: 12, events: 212 };
+  assert.deepEqual([...b.REEL_ORDER], ['crown-tower', 'probe-arrives', 'river-bridge', 'drone-patrol', 'dublin-weather', 'city-wide']);
+  assert.deepEqual(b.REEL_ORDER.map((id) => captionFor(REEL_SHOTS.find((s) => s.id === id), counts)), [
+    'A city built from real AI-agent activity',
+    '212 real events in 7 days',
+    'One week, replayed as it happened',
+    'Probes and checks from 12 countries',
+    'Real weather, real time of day',
+    'Free checks for AI agents · Link in bio'
+  ]);
+  // The cut follows REEL_ORDER whatever order the renders come in, and skips a shot that was not rendered.
+  const ready = ['city-wide', 'tram', 'crown-tower', 'drone-patrol', 'probe-arrives', 'river-bridge'].map((id) => ({ id }));
+  assert.deepEqual(b.reelCut(ready).map((s) => s.id), ['crown-tower', 'probe-arrives', 'river-bridge', 'drone-patrol', 'city-wide']);
+  const places = /\b(Dublin|Ireland|Irish|Liffey|Europe)\b/i;
+  for (const s of REEL_SHOTS) { assert.doesNotMatch(captionFor(s, counts), places, s.id); assert.doesNotMatch(s.title, places, s.id); }
+  const sl = b.slides({ counts: { ...counts, country_codes: ['DE'], window: { from: '2026-11-17T00:14:54Z', to: '2026-11-24T00:14:54Z' } } });
+  for (const h of sl) assert.doesNotMatch(`${h.tag} ${h.title} ${h.line}`, places, h.id);
+  // The post captions, word for word, with the render's counts.
+  const cap = b.postCaptions(counts);
+  assert.match(cap, /### Instagram \/ TikTok\n\nOne week of real AI-agent activity, rendered as a city\.\n\n212 events from 12 countries: every probe and check PG1 logged, replayed as it happened\.\n\nPG1 checks AI agents before they act\. Free for agents and developers\. Link in bio\.\n\n#AIagents #AIsecurity #MCP #DevTools\n/);
+  assert.match(cap, /### X \(link in the first reply\)\n\nOne week of real AI-agent activity, rendered as a city\.\n\n212 events\. 12 countries\. Every probe and check PG1 logged, replayed as it happened\.\n\nPG1 checks AI agents before they act\. Free for developers\.$/);
 });
 
 test('real events only: picks come from the window, never a payment, a probe needs its country', () => {
