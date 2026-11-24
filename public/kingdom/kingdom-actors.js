@@ -28,6 +28,7 @@
 // gadget actions taken on a real event passed to stage().
 
 import { at, CITY_R, RIVER, GATE_BEARINGS, PLAZA_R } from './kingdom-world.js';
+import { ringAltitude, keepClear } from './kingdom-flight.js';
 import { countryBearing, PG1_COLORS, defenceLine, reasonLabel } from './kingdom-data.js';
 
 export { CITY_R };
@@ -331,7 +332,7 @@ export function createActors(THREE, scene, world, settings) {
   // Sentinels: one per live check, in rings round the tower and over the skyline.
   function setSentinels(n) {
     const want = Math.max(0, Math.min(SENTINEL_CAP, Number(n) || 0));
-    while (sentinels.live < want) { const k = sentinels.live; sentinels.add({ ring: 45 + (k % 4) * 45, alt: 70 + (k % 5) * 22, a0: (k * 2.39996) % (Math.PI * 2), dir: k % 2 ? 1 : -1, escort: null, scale: S }); }
+    while (sentinels.live < want) { const k = sentinels.live; const ring = 45 + (k % 4) * 45; sentinels.add({ ring, alt: ringAltitude(world.obstacles, ring, 70 + (k % 5) * 22), a0: (k * 2.39996) % (Math.PI * 2), dir: k % 2 ? 1 : -1, escort: null, scale: S }); }
     if (sentinels.live > want) sentinels.agents.length = want;
     return sentinels.live;
   }
@@ -340,15 +341,23 @@ export function createActors(THREE, scene, world, settings) {
   let shieldLoad = 0;
   let lanternsLit = 0;
 
+  // Showcase and social renders (setLabelBox): plain words only (no
+  // internal names or raw reason codes), and every label kept whole inside
+  // a box of the frame (NDC), shrunk if it is wider than the box.
+  let labelBox = null;
+  // Half the label's height in NDC: 0.016 is about 31 px of a 1920 px frame.
+  const LABEL_MIN_H = 0.016;
   function label(text, pos, color, ttl = 6) {
+    if (!text) return;
     const sp = textSprite(THREE, text, color);
     sp.position.set(pos.x, pos.y, pos.z);
     sp.scale.multiplyScalar(phone ? 3.2 : 2.6);
     root.add(sp);
-    labels.push({ sp, ttl, y0: pos.y });
+    labels.push({ sp, ttl, y0: pos.y, x0: pos.x, z0: pos.z, s0: sp.scale.clone() });
     if (labels.length > 8) { const old = labels.shift(); root.remove(old.sp); old.sp.material.map.dispose(); old.sp.material.dispose(); }
   }
-  const defenceLabel = (e, pos) => label(defenceLine(e), pos, '#f3c623');
+  const defenceLabel = (e, pos) => label(defenceLine(e, { plain: !!labelBox }), pos, '#f3c623');
+  const reasonTag = (code, pos) => { if (!labelBox) label(reasonLabel(code), pos, '#ff6a4a', 5); };
 
   // Allies.
   function spawnAllyBoat(event, crowd) {
@@ -387,7 +396,7 @@ export function createActors(THREE, scene, world, settings) {
         root.add(beam); props.push({ mesh: beam, kind: 'flash', ttl: 3, peak: beam.material.opacity });
         for (const a of group.agents) a.burn = 1;
         // The poisoned content's hidden text is the enemy's: in its red.
-        if (e.reasons[0]) label(reasonLabel(e.reasons[0]), { x: lp.x, y: lp.y + 7, z: lp.z }, '#ff6a4a', 5);
+        if (e.reasons[0]) reasonTag(e.reasons[0], { x: lp.x, y: lp.y + 7, z: lp.z });
         break;
       }
       case 'repo_scanner': {
@@ -398,7 +407,7 @@ export function createActors(THREE, scene, world, settings) {
         cage.position.set(group.cx, group.cy + 30, group.cz);
         root.add(cage); props.push({ mesh: cage, kind: 'net', goalY: group.cy, ttl: 6 });
         for (const a of group.agents) a.sink = 1;
-        if (e.reasons[0]) label(reasonLabel(e.reasons[0]), { x: lp.x, y: lp.y + 7, z: lp.z }, '#ff6a4a', 5);
+        if (e.reasons[0]) reasonTag(e.reasons[0], { x: lp.x, y: lp.y + 7, z: lp.z });
         break;
       }
       case 'supply_inspector': world.xray.material.opacity = 0.6; world.crane.rotation.y = 0.5; for (const a of group.agents) a.sink = 1; break;
@@ -506,6 +515,24 @@ export function createActors(THREE, scene, world, settings) {
 
   const camTmp = new THREE.Vector3();
   let pg1MaxR = 0;
+  const fitV = new THREE.Vector3(); const fitC = new THREE.Vector3();
+  function fitLabel(sp, cam) {
+    const b = labelBox;
+    cam.updateMatrixWorld(); fitC.setFromMatrixPosition(cam.matrixWorld);
+    cam.getWorldDirection(fitV); const depth = fitV.dot(sp.position.clone().sub(fitC));
+    if (depth <= cam.near) { sp.material.opacity = 0; return; }
+    const tanH = Math.tan((cam.fov * Math.PI) / 360);
+    let hw = sp.scale.x / 2 / (depth * tanH * cam.aspect); let hh = sp.scale.y / 2 / (depth * tanH);
+    const room = (b.x1 - b.x0) / 2 * 0.98;
+    // Never smaller than readable (a far label would shrink to a thin bar):
+    // at least LABEL_MIN_H of the frame's height, then never wider than the box.
+    if (hh < LABEL_MIN_H) { const k = LABEL_MIN_H / hh; sp.scale.multiplyScalar(k); hw *= k; hh *= k; }
+    if (hw > room) { const k = room / hw; sp.scale.multiplyScalar(k); hw *= k; hh *= k; }
+    fitV.copy(sp.position).project(cam);
+    const cx = Math.min(b.x1 - hw, Math.max(b.x0 + hw, fitV.x));
+    const cy = Math.min(b.y1 - hh, Math.max(b.y0 + hh, fitV.y));
+    if (cx !== fitV.x || cy !== fitV.y) { fitV.x = cx; fitV.y = cy; sp.position.copy(fitV.unproject(cam)); }
+  }
   const moveTo = (a, t, sp, dt) => { const dx = t.x - a.x; const dy = t.y - a.y; const dz = t.z - a.z; const d = Math.hypot(dx, dy, dz); if (d > 0.3) { const k = Math.min(1, (sp * dt) / d); a.x += dx * k; a.y += dy * k; a.z += dz * k; if (Math.hypot(dx, dz) > 0.5) a.heading = Math.atan2(dx, dz); } return d; };
   function update(dt, t, camera, { storm = 0 } = {}) {
     camTmp.copy(camera.position);
@@ -579,12 +606,18 @@ export function createActors(THREE, scene, world, settings) {
       if (pr.ttl <= 0) { root.remove(pr.mesh); pr.mesh.geometry.dispose(); pr.mesh.material.dispose(); }
     }
     for (let i = props.length - 1; i >= 0; i--) if (props[i].ttl <= 0) props.splice(i, 1);
-    for (const l of labels) { l.ttl -= dt; l.sp.position.y = l.y0 + Math.min(4, (6 - l.ttl) * 0.6); l.sp.material.opacity = Math.min(1, Math.max(0, l.ttl)); }
+    for (const l of labels) { l.ttl -= dt; l.sp.position.set(l.x0, l.y0 + Math.min(4, (6 - l.ttl) * 0.6), l.z0); l.sp.scale.copy(l.s0); l.sp.material.opacity = Math.min(1, Math.max(0, l.ttl)); if (labelBox) fitLabel(l.sp, camera); }
     for (let i = labels.length - 1; i >= 0; i--) if (labels[i].ttl <= 0) { root.remove(labels[i].sp); labels[i].sp.material.map.dispose(); labels[i].sp.material.dispose(); labels.splice(i, 1); }
     for (const c of PG1_UNITS) for (const a of c.agents) { const rr = Math.hypot(a.x, a.z); if (rr > pg1MaxR) pg1MaxR = rr; }
     // The underglow: faint, at night only.
     const glow = DRONE_LOOK.glowNight * Math.max(0, Math.min(1, (world.env && world.env.night) || 0));
     for (const m of underMats) m.opacity = glow;
+    // Nothing that flies goes through a building (kingdom-flight.js): every
+    // drone stays DRONE_CLEARANCE above the highest roof within DRONE_RADIUS,
+    // and climbs early towards a building ahead. PG1's own tower
+    // is left out (its drones dock on its deck), and the patrol rings keep
+    // their distance from it by design.
+    if (world.obstacles && world.obstacles.topAt) for (const c of crowds) if (c.fly) for (const a of c.agents) keepClear(world.obstacles, a, dt);
     for (const c of crowds) c.write(t, camTmp);
   }
 
@@ -593,6 +626,17 @@ export function createActors(THREE, scene, world, settings) {
     if (g) { const a = g.agents.find((x) => x.fade > 0.05) || g.agents[0]; if (a) return { x: a.x, y: a.y, z: a.z }; return { x: g.cx, y: g.cy, z: g.cz }; }
     for (const c of [allyBoats, cargoShips, partners]) { const b = c.agents.find((x) => x.eventId === id); if (b) return { x: b.x, y: b.y + 4, z: b.z }; }
     return null;
+  }
+
+  // Seconds until an event's group reaches its mark (0 once it has; null if
+  // nothing is playing for it): the Showcase starts a shot just before.
+  function eta(id) {
+    const g = groups.get(id);
+    if (!g) return null;
+    if (g.phase !== 'advance') return 0;
+    let worst = 0;
+    for (const a of g.agents) { const d = Math.hypot(a.tx - a.x, a.ty - a.y, a.tz - a.z); worst = Math.max(worst, (a.delay > 0 ? a.delay : 0) + d / Math.max(1, a.speed)); }
+    return worst;
   }
 
   const ray = new THREE.Raycaster();
@@ -608,7 +652,14 @@ export function createActors(THREE, scene, world, settings) {
   return {
     // The frame-time ladder (kingdom-look.js): drones without rotors, glows and trails.
     setLean(on) { for (const c of crowds) c.lean = !!on; },
-    stage, update, whereIs, pick, setSentinels,
+    stage, update, whereIs, eta, pick, setSentinels,
+    // { x0, x1, y0, y1 } in NDC (-1..1), or null (the live City: labels where they happen).
+    setLabelBox(b) { labelBox = b ? { ...b } : null; },
+    labelRects(cam) { return labels.filter((l) => l.sp.material.opacity > 0.05).map((l) => { const v = l.sp.position.clone(); cam.updateMatrixWorld(); const c = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld); const f = new THREE.Vector3(); cam.getWorldDirection(f); const depth = f.dot(v.clone().sub(c)); const tanH = Math.tan((cam.fov * Math.PI) / 360); v.project(cam); const hw = l.sp.scale.x / 2 / (depth * tanH * cam.aspect); const hh = l.sp.scale.y / 2 / (depth * tanH); return { x0: v.x - hw, x1: v.x + hw, y0: v.y - hh, y1: v.y + hh }; }); },
+    // Every flying agent's position (tests: tests/browser/kingdom-flight.browser.test.mjs).
+    flyers() { const out = []; crowds.forEach((c, ci) => { if (c.fly) for (const a of c.agents) if (!(a.delay > 0)) out.push({ crowd: ci, x: a.x, y: a.y, z: a.z }); }); return out; },
+    // The seal in flight (Showcase: the Seal Forge shot follows it), or null.
+    sealAt() { const p = props.find((x) => x.kind === 'seal'); return p ? { x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z } : null; },
     set onFire(fn) { onFire = typeof fn === 'function' ? fn : null; },
     setLanterns(n) { lanternsLit = Math.max(0, Math.min(world.lanterns.length, Number(n) || 0)); return lanternsLit; },
     commanderTo(p) { if (p) { cmd.mode = 'hover'; cmd.target = insideCity({ x: p.x, y: Math.max((p.y || 0) + 30, 50), z: p.z }, CITY_R - 40); cmd.until = performance.now() + 15000; } else if (cmd.mode === 'hover') { cmd.mode = 'docked'; cmd.target = { ...DOCK }; } },

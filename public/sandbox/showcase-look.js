@@ -157,8 +157,12 @@ export function createWetGround(THREE, Reflector, { width, depth, y = 0.08, text
         refl /= wsum;
         vec3 v = normalize(cameraPosition - vW);
         float fres = 0.04 + 0.96 * pow(1.0 - clamp(v.y, 0.0, 1.0), 5.0);
-        float a = uWet * mix(0.5, 0.95, puddle) * mix(0.65, 1.0, fres);
-        gl_FragColor = vec4(refl * 1.35, a);
+        // Wet asphalt is no mirror: walls and roofs come back faint (never a
+        // see-through double of a building), lamps and headlights strongly.
+        float lum = dot(refl, vec3(0.2126, 0.7152, 0.0722));
+        float lights = smoothstep(0.45, 1.4, lum);
+        float a = uWet * mix(0.08, 0.42, puddle) * mix(0.35, 1.0, fres) * mix(0.4, 1.0, lights);
+        gl_FragColor = vec4(refl, a);
         #include <tonemapping_fragment>
         #include <colorspace_fragment>
       }`

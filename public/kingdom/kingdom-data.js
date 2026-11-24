@@ -321,10 +321,14 @@ export function defenceAction(e) {
 }
 
 // The defence's caption: "<gadget> · <check>: <verdict> (<reason code>)".
-export function defenceLine(e) {
+// plain (the Showcase and social renders): the gadget and the verdict in
+// words only, never an internal name (a tool or route such as mcp_router)
+// or a raw reason code.
+export function defenceLine(e, { plain = false } = {}) {
   const d = defenceAction(e);
   if (!d) return '';
   const name = GADGET_META[d.gadget].name;
+  if (plain) return `${name}: ${String(verdictText(e) || '').toLowerCase().replace(/_/g, ' ')}`;
   const reason = e.reasons.length ? ` (${reasonLabel(e.reasons[0])})` : '';
   return `${name} · ${e.check}: ${verdictText(e)}${reason}`;
 }

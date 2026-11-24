@@ -87,6 +87,15 @@ export function makeObstacleIndex(boxes, cell = 100) {
         }
       }
       return null;
+    },
+    // The highest roof under (x, z), padded by margin; 0 when nothing is
+    // there. PG1's own tower (pg1: true) is left out: its drones dock on it.
+    topAt(x, z, margin = 0) {
+      const i = Math.floor(x / cell); const j = Math.floor(z / cell); let top = 0;
+      for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) for (const b of grid.get(key(i + di, j + dj)) || []) {
+        if (!b.pg1 && Math.abs(x - b.x) <= b.hw + margin && Math.abs(z - b.z) <= b.hd + margin && b.top > top) top = b.top;
+      }
+      return top;
     }
   };
 }
@@ -286,6 +295,7 @@ function streakTexture(THREE) {
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
+import { footprint } from './kingdom-flight.js';
 import { buildEmblem, buildHologram, brandCanvas } from './kingdom-emblem.js';
 import { billboardLines } from './kingdom-data.js';
 
@@ -429,9 +439,21 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     if (l.x > 150 && l.x < 270 && l.z > 10 && l.z < RIVER.z) return false;
     if (inPark(l.x, l.z, big)) return false;
     if (inHeroCorridor(l.x, l.z, big * 0.6)) return false;
+    // Never into the shopping centre or the retail parade (reserved first).
+    if (reserved.some((q) => Math.abs(l.x - q.x) < (l.w + q.w) / 2 + 6 && Math.abs(l.z - q.z) < (l.d + q.d) / 2 + 6)) return false;
     lots.push({ seed: r() * 1000, ...l });
+    if (l.kind) reserved.push(l);
     return true;
   };
+  const reserved = [];
+  // Street-level retail: a shopping centre (a broad, low block of shop
+  // fronts with lit sign bands, awnings and a glass atrium on the roof) and
+  // a parade of two-storey shop units along the next street. Same materials
+  // as the rest of the skyline, so no new draw calls on a phone.
+  let mall = null;
+  for (const [mx, mz] of [[240, -120], [240, -280], [-400, -120], [400, -280]]) if (tryLot({ ring: 'near', kind: 'mall', x: mx, z: mz, w: 96, d: 64, h: 18, shape: 'box', style: STYLES.podium })) { mall = lots[lots.length - 1]; break; }
+  const parade = [];
+  for (let x = 340; x <= 452; x += 22) if (tryLot({ ring: 'near', kind: 'shop', x, z: -122, w: 18, d: 14, h: 8, shape: 'box', style: STYLES.podium })) parade.push(lots[lots.length - 1]);
   const pickShape = () => { const k = r(); return k < 0.32 ? 'box' : k < 0.48 ? 'round' : k < 0.62 ? 'taper' : k < 0.76 ? 'twist' : 'setback'; };
   for (let i = 0; i < nearN * 8 && lots.filter((l) => l.ring === 'near').length < nearN; i++) {
     const a = r() * Math.PI * 2; const d = 75 + Math.pow(r(), 0.8) * 430;
@@ -465,10 +487,12 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   const roofSpots = [];
   for (const l of lots) {
     const ry = (l.seed % 1) * 0.3;
-    const add = (kind, x, y, z, w, h, d, extra = {}) => { parts[kind].push({ x, y, z, w, h, d, ry, seed: l.seed + parts[kind].length * 0.01, style: l.style, ...extra }); obstacles.push({ x, z, hw: w * 0.5 + d * 0.08, hd: d * 0.5 + w * 0.08, top: y + h }); };
+    const add = (kind, x, y, z, w, h, d, extra = {}) => { parts[kind].push({ x, y, z, w, h, d, ry, seed: l.seed + parts[kind].length * 0.01, style: l.style, ...extra }); const f = footprint(w, d, ry, kind); obstacles.push({ x, z, hw: f.hw, hd: f.hd, top: y + h }); };
     // A podium at street level under the tall ones.
     let base = 0;
     if (l.ring === 'near' && l.h > 70) { add('box', l.x, 0, l.z, l.w * 1.35, 9, l.d * 1.35, { style: STYLES.podium }); base = 9; detail.podiums.push({ x: l.x, z: l.z, w: l.w * 1.35, d: l.d * 1.35, ry }); }
+    // The shopping centre and the shop units: shop fronts all round, awnings, and the centre's glass atrium.
+    if (l.kind) { detail.podiums.push({ x: l.x, z: l.z, w: l.w, d: l.d, ry, kind: l.kind }); if (l.kind === 'mall') add('box', l.x, l.h, l.z, l.w * 0.45, 7, l.d * 0.4, { style: STYLES.glass }); }
     if (l.ring === 'near' || l.ring === 'mid' || l.ring === 'river') detail.lots.push(l);
     const h = l.h - base;
     if (l.shape === 'setback') {
@@ -477,7 +501,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       add('box', l.x, base + h * 0.8, l.z, l.w * 0.55, h * 0.2, l.d * 0.55);
     } else add(l.shape, l.x, base, l.z, l.w, h, l.d);
     const top = l.h;
-    if (l.ring === 'near' && (l.shape === 'box' || l.shape === 'setback') && r() < 0.35) { const cw = l.w * (l.shape === 'setback' ? 0.55 : 1); parts.crown.push({ x: l.x, y: top, z: l.z, w: cw, h: 10 + r() * 10, d: l.d * (l.shape === 'setback' ? 0.55 : 1), ry, seed: l.seed + 9, style: STYLES.glass }); }
+    if (l.ring === 'near' && (l.shape === 'box' || l.shape === 'setback') && r() < 0.35) { const cw = l.w * (l.shape === 'setback' ? 0.55 : 1); const cr = { x: l.x, y: top, z: l.z, w: cw, h: 10 + r() * 10, d: l.d * (l.shape === 'setback' ? 0.55 : 1), ry, seed: l.seed + 9, style: STYLES.glass }; parts.crown.push(cr); const f = footprint(cr.w, cr.d, ry); obstacles.push({ x: cr.x, z: cr.z, hw: f.hw, hd: f.hd, top: cr.y + cr.h }); }
     if (top > 55 || l.ring === 'mid') roofSpots.push({ x: l.x, y: top, z: l.z, h: top, w: Math.min(l.w, l.d) * (l.shape === 'setback' ? 0.55 : l.shape === 'taper' ? 0.5 : 0.8), ring: l.ring });
   }
   for (const [kind, list] of Object.entries(parts)) {
@@ -592,20 +616,49 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       #endif`);
   };
   mats.leaf.customProgramCacheKey = () => 'pg1-leaf-wind';
-  const crowns = named(new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.2, 0), mats.leaf, treeSpots.length), 'tree-crowns');
-  treeSpots.forEach(([x, z], i) => { set(trunks, i, x, 1.5, z); set(crowns, i, x, 4.4, z, 1, 1.2, 1, i); });
+  // Crowns: on the desktop tiers, a clump of three rounded masses (an oval
+  // canopy, not a gem); on the phone tiers the single low crown. Each tree
+  // takes its own shade of green and size, so a row never looks stamped out.
+  const richTrees = !phone && !settings.leanCity;
+  const crownGeo = (() => {
+    if (!richTrees) return new THREE.IcosahedronGeometry(2.2, 0);
+    const lumps = [[0, 0.2, 0, 1.9], [-0.95, -0.35, 0.45, 1.45], [0.9, -0.25, -0.4, 1.5], [0.15, -0.4, 0.95, 1.3]].map(([x, y, z, r]) => { const g = new THREE.IcosahedronGeometry(r, 1); g.translate(x, y, z); return g.toNonIndexed(); });
+    const total = lumps.reduce((a, g) => a + g.attributes.position.count, 0); const out = new THREE.BufferGeometry();
+    for (const name of ['position', 'normal']) { const arr = new Float32Array(total * 3); let o = 0; for (const g of lumps) { arr.set(g.attributes[name].array, o); o += g.attributes[name].array.length; } out.setAttribute(name, new THREE.BufferAttribute(arr, 3)); }
+    lumps.forEach((g) => g.dispose()); out.computeBoundingSphere(); return out;
+  })();
+  const crowns = named(new THREE.InstancedMesh(crownGeo, mats.leaf, treeSpots.length), 'tree-crowns');
+  { const tc = rng(29); const shade = new THREE.Color();
+    treeSpots.forEach(([x, z], i) => { const s = 0.82 + tc() * 0.4; set(trunks, i, x, 1.5 * s, z, 1, s, 1, 0); set(crowns, i, x, 4.4 * s, z, s, s * (1.05 + tc() * 0.2), s, i);
+      if (richTrees) crowns.setColorAt(i, shade.setRGB(0.78 + tc() * 0.4, 0.85 + tc() * 0.3, 0.7 + tc() * 0.35)); }); }
   root.add(trunks); root.add(crowns);
 
   // --- the PG1 Tower ---
   const keep = named(new THREE.Group(), 'pg1-tower');
-  const podium = named(new THREE.Mesh(new THREE.CylinderGeometry(30, 32, PODIUM_H, 6), mats.steelDark), 'tower-podium'); podium.position.y = PODIUM_H / 2; podium.rotation.y = Math.PI / 6; keep.add(podium);
+  // The podium: on the desktop tiers a lit glass lobby between stone bands
+  // (at eye level the plain dark steel read as a black wall); the phone tiers
+  // keep one plain material (one draw call).
+  const podiumMats = (() => {
+    if (phone) return mats.steelDark;
+    const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 64; const g = cv.getContext('2d');
+    g.fillStyle = '#8f949b'; g.fillRect(0, 0, 1024, 64); g.fillStyle = '#1e2933'; g.fillRect(0, 12, 1024, 44);
+    g.fillStyle = '#c9ccd1'; for (let x = 0; x < 1024; x += 32) g.fillRect(x, 12, 3, 44); g.fillRect(0, 12, 1024, 2); g.fillRect(0, 54, 1024, 2);
+    const map = new THREE.CanvasTexture(cv); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4;
+    const ecv = document.createElement('canvas'); ecv.width = 1024; ecv.height = 64; const e = ecv.getContext('2d'); e.fillStyle = '#000'; e.fillRect(0, 0, 1024, 64);
+    e.fillStyle = '#6b5a3c'; for (let x = 3; x < 1024; x += 32) e.fillRect(x, 16, 29, 38);
+    const emissiveMap = new THREE.CanvasTexture(ecv); emissiveMap.colorSpace = THREE.SRGBColorSpace;
+    const side = new THREE.MeshStandardMaterial({ color: 0xffffff, map, emissive: 0xffffff, emissiveMap, emissiveIntensity: 0.9, roughness: 0.35, metalness: 0.2 });
+    const top = std(0x7d838b, { roughness: 0.6, metalness: 0.15 });
+    return [side, top, top];
+  })();
+  const podium = named(new THREE.Mesh(new THREE.CylinderGeometry(30, 32, PODIUM_H, 6), podiumMats), 'tower-podium'); podium.position.y = PODIUM_H / 2; podium.rotation.y = Math.PI / 6; keep.add(podium);
   const spireGeo = new THREE.CylinderGeometry(2.2, 24, SPIRE_H, 6, 1, true); spireGeo.translate(0, SPIRE_H / 2, 0);
   spireGeo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(new Float32Array([777]), 1));
   spireGeo.setAttribute('aStyle', new THREE.InstancedBufferAttribute(new Float32Array([STYLES.glass]), 1));
   const spire = named(new THREE.InstancedMesh(spireGeo, facade, 1), 'tower-spire');
   set(spire, 0, 0, PODIUM_H, 0, 1, 1, 1, Math.PI / 6);
   keep.add(spire);
-  obstacles.push({ x: 0, z: 0, hw: 30, hd: 30, top: PODIUM_H + 60 }, { x: 0, z: 0, hw: 20, hd: 20, top: PODIUM_H + 120 }, { x: 0, z: 0, hw: 12, hd: 12, top: TOWER_TOP });
+  obstacles.push({ x: 0, z: 0, hw: 30, hd: 30, top: PODIUM_H + 60, pg1: true }, { x: 0, z: 0, hw: 20, hd: 20, top: PODIUM_H + 120, pg1: true }, { x: 0, z: 0, hw: 12, hd: 12, top: TOWER_TOP, pg1: true });
   const radiusAt = (y) => 24 - (24 - 2.2) * ((y - PODIUM_H) / SPIRE_H);
   for (let k = 0; k < 6; k++) {
     const a = (k / 6) * Math.PI * 2;
@@ -921,15 +974,17 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     const cu = { uTime: { value: 0 }, uCover: { value: 0.32 }, uDark: { value: 0 }, uLight: { value: 1 }, uWarm: { value: new THREE.Color(0xff9a5a) }, uSunXZ: { value: new THREE.Vector2(-1, 0) }, uScale: { value: scale }, uSpeed: { value: speed } };
     const c = named(new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000), new THREE.ShaderMaterial({
       uniforms: cu, transparent: true, depthWrite: false, fog: false,
-      vertexShader: 'varying vec2 vU; void main(){ vU = position.xy; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-      fragmentShader: `uniform float uTime; uniform float uCover; uniform float uDark; uniform float uLight; uniform vec3 uWarm; uniform vec2 uSunXZ; uniform float uScale; uniform float uSpeed; varying vec2 vU;
+      vertexShader: 'varying vec2 vU; varying vec3 vCW; void main(){ vU = position.xy; vCW = (modelMatrix*vec4(position,1.0)).xyz; gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+      fragmentShader: `uniform float uTime; uniform float uCover; uniform float uDark; uniform float uLight; uniform vec3 uWarm; uniform vec2 uSunXZ; uniform float uScale; uniform float uSpeed; varying vec2 vU; varying vec3 vCW;
         float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
         float n(vec2 p){ vec2 i = floor(p); vec2 f = fract(p); f = f*f*(3.0-2.0*f); return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+vec2(1,1)), f.x), f.y); }
         float fbm(vec2 p){ float t = 0.0; float a = 0.5; for (int i = 0; i < 5; i++){ t += a*n(p); p *= 2.03; a *= 0.5; } return t; }
         void main(){ vec2 p = vU / uScale + vec2(uTime*0.004, uTime*0.0025) * uSpeed; float d = fbm(p); float c = smoothstep(1.0 - uCover, 1.0 - uCover + 0.3, d); float edge = 1.0 - smoothstep(2500.0, 4200.0, length(vU));
           vec2 w = vec2(vU.x, -vU.y); float toward = smoothstep(-0.2, 0.9, dot(normalize(w + 1e-3), normalize(uSunXZ)));
           vec3 lit = mix(vec3(0.26, 0.28, 0.38), uWarm, toward * (1.0 - uDark) * (0.5 + 0.5 * (1.0 - d)));
-          vec3 col = mix(lit, vec3(0.13, 0.14, 0.17), uDark) * (0.3 + 0.7 * uLight); gl_FragColor = vec4(col, c * edge * 0.85); }`
+          vec3 col = mix(lit, vec3(0.13, 0.14, 0.17), uDark) * (0.3 + 0.7 * uLight); // Seen at a grazing angle the layer fades into the sky (no hard seam where it meets the horizon).
+          float graze = smoothstep(0.04, 0.32, abs(normalize(vCW - cameraPosition).y));
+          gl_FragColor = vec4(col, c * edge * graze * 0.85); }`
     })), 'clouds');
     c.rotation.x = Math.PI / 2; c.position.y = y; c.renderOrder = 2;
     scene.add(c); cloudLayers.push(cu);
@@ -938,14 +993,28 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   const tmp = new THREE.Vector3();
   const cool = new THREE.Color(0x9fb8ff);
   const env = { night: 0 };
-  let emblemPulse = 0;
+  let emblemPulse = 0; let emblemLit = 1;
   let cloudLag = 0;
   let wetNow = 0;
   let cloudClock = 0;
+  // The shopping centre's sign over its entrance (desktop tiers: one more
+  // draw call; the phone tiers keep the lit sign bands of the shop fronts).
+  if (mall && !phone && !legacy) {
+    const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 128; const g = cv.getContext('2d');
+    g.fillStyle = '#0c0e12'; g.fillRect(0, 0, 1024, 128); g.fillStyle = '#ffe7b8'; g.font = '600 74px Inter, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('SHOPPING CENTRE', 512, 68);
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+    const sign = named(new THREE.Mesh(new THREE.PlaneGeometry(36, 4.5), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false })), 'shopping-centre-sign');
+    const ry = (mall.seed % 1) * 0.3;
+    sign.position.set(mall.x + Math.sin(ry) * (mall.d / 2 + 0.3), 12.5, mall.z + Math.cos(ry) * (mall.d / 2 + 0.3)); sign.rotation.y = ry;
+    root.add(sign);
+  }
   return {
+    mall: mall ? { x: mall.x, z: mall.z, w: mall.w, d: mall.d, h: mall.h, ry: (mall.seed % 1) * 0.3 } : null,
     root, gates, portcullis, vaultDoors, beacons, lanterns, forge: { group: forge, seal: sealMat }, harbour: { bearing: Math.atan2(harbourPoint.x, -harbourPoint.z), point: harbourPoint },
     tollBarrier: barrier, toll, dome: domeUniforms, domeMesh: dome, preflight, crane, xray, deckY: DECK_Y, tip: tip.position, roofSpots,
     fogBearing, keep, sun, hemi, sky, windows: facade.userData.windows, env, buildingCount: lots.length,
+    // Street-level retail podiums (the shopping centre, the shop units, the towers' podiums): kingdom-shops.js.
+    retail: detail.podiums.map((p) => ({ ...p })),
     obstacles: makeObstacleIndex(obstacles), mirror, brandTex, emblemY,
     emblemMeshes: emblems3d.map((e) => e.group),
     setBillboards(stats) { drawBillboards(stats); },
@@ -965,6 +1034,8 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     get billboardText() { return billboards[0] ? billboards[0].text : []; },
     // A gadget fired: the emblem pulses once in gold; on a high-severity
     // event it brightens and the shield's ripple starts from it.
+    // The Showcase: the emblem's own glow (1 live; lower so a still keeps the shield's shape).
+    setEmblemGlow(k) { emblemLit = Math.max(0, Math.min(1, Number(k) || 0)); },
     pulseEmblem(high = false) {
       emblemPulse = high ? 1.6 : 1;
       if (high) { const p = new THREE.Vector3(0, emblemY, radiusAt(emblemY)).normalize(); domeUniforms.uHit.value.copy(p); domeUniforms.uHitT.value = 0; }
@@ -1062,9 +1133,9 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       // The emblem: its gold edge glows at dusk and night; a pulse when a gadget fires.
       emblemPulse = Math.max(0, emblemPulse - dt * 0.9);
       const dark = lit;
-      for (const e of emblems3d) { e.gold.emissiveIntensity = 0.12 + 0.35 * dark + 1.4 * emblemPulse; e.edge.opacity = Math.min(1, 0.35 + 0.65 * dark + emblemPulse); }
+      for (const e of emblems3d) { e.gold.emissiveIntensity = (0.12 + 0.35 * dark + 1.4 * emblemPulse) * emblemLit; e.edge.opacity = Math.min(1, 0.35 + 0.65 * dark + emblemPulse) * (0.5 + 0.5 * emblemLit); }
       if (hologram) { hologram.uniforms.uTime.value = t; hologram.uniforms.uAlpha.value = Math.max(0, moon - 0.35) * 1.4 + emblemPulse * 0.3; hologram.mesh.rotation.y = t * 0.15; hologram.mesh.visible = hologram.uniforms.uAlpha.value > 0.01; }
-      if (emblemGlow) emblemGlow.material.opacity = 0.12 + 0.3 * dark + 0.4 * emblemPulse;
+      if (emblemGlow) emblemGlow.material.opacity = (0.12 + 0.3 * dark + 0.4 * emblemPulse) * emblemLit * emblemLit;
       if (inlay) inlay.material.opacity = 0.55 + 0.4 * dark;
     }
   };

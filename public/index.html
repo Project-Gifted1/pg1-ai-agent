@@ -9284,7 +9284,21 @@
         if (it.status === 'approved') { const n = Number(list.dataset.polls || 0); if (n < 30) { list.dataset.polls = String(n + 1); setTimeout(() => { delete list.dataset.refreshed; refreshReportApprovals(list); }, 20000); } }
       }
     }
-    try { new MutationObserver(() => { document.querySelectorAll('.report-approvals:not([data-refreshed])').forEach((l) => refreshReportApprovals(l)); }).observe(document.body, { childList: true, subtree: true }); } catch (e) { /* old browser: the buttons stay, the server still checks */ }
+    // Only the chat's own additions are looked at (report cards arrive there),
+    // never the whole page: the City and its ticker change the DOM all the
+    // time, and a page-wide scan on every change slowed its live updates.
+    function watchReportCards() {
+      const chat = document.getElementById('chat-container');
+      if (!chat || typeof MutationObserver !== 'function') return;
+      new MutationObserver((records) => {
+        for (const r of records) for (const n of r.addedNodes) {
+          if (n.nodeType !== 1) continue;
+          if (n.matches && n.matches('.report-approvals')) refreshReportApprovals(n);
+          else if (n.querySelectorAll) n.querySelectorAll('.report-approvals:not([data-refreshed])').forEach((l) => refreshReportApprovals(l));
+        }
+      }).observe(chat, { childList: true, subtree: true });
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', watchReportCards); else watchReportCards();
     async function reportDecide(btn, decision) {
       const li = btn.closest('.report-approval');
       if (!li) return;

@@ -110,3 +110,62 @@ refused and the ordinary tier is kept (`tests/showcase.test.mjs`).
   their templates; period-correct (canoes, earthworks and gates, the river).
 
 CI runs only a 2-frame smoke test (`tests/browser/showcase-smoke.browser.test.mjs`).
+
+## The reel: "Inside PG1 City" (24 November 2026)
+
+`lib/showcase/reel.mjs` holds thirteen City shots (day and night) (4.5 s; director mode 6 s), each
+replaying real data only:
+
+| Shot | What it replays |
+| --- | --- |
+| `crown-tower` | PG1's real state (beacons, shield); no event staged |
+| `probe-arrives` | the latest probe with a country in the last 7 days, followed from its origin to the Gate Wardens |
+| `seal-forge` | the latest signed result (left out if PG1 signed none in the window) |
+| `junction-traffic`, `river-bridge` | the street in front of the shopping centre, and boats on the river with their lights: the city's own life, no event staged |
+| `drone-patrol`, `city-wide` | the window's most important real events arriving, with PG1's answers; an airliner and boats as ambient life |
+| `dublin-weather` | Dublin's recorded hourly weather (Open-Meteo archive, else the forecast API's past days): the latest rain hour followed by clearing, at its own hour |
+| `street-level`, `tram`, `city-day` | by day (13:00 Dublin): the plaza at eye level with its people, cafes and buskers; alongside a tram on the elevated line; the city from the air. The city's own life only (ambient), no event staged |
+| `day-to-night` | the clock run from 15:50 to 17:25 Dublin time |
+| `director` | director mode on, with up to four of the window's most important real events |
+
+Run it on GitHub: **PG1 Showcase render** with `reel: inside-city`. A plan job
+fixes one "now", then every shot renders on its own runner at once, all reading
+the same 7-day window (`--epoch`). To re-render some shots on an earlier run's
+window, give `reel_shots` and that run's `reel_epoch` (its manifest's
+`window.now`). Locally, for one shot:
+
+```sh
+node scripts/showcase-render.mjs --reel inside-city --shots crown-tower --epoch 2026-11-23T20:00:00Z
+```
+
+A shot whose kind of event did not happen in the window is left out, and its
+manifest says why. The run-up before an event shot (a probe flying in) is
+drawn at 270 x 480. Every saved frame is still checked at the output size.
+The page never gets a caller hash.
+
+The post (`docs/social/2026-11-24/`) is built from the jobs' artifacts:
+
+```sh
+node scripts/social-inside-city.mjs --from reel-artifacts --out docs/social/2026-11-24
+```
+
+Since the 24 Nov polish:
+
+- **Stills at 2x.** After its last frame each reel shot draws one more frame
+  at twice the size (`<shot>-still-2x.png`) with the still's look
+  (`STILL_LOOK`: lighter fog, less bloom, a dimmer emblem glow) and, for the
+  crown tower and the patrols, its own pose (the whole shield and spire top
+  inside the slide's crop). The post builder downscales it to 1080 wide.
+- **Labels.** In Showcase renders, in-scene labels are plain words (never an
+  internal tool or route name, never a raw reason code) and are kept whole
+  inside the frame's label band (`SHOWCASE_LABEL_BOX`), above a slide's flag
+  row and clear of the lower third.
+- **Preview one frame:** `--at 0.6` renders a shot's single frame at that
+  moment (no MP4), for a look before a full render.
+- **The reel stays out of git.** Dispatch **PG1 Showcase render** with
+  `release_tag: social-2026-11-24` and `release_run: <the reel run's id>`:
+  it builds the post from that run's artifacts and publishes
+  `reel-1080x1920.mp4` as a release asset (copy.md links to it).
+- **Quality check:** `node scripts/contact-sheet.mjs --reel reel.mp4 --stills
+  a.png,b.png --out sheet.jpg --frames DIR` writes a frame every 0.5 s (and
+  every still) to a contact sheet, and each frame at full size to DIR.

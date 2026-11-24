@@ -13,6 +13,12 @@ name: PG1 Showcase render
 # that refuses every write (never stepped, reset or changed); without them
 # the City is calm and the universe shot uses the universe template.
 # manifest.json says which data each shot used.
+#
+# Reel mode (reel: inside-city, the 24 Nov post): the thirteen City shots (day and night) of
+# lib/showcase/reel.mjs, each on its own runner at once, all replaying the
+# same real 7-day window of the defence feed (one epoch for every job).
+# Each job's artifact holds its MP4, still and manifest; the post is built
+# from them with scripts/social-inside-city.mjs.
 
 on:
   workflow_dispatch:
@@ -37,6 +43,31 @@ on:
         required: false
         default: false
         type: boolean
+      reel:
+        description: A reel instead of the shots above (inside-city), one runner a shot
+        required: false
+        default: ''
+        type: string
+      reel_shots:
+        description: The reel's shots, comma-separated (empty for all of them)
+        required: false
+        default: ''
+        type: string
+      reel_epoch:
+        description: The data window's "now" (ISO, e.g. 2026-11-24T00:14:54Z) to re-render shots on an earlier run's window; empty for now
+        required: false
+        default: ''
+        type: string
+      release_tag:
+        description: Publish a post's reel as a release asset under this tag (e.g. social-2026-11-24), built from release_run's reel artifacts; nothing is rendered
+        required: false
+        default: ''
+        type: string
+      release_run:
+        description: The run id whose reel artifacts the release is built from
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -46,7 +77,80 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Reel mode: the shot list and one "now" for every job's data window.
+  plan:
+    if: inputs.reel != ''
+    runs-on: ubuntu-24.04
+    outputs:
+      shots: ${{ steps.p.outputs.shots }}
+      epoch: ${{ steps.p.outputs.epoch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - id: p
+        env:
+          REEL: ${{ inputs.reel }}
+          REEL_SHOTS: ${{ inputs.reel_shots }}
+          REEL_EPOCH: ${{ inputs.reel_epoch }}
+        run: |
+          node -e "import('./lib/showcase/reel.mjs').then(m => { if (process.env.REEL !== m.REEL_ID) throw new Error('unknown reel'); const all = m.REEL_SHOTS.map(s => s.id); const want = (process.env.REEL_SHOTS || '').split(',').map(s => s.trim()).filter(Boolean); for (const w of want) if (!all.includes(w)) throw new Error('unknown shot ' + w); console.log('shots=' + JSON.stringify(want.length ? want : all)); })" >> "$GITHUB_OUTPUT"
+          if [ -n "$REEL_EPOCH" ]; then
+            if ! printf '%s' "$REEL_EPOCH" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$'; then echo "reel_epoch must be an ISO UTC time" >&2; exit 1; fi
+            echo "epoch=$REEL_EPOCH" >> "$GITHUB_OUTPUT"
+          else
+            echo "epoch=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          fi
+
+  reel:
+    if: inputs.reel != ''
+    needs: plan
+    name: reel ${{ matrix.shot }}
+    runs-on: ubuntu-24.04
+    # The event shots draw about 100 s a frame in software 3D (135 frames and
+    # a 2x still): just under GitHub's 6-hour limit.
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        shot: ${{ fromJSON(needs.plan.outputs.shots) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium (version pinned by package-lock.json) and ffmpeg
+        run: |
+          npx playwright install --with-deps chromium
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+      - name: Render ${{ matrix.shot }} (software 3D, real 7-day window, read only)
+        env:
+          REEL: ${{ inputs.reel }}
+          SHOT: ${{ matrix.shot }}
+          EPOCH: ${{ needs.plan.outputs.epoch }}
+          SUPABASE_URL: ${{ inputs.read_pg1_data && secrets.SUPABASE_URL || '' }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ inputs.read_pg1_data && secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
+        # --warmup 12: the warm-up still runs until shaders and textures are stable (renderReelShot), without 40 frames at 100 s each.
+        run: node scripts/showcase-render.mjs --reel "$REEL" --shots "$SHOT" --epoch "$EPOCH" --warmup 12 --out showcase-out
+      - name: Upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pg1-reel-${{ github.run_number }}-${{ matrix.shot }}
+          path: |
+            showcase-out/*.mp4
+            showcase-out/*.png
+            showcase-out/manifest-*.json
+          if-no-files-found: warn
+          retention-days: 30
+
   render:
+    if: inputs.reel == '' && inputs.release_tag == ''
     name: render
     # Pinned: Playwright 1.56.1 cannot install Chromium on ubuntu-latest.
     runs-on: ubuntu-24.04
@@ -87,4 +191,51 @@ jobs:
             showcase-out/manifest.json
             showcase-out/social/
           if-no-files-found: warn
+          retention-days: 30
+
+  # Release mode: the post built from an earlier reel run's artifacts
+  # (scripts/social-inside-city.mjs, the same build as by hand), and its
+  # reel published as a release asset: MP4s stay out of git. The built post
+  # (slides, Story, contact sheet, copy.md) is uploaded as the artifact.
+  release:
+    if: inputs.release_tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium (version pinned by package-lock.json), ffmpeg and the flag font
+        run: |
+          npx playwright install --with-deps chromium
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-noto-color-emoji
+      - uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.release_run }}
+          github-token: ${{ github.token }}
+          pattern: pg1-reel-*
+          path: reel-artifacts
+      - name: Build the post
+        run: node scripts/social-inside-city.mjs --from reel-artifacts --out post
+      - name: Publish the reel as a release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          if ! printf '%s' "$TAG" | grep -Eq '^social-[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then echo "release_tag must be social-YYYY-MM-DD" >&2; exit 1; fi
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Social post $TAG" --notes "The reel for the post (docs/social/, copy.md). Rendered by the PG1 Showcase render, run ${{ inputs.release_run }}."
+          gh release upload "$TAG" post/reel-1080x1920.mp4 --repo "$GITHUB_REPOSITORY" --clobber
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pg1-post-${{ inputs.release_tag }}
+          path: post/
           retention-days: 30

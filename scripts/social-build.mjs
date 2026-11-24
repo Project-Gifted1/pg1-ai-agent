@@ -74,15 +74,15 @@ export const CUT = Object.freeze([
 export const cutSeconds = () => CUT.reduce((t, c) => t + c[2], 0);
 
 const font = (w) => `data:font/woff2;base64,${readFileSync(join(ROOT, 'public', 'fonts', `inter-latin-${w}-normal.woff2`)).toString('base64')}`;
-const SHIELD = readFileSync(join(ROOT, 'public', 'brand', 'pg1-shield.svg'), 'utf8').replace(/<title>.*?<\/title>/, '').replace(/width="104" height="104"/, 'width="100%" height="100%"');
-const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const BASE_CSS = () => `@font-face{font-family:I;font-weight:400;src:url(${font(400)})}@font-face{font-family:I;font-weight:600;src:url(${font(600)})}@font-face{font-family:I;font-weight:700;src:url(${font(700)})}
+export const SHIELD = readFileSync(join(ROOT, 'public', 'brand', 'pg1-shield.svg'), 'utf8').replace(/<title>.*?<\/title>/, '').replace(/width="104" height="104"/, 'width="100%" height="100%"');
+export const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+export const BASE_CSS = () => `@font-face{font-family:I;font-weight:400;src:url(${font(400)})}@font-face{font-family:I;font-weight:600;src:url(${font(600)})}@font-face{font-family:I;font-weight:700;src:url(${font(700)})}
 *{box-sizing:border-box;margin:0}html,body{width:100%;height:100%;background:#070708;color:#f4f4f6;font-family:I,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
 .mark{display:flex;align-items:center;gap:.5em;font-weight:600;letter-spacing:.02em;color:#e9e9ee}.mark i{display:block;width:1.6em;height:1.6em}
 .tag{display:inline-block;font-weight:600;color:#f3c623;letter-spacing:.06em;text-transform:uppercase}
 .title{font-weight:700;letter-spacing:-.02em;line-height:1.02}.line{font-weight:400;color:#d3d3da;line-height:1.3}.mono{font-feature-settings:"ss02"}`;
-const crown = (cls = '') => `<i class="${cls}">${SHIELD}</i>`;
-const isCode = (t) => /^[a-z_]+$/.test(t);
+export const crown = (cls = '') => `<i class="${cls}">${SHIELD}</i>`;
+export const isCode = (t) => /^[a-z_]+$/.test(t);
 
 function recapHtml(h) {
   return `<!doctype html><html><head><meta charset="utf-8"><style>${BASE_CSS()}
@@ -99,7 +99,7 @@ li{display:flex;gap:26px;align-items:flex-start;padding:16px 24px;border:1px sol
 <div class="foot"><span>${MARK}</span><span>PG1</span></div></body></html>`;
 }
 
-function cardHtml(h, bg, { hgt = 1350 } = {}) {
+export function cardHtml(h, bg, { hgt = 1350 } = {}) {
   if (h.items) return recapHtml(h);
   const big = isCode(h.title) ? 84 : h.title.length > 24 ? 80 : 108;
   // A summary of more than one line is set a little smaller (never under 30 px).
