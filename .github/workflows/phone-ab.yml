@@ -1,0 +1,32 @@
+# Review only (not for merge): same-runner A/B of the City's phone tier, main vs
+# claude/pg1-social-nov24, on the city-phones job's runner image, 3 samples each,
+# alternating, at 412 px and 1280 px.
+name: Phone tier A/B (review)
+on:
+  push:
+    branches: [review/phone-ab]
+permissions:
+  contents: read
+jobs:
+  ab:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: claude/pg1-social-nov24, path: pr, persist-credentials: false }
+      - uses: actions/checkout@v4
+        with: { ref: main, path: main, persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version-file: pr/.nvmrc }
+      - run: (cd pr && npm ci) && (cd main && npm ci)
+      - run: cd pr && npx playwright install --with-deps chromium && cd ../main && npx playwright install chromium
+      - name: A/B, 3 samples each, alternating
+        run: |
+          echo "runner: $(nproc) cores, $(lscpu | grep 'Model name' | sed 's/.*: *//')"
+          for i in 1 2 3; do
+            for side in main pr; do
+              echo "=== sample $i $side $(git -C $side rev-parse --short HEAD)"
+              (cd $side && node --import ./tests/helpers/spend-cap.mjs --test --test-concurrency=1 --test-name-pattern='412 px|desktop' tests/browser/kingdom.browser.test.mjs 2>&1 | grep -E 'ms per frame|^not ok|^ok|# (pass|fail)' ) || true
+            done
+          done | tee ab.txt
+      - run: grep -E '===|phone tier' ab.txt
