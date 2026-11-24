@@ -62,7 +62,7 @@ export function slides(m) {
     { id: 'tower', file: 'slide-2-crown-tower.png', shot: 'crown-tower', tag: 'The crown tower', title: 'The PG1 shield', line: "The tallest tower carries PG1's shield, drawn from the brand file itself. Its beacons follow PG1's real state: one lights when a report lands, and one stays lit for each approval waiting." },
     { id: 'events', file: 'slide-3-real-events.png', shot: 'probe-arrives', tag: Number.isFinite(c.countries) && c.countries > 0 ? `From ${c.countries} countries · ${range}` : 'Real events', title: 'Real probes and checks', line: 'Every arrival is one event PG1 logged: unknown tools and methods, malformed calls, flagged checks. Its origin country shows as a flag and an arc on the mini-globe, and the Gate Wardens turn probes back.', flags: (c.country_codes || []).slice(0, 8) },
     { id: 'signed', file: 'slide-4-signed-results.png', shot: 'seal-forge', fallbackShot: 'city-day', tag: 'Signed results', title: 'Every result signed', line: "When PG1 signs a tool result (Ed25519), the Seal Forge stamps a seal that rises into the tower. Anyone can check a result offline with PG1's public key, or with verify_result." },
-    { id: 'traffic-weather', file: 'slide-5-traffic-weather.png', shot: 'street-level', fallbackShot: 'junction-traffic', tag: 'Traffic and weather', title: 'Lanes, rain and real weather', line: "Cars keep to their lanes, queue at red lights and clear on green. The sky follows Dublin's real weather and time of day; in rain the streets turn wet and mirror the lights." },
+    { id: 'traffic-weather', file: 'slide-5-traffic-weather.png', shot: 'junction-traffic', fallbackShot: 'street-level', tag: 'Traffic and weather', title: 'Lanes, rain and real weather', line: "Cars keep to their lanes, queue at red lights and clear on green. The sky follows Dublin's real weather and time of day; in rain the streets turn wet and mirror the lights." },
     { id: 'river-drones', file: 'slide-6-river-drones.png', shot: 'drone-patrol', tag: 'River and drones', title: 'The river and the patrols', line: "Boats pass under the arched bridge, with lamp pools along the promenade. PG1's drones patrol in rings round the tower, one for each live check, with navigation lights at night." },
     { id: 'end', file: 'slide-7-link-in-bio.png', shot: null, tag: '', title: 'Link in bio', line: 'Free checks for AI agents.' }
   ];
@@ -88,6 +88,11 @@ const probe = (f) => { const r = spawnSync('ffprobe', ['-v', 'error', '-show_ent
 
 // How long each shot plays in the reel: about REEL_TARGET_S in all, with
 // crossfades, each within its own clip (after a 0.3 s lead-in).
+// Shots rendered but cut in the edit, with the reason (copy.md says so).
+// Director mode follows one real event into a dark close-up of the river;
+// the whole-city shot replays the same director events and reads better.
+export const REEL_CUTS = Object.freeze({ director: 'its follow camera ends in a dark close-up on the river; the whole-city shot replays the same director events' });
+
 export function segmentPlan(shots) {
   const n = shots.length; if (!n) return [];
   const each = (REEL_TARGET_S + (n - 1) * XFADE_S) / n;
@@ -106,7 +111,7 @@ export function readRenders(from) {
   const byId = new Map();
   for (const m of manifests) for (const s of m.shots) byId.set(s.id, s);
   const pick = (name) => files.find((f) => f.endsWith(`/${name}`));
-  const shots = REEL_SHOTS.map((def) => { const s = byId.get(def.id); if (!s) return { id: def.id, missing: 'not rendered' }; if (s.skipped) return { id: def.id, missing: s.skipped }; const mp4 = pick(`${def.id}.mp4`); const png = pick(`${def.id}.png`); if (!mp4 || !png) return { id: def.id, missing: 'files not found' }; return { ...s, def, mp4, png, clipSeconds: probe(mp4).seconds }; });
+  const shots = REEL_SHOTS.map((def) => { if (REEL_CUTS[def.id]) return { id: def.id, missing: `cut in the edit: ${REEL_CUTS[def.id]}` }; const s = byId.get(def.id); if (!s) return { id: def.id, missing: 'not rendered' }; if (s.skipped) return { id: def.id, missing: s.skipped }; const mp4 = pick(`${def.id}.mp4`); const png = pick(`${def.id}.png`); if (!mp4 || !png) return { id: def.id, missing: 'files not found' }; return { ...s, def, mp4, png, clipSeconds: probe(mp4).seconds }; });
   return { window: first.window, counts: first.counts, weather_record: first.weather_record, data: first.data, shots };
 }
 
@@ -228,6 +233,14 @@ ${info.seconds.toFixed(1)} s, ${info.width} x ${info.height}, H.264 (libx264 -pr
 | Shot | Lower third | In the reel | Real data replayed |
 |---|---|---|---|
 ${shotRows.join('\n')}
+
+## Post caption (ready to paste)
+
+Inside PG1 City: a live 3D city drawn from PG1's real activity. ${c.events} real events in 7 days (${c.window ? `${dayRange(c.window.from, c.window.to)} ${new Date(c.window.to).getUTCFullYear()}` : 'the last 7 days'}), with probes and checks from ${c.countries} countries, replayed as they happened. Boats, trams, traffic and Dublin's recorded weather fill in the rest; every event in it is real.
+
+Free checks for AI agents: link in bio.
+
+Project-Gifted1™
 
 ## Carousel (1080 x 1350) and Story
 
