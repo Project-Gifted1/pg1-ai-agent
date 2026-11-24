@@ -60,7 +60,12 @@ if (chromium && !existsSync(chromium.executablePath())) {
 const launch = () => chromium.launch({ executablePath, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const view = (page) => page.evaluate(() => ({ ...document.getElementById('kingdom-view').dataset }));
 const status = (page) => page.evaluate(() => window.kingdomUi.status());
-const shot = async (page, name) => { mkdirSync(SHOTS_DIR, { recursive: true }); await page.screenshot({ path: join(SHOTS_DIR, name) }); };
+// A screenshot holds the City still first (the twilight test does the same):
+// in software 3D the render loop keeps the GPU process busy, and the capture
+// can wait behind it (24 Nov: "an empty feed" timed out at 30 s while each
+// frame took ~0.65 s). Pausing draws nothing new: the last frame is captured.
+const holdCity = (page, on) => page.evaluate((v) => { const s = window.kingdomUi && window.kingdomUi.scene && window.kingdomUi.scene(); if (s && s.pause) s.pause(v); }, on).catch(() => {});
+const shot = async (page, name) => { mkdirSync(SHOTS_DIR, { recursive: true }); await holdCity(page, true); try { await page.screenshot({ path: join(SHOTS_DIR, name) }); } finally { await holdCity(page, false); } };
 const frames = (page, n, timeout = 120000) => page.waitForFunction((k) => Number(document.getElementById('kingdom-view').dataset.frames || 0) > k, n, { timeout, polling: 250 });
 // CI draws 3D in software (SwiftShader, no GPU) beside other browser test
 // files, so a frame there can take seconds. In CI the Kingdom tests run on
