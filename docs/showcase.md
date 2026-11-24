@@ -148,3 +148,24 @@ The post (`docs/social/2026-11-24/`) is built from the jobs' artifacts:
 ```sh
 node scripts/social-inside-city.mjs --from reel-artifacts --out docs/social/2026-11-24
 ```
+
+Since the 24 Nov polish:
+
+- **Stills at 2x.** After its last frame each reel shot draws one more frame
+  at twice the size (`<shot>-still-2x.png`) with the still's look
+  (`STILL_LOOK`: lighter fog, less bloom, a dimmer emblem glow) and, for the
+  crown tower and the patrols, its own pose (the whole shield and spire top
+  inside the slide's crop). The post builder downscales it to 1080 wide.
+- **Labels.** In Showcase renders, in-scene labels are plain words (never an
+  internal tool or route name, never a raw reason code) and are kept whole
+  inside the frame's label band (`SHOWCASE_LABEL_BOX`), above a slide's flag
+  row and clear of the lower third.
+- **Preview one frame:** `--at 0.6` renders a shot's single frame at that
+  moment (no MP4), for a look before a full render.
+- **The reel stays out of git.** Dispatch **PG1 Showcase render** with
+  `release_tag: social-2026-11-24` and `release_run: <the reel run's id>`:
+  it builds the post from that run's artifacts and publishes
+  `reel-1080x1920.mp4` as a release asset (copy.md links to it).
+- **Quality check:** `node scripts/contact-sheet.mjs --reel reel.mp4 --stills
+  a.png,b.png --out sheet.jpg --frames DIR` writes a frame every 0.5 s (and
+  every still) to a contact sheet, and each frame at full size to DIR.
