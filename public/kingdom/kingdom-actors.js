@@ -28,6 +28,7 @@
 // gadget actions taken on a real event passed to stage().
 
 import { at, CITY_R, RIVER, GATE_BEARINGS, PLAZA_R } from './kingdom-world.js';
+import { ringAltitude, keepClear } from './kingdom-flight.js';
 import { countryBearing, PG1_COLORS, defenceLine, reasonLabel } from './kingdom-data.js';
 
 export { CITY_R };
@@ -331,7 +332,7 @@ export function createActors(THREE, scene, world, settings) {
   // Sentinels: one per live check, in rings round the tower and over the skyline.
   function setSentinels(n) {
     const want = Math.max(0, Math.min(SENTINEL_CAP, Number(n) || 0));
-    while (sentinels.live < want) { const k = sentinels.live; sentinels.add({ ring: 45 + (k % 4) * 45, alt: 70 + (k % 5) * 22, a0: (k * 2.39996) % (Math.PI * 2), dir: k % 2 ? 1 : -1, escort: null, scale: S }); }
+    while (sentinels.live < want) { const k = sentinels.live; const ring = 45 + (k % 4) * 45; sentinels.add({ ring, alt: ringAltitude(world.obstacles, ring, 70 + (k % 5) * 22), a0: (k * 2.39996) % (Math.PI * 2), dir: k % 2 ? 1 : -1, escort: null, scale: S }); }
     if (sentinels.live > want) sentinels.agents.length = want;
     return sentinels.live;
   }
@@ -585,11 +586,12 @@ export function createActors(THREE, scene, world, settings) {
     // The underglow: faint, at night only.
     const glow = DRONE_LOOK.glowNight * Math.max(0, Math.min(1, (world.env && world.env.night) || 0));
     for (const m of underMats) m.opacity = glow;
-    // Nothing that flies goes through a building: every drone stays at least
-    // 10 m above the highest roof under it (6 m around it). PG1's own tower
+    // Nothing that flies goes through a building (kingdom-flight.js): every
+    // drone stays DRONE_CLEARANCE above the highest roof within DRONE_RADIUS,
+    // and climbs early towards a building ahead. PG1's own tower
     // is left out (its drones dock on its deck), and the patrol rings keep
     // their distance from it by design.
-    if (world.obstacles && world.obstacles.topAt) for (const c of crowds) if (c.fly) for (const a of c.agents) { const top = world.obstacles.topAt(a.x, a.z, 6); if (top > 0 && a.y < top + 10) a.y = top + 10; }
+    if (world.obstacles && world.obstacles.topAt) for (const c of crowds) if (c.fly) for (const a of c.agents) keepClear(world.obstacles, a, dt);
     for (const c of crowds) c.write(t, camTmp);
   }
 
@@ -625,6 +627,8 @@ export function createActors(THREE, scene, world, settings) {
     // The frame-time ladder (kingdom-look.js): drones without rotors, glows and trails.
     setLean(on) { for (const c of crowds) c.lean = !!on; },
     stage, update, whereIs, eta, pick, setSentinels,
+    // Every flying agent's position (tests: tests/browser/kingdom-flight.browser.test.mjs).
+    flyers() { const out = []; crowds.forEach((c, ci) => { if (c.fly) for (const a of c.agents) if (!(a.delay > 0)) out.push({ crowd: ci, x: a.x, y: a.y, z: a.z }); }); return out; },
     // The seal in flight (Showcase: the Seal Forge shot follows it), or null.
     sealAt() { const p = props.find((x) => x.kind === 'seal'); return p ? { x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z } : null; },
     set onFire(fn) { onFire = typeof fn === 'function' ? fn : null; },

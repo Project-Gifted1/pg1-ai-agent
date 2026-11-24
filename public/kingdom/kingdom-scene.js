@@ -915,6 +915,22 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     eta: (id) => actors.eta(id),
     // Showcase: move the actors on by `seconds` without drawing (the run-up
     // before a replayed real event reaches its mark; nothing is added).
+    // Tests: the drawn buildings' boxes (every instance of the skyline meshes,
+    // from its geometry and matrix: not the obstacle list the drones use),
+    // and every flying agent sampled each 0.1 s for `seconds` of patrols.
+    flightAudit(seconds = 60, { sentinels = 0 } = {}) {
+      if (sentinels) actors.setSentinels(sentinels);
+      const boxes = []; const m4 = new THREE.Matrix4(); const bb = new THREE.Box3();
+      scene.updateMatrixWorld(true);
+      scene.traverse((o) => {
+        if (!o.isInstancedMesh || !/^skyline-/.test(o.name)) return;
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        for (let i = 0; i < o.count; i++) { o.getMatrixAt(i, m4); m4.premultiply(o.matrixWorld); bb.copy(o.geometry.boundingBox).applyMatrix4(m4); boxes.push({ name: o.name, min: bb.min.toArray(), max: bb.max.toArray() }); }
+      });
+      const samples = []; let tt = (performance.now() - t0) / 1000;
+      for (let k = 0; k < Math.round(seconds / 0.1); k++) { tt += 0.1; actors.update(0.1, tt, camera, { storm: 0 }); for (const f of actors.flyers()) samples.push(f); }
+      return { boxes, samples };
+    },
     runActors(seconds) { let tt = (performance.now() - t0) / 1000; for (let k = 0; k < Math.min(1200, Math.round(seconds / 0.1)); k++) { tt += 0.1; actors.update(0.1, tt, camera, { storm: 0 }); } },
     sealAt: () => actors.sealAt(),
     // Showcase, ambient only (never an event): an airliner through a point of the view, boats past a point of the river.

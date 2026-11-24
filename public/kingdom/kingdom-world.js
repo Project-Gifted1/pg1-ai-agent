@@ -287,6 +287,7 @@ function streakTexture(THREE) {
   const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t;
 }
 
+import { footprint } from './kingdom-flight.js';
 import { buildEmblem, buildHologram, brandCanvas } from './kingdom-emblem.js';
 import { billboardLines } from './kingdom-data.js';
 
@@ -478,7 +479,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   const roofSpots = [];
   for (const l of lots) {
     const ry = (l.seed % 1) * 0.3;
-    const add = (kind, x, y, z, w, h, d, extra = {}) => { parts[kind].push({ x, y, z, w, h, d, ry, seed: l.seed + parts[kind].length * 0.01, style: l.style, ...extra }); obstacles.push({ x, z, hw: w * 0.5 + d * 0.08, hd: d * 0.5 + w * 0.08, top: y + h }); };
+    const add = (kind, x, y, z, w, h, d, extra = {}) => { parts[kind].push({ x, y, z, w, h, d, ry, seed: l.seed + parts[kind].length * 0.01, style: l.style, ...extra }); const f = footprint(w, d, ry, kind); obstacles.push({ x, z, hw: f.hw, hd: f.hd, top: y + h }); };
     // A podium at street level under the tall ones.
     let base = 0;
     if (l.ring === 'near' && l.h > 70) { add('box', l.x, 0, l.z, l.w * 1.35, 9, l.d * 1.35, { style: STYLES.podium }); base = 9; detail.podiums.push({ x: l.x, z: l.z, w: l.w * 1.35, d: l.d * 1.35, ry }); }
@@ -492,7 +493,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       add('box', l.x, base + h * 0.8, l.z, l.w * 0.55, h * 0.2, l.d * 0.55);
     } else add(l.shape, l.x, base, l.z, l.w, h, l.d);
     const top = l.h;
-    if (l.ring === 'near' && (l.shape === 'box' || l.shape === 'setback') && r() < 0.35) { const cw = l.w * (l.shape === 'setback' ? 0.55 : 1); parts.crown.push({ x: l.x, y: top, z: l.z, w: cw, h: 10 + r() * 10, d: l.d * (l.shape === 'setback' ? 0.55 : 1), ry, seed: l.seed + 9, style: STYLES.glass }); }
+    if (l.ring === 'near' && (l.shape === 'box' || l.shape === 'setback') && r() < 0.35) { const cw = l.w * (l.shape === 'setback' ? 0.55 : 1); const cr = { x: l.x, y: top, z: l.z, w: cw, h: 10 + r() * 10, d: l.d * (l.shape === 'setback' ? 0.55 : 1), ry, seed: l.seed + 9, style: STYLES.glass }; parts.crown.push(cr); const f = footprint(cr.w, cr.d, ry); obstacles.push({ x: cr.x, z: cr.z, hw: f.hw, hd: f.hd, top: cr.y + cr.h }); }
     if (top > 55 || l.ring === 'mid') roofSpots.push({ x: l.x, y: top, z: l.z, h: top, w: Math.min(l.w, l.d) * (l.shape === 'setback' ? 0.55 : l.shape === 'taper' ? 0.5 : 0.8), ring: l.ring });
   }
   for (const [kind, list] of Object.entries(parts)) {
