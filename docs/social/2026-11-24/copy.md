@@ -5,14 +5,16 @@ Built by `scripts/social-inside-city.mjs` from the Showcase render (`scripts/sho
 ## Data
 
 - **Window:** the defence feed's last 7 days, read only, up to 2026-11-24T00:14:54.000Z (UTC).
-- **Events:** real PG1 events, last 7 days to 2026-11-24T00:14:54.000Z (213 shown of 216; payments and caller hashes left out).
+- **Events:** real PG1 events, last 7 days to 2026-11-24T00:14:54.000Z (212 shown of 215; payments and caller hashes left out).
 - **Counts shown:** probes and checks from 12 countries (CA, CZ, DE, FI, FR, GB, HK, IL, KR, NL, RU, US), events dated 20 Nov, 23:47 to 23 Nov, 23:36. Countries come from IP geolocation and are approximate. No payment figure is shown anywhere.
 - **Weather:** Dublin, recorded (Open-Meteo archive (ERA5 reanalysis)): 2026-11-23T05:00 51 (rain) then 2026-11-23T06:00 3 (clearing), Europe/Dublin time. Weather data by Open-Meteo.com (CC BY 4.0). Not live.
 - **Privacy:** no caller hash, IP or anything identifying a caller is in the renders, the reel or this file.
 
 ## Reel (`reel-1080x1920.mp4`)
 
-30.0 s, 1080 x 1920, H.264 (libx264 -preset veryfast -crf 18), yuv420p, 30 fps, 0.5 s crossfades, no audio.
+Download: [reel-1080x1920.mp4](https://github.com/Project-Gifted1/pg1-ai-agent/releases/download/social-2026-11-24/reel-1080x1920.mp4) (release asset `social-2026-11-24`; the MP4 is kept out of git).
+
+30.0 s, 1080 x 1920, H.264 (libx264 -preset veryfast -crf 18), yuv420p, 30 fps, 0.2 s crossfades, no audio.
 
 | Shot | Lower third | In the reel | Real data replayed |
 |---|---|---|---|
@@ -21,18 +23,18 @@ Built by `scripts/social-inside-city.mjs` from the Showcase render (`scripts/sho
 | A result is signed | left out: no real signed result in the last 7 days | - | none (no event staged) |
 | Lane traffic at a junction | "Traffic keeps its lanes" | 3.2 s | none (no event staged) |
 | The river and the arched bridge | "Boats on the river" | 3.2 s | none (no event staged) |
-| Patrols meet real probes | "Patrols meet real probes" | 3.2 s | check verdict DE: flagged agent message (23 Nov, 12:16); check verdict US: flagged repo trap (21 Nov, 00:28); approval: waiting for approval (23 Nov, 07:30); probe DE Gate Wardens: unknown method probe (23 Nov, 22:35) |
+| Patrols meet real probes | "Patrols meet real probes" | 3.2 s | check verdict DE Truth Lens: malicious (23 Nov, 12:16); check verdict US Repo Trap Scanner: malicious (21 Nov, 00:28); probe DE Gate Wardens: unknown method probe (23 Nov, 22:35); report Watchtower Beacons: report landed (23 Nov, 07:30) |
 | Real Dublin weather | "Real Dublin weather" | 3.2 s | recorded weather 2026-11-23T05:00 → 2026-11-23T06:00 |
-| Street level in the plaza | "People in the plaza" | 3.2 s | none (no event staged) |
+| Street level in the plaza | left out: cut in the edit: its eye-level walkers read as mannequins, not shoppers | - | none (no event staged) |
 | The tram line by day | "Trams on the line" | 3.2 s | none (no event staged) |
 | The city by day | "The city by day" | 3.2 s | none (no event staged) |
 | Day to night | "Windows follow Dublin time" | 3.2 s | none (no event staged) |
 | Director mode | left out: cut in the edit: its follow camera ends in a dark close-up on the river; the whole-city shot replays the same director events | - | none (no event staged) |
-| The whole city | "Inside PG1 City" | 3.2 s | check verdict DE: flagged agent message (23 Nov, 12:16); check verdict US: flagged repo trap (21 Nov, 00:28); approval: waiting for approval (23 Nov, 07:30); probe DE Gate Wardens: unknown method probe (23 Nov, 22:35) |
+| The whole city | "Inside PG1 City" | 3.2 s | check verdict DE Truth Lens: malicious (23 Nov, 12:16); check verdict US Repo Trap Scanner: malicious (21 Nov, 00:28); probe DE Gate Wardens: unknown method probe (23 Nov, 22:35); report Watchtower Beacons: report landed (23 Nov, 07:30) |
 
 ## Post caption (ready to paste)
 
-Inside PG1 City: a live 3D city drawn from PG1's real activity. 213 real events in 7 days (17 Nov–24 Nov 2026), with probes and checks from 12 countries, replayed as they happened. Boats, trams, traffic and Dublin's recorded weather fill in the rest; every event in it is real.
+Inside PG1 City: a live 3D city drawn from PG1's real activity. 212 real events in 7 days (17 Nov–24 Nov 2026), with probes and checks from 12 countries, replayed as they happened. Boats, trams, traffic and Dublin's recorded weather fill in the rest; every event in it is real.
 
 Free checks for AI agents: link in bio.
 
@@ -80,9 +82,9 @@ _Image: the "junction-traffic" shot._
 
 ### 6. The river and the patrols · River and drones
 
-Boats pass under the arched bridge, with lamp pools along the promenade. PG1's drones patrol in rings round the tower, one for each live check, with navigation lights at night.
+Boats pass under the arched bridge, with lamp pools along the promenade. Overhead, PG1's drones patrol, one for each live check, with navigation lights at night.
 
-_Image: the "drone-patrol" shot._
+_Image: the "river-bridge" shot._
 
 **Note:** The river, bridges and promenade lamps: public/kingdom/kingdom-world.js; river life: public/kingdom/kingdom-life.js. Drones: public/kingdom/kingdom-actors.js (sentinels, one per live check from the MCP tool list; lit bodies, nav lights, strobe and night underglow since 23 Nov).
 
