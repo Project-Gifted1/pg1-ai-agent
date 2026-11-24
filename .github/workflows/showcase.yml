@@ -232,8 +232,21 @@ jobs:
           TAG: ${{ inputs.release_tag }}
         run: |
           if ! printf '%s' "$TAG" | grep -Eq '^social-[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then echo "release_tag must be social-YYYY-MM-DD" >&2; exit 1; fi
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Social post $TAG" --notes "The reel for the post (docs/social/, copy.md). Rendered by the PG1 Showcase render, run ${{ inputs.release_run }}."
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target main --prerelease --title "Social post $TAG" --notes "The reel for the post (docs/social/, copy.md). Rendered by the PG1 Showcase render, run ${{ inputs.release_run }}."
           gh release upload "$TAG" post/reel-1080x1920.mp4 --repo "$GITHUB_REPOSITORY" --clobber
+      - name: Review copy in git (the proxy blocks artifacts)
+        env:
+          TAG: ${{ inputs.release_tag }}
+          TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p review/frames
+          node scripts/contact-sheet.mjs --reel post/reel-1080x1920.mp4 --out review/reel-contact-sheet-check.jpg --frames review/frames-png
+          for f in review/frames-png/*.png; do ffmpeg -y -loglevel error -i "$f" -q:v 3 "review/frames/$(basename "${f%.png}").jpg"; done
+          rm -rf review/frames-png
+          cp post/*.png post/*.jpg post/copy.md review/ 2>/dev/null || true
+          cd review && git init -q -b "review/$TAG" && git add -A
+          git -c user.name=pg1-bot -c user.email=pg1-bot@users.noreply.github.com commit -q -m "Review copy of $TAG"
+          git push -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "review/$TAG"
       - uses: actions/upload-artifact@v4
         with:
           name: pg1-post-${{ inputs.release_tag }}
