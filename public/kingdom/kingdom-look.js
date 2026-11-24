@@ -184,10 +184,14 @@ export const LIVE_GRADES = Object.freeze({
   dusk: Object.freeze({ shadows: [0.02, 0.02, 0.045], highlights: [1.1, 1.0, 0.86], contrast: 1.08, saturation: 1.08, vignette: 0.3 }),
   day: Object.freeze({ shadows: [0.0, 0.012, 0.03], highlights: [1.05, 1.01, 0.94], contrast: 1.08, saturation: 1.1, vignette: 0.24 })
 });
-export function liveMood({ light = 1, dusk = 0, rain = 0 } = {}) {
-  if (light < 0.35) return rain > 0.3 ? 'rain' : 'night';
+// night (kingdom-data.js skyState): the night grades only below about -6
+// deg (night > 0.5); in civil twilight and the golden hour, the dusk grade;
+// rain by day keeps a day grade (rain greys the sky, it does not make night).
+export function liveMood({ light = 1, dusk = 0, rain = 0, night = null } = {}) {
+  const isNight = night === null ? light < 0.35 : night > 0.5;
+  if (isNight) return rain > 0.3 ? 'rain' : 'night';
   if (dusk > 0.5) return 'dusk';
-  return rain > 0.3 ? 'rain' : 'day';
+  return 'day';
 }
 
 // One full-screen pass after tone mapping: the grade (split toning,

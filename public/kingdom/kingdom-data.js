@@ -201,8 +201,15 @@ export function tickerLine(e) {
 
 // Lit windows by the hour in Dublin: offices (glass and metal facades) lit
 // into the evening and dimming late; homes (brick and stone) later.
-export function windowRatios(hour) {
+// lamps (skyState): homes light up with the dark, whatever the hour; offices
+// keep their hours (lit while open, by day too).
+export function windowRatios(hour, lamps = null) {
   const h = ((Number(hour) % 24) + 24) % 24;
+  if (lamps !== null && Number.isFinite(lamps)) {
+    const office = h < 7 || h >= 23 ? 0.08 : h < 19 ? 0.3 + 0.25 * lamps : h < 21 ? 0.42 : 0.22;
+    const home = h >= 23 || h < 6 ? 0.12 + 0.1 * lamps : 0.08 + 0.47 * lamps;
+    return { office, home };
+  }
   const office = h < 6 ? 0.06 : h < 8 ? 0.25 : h < 17 ? 0.35 : h < 19 ? 0.55 : h < 21 ? 0.42 : h < 23 ? 0.22 : 0.1;
   const home = h < 6 ? 0.04 : h < 8 ? 0.3 : h < 17 ? 0.12 : h < 20 ? 0.45 : h < 23 ? 0.55 : 0.2;
   return { office, home };
@@ -395,10 +402,38 @@ export function dublinSun(ms = Date.now(), { lat = DUBLIN.lat, lon = DUBLIN.lon 
   return { elevation: el, azimuth: (az + 2 * Math.PI) % (2 * Math.PI) };
 }
 
-// Day (1) to night (0), with a soft dusk around the horizon.
+// The sky by the sun's elevation, on the real twilight bands (degrees):
+// night below -12 (astronomical and darker), nautical twilight -12 to -6
+// (a deep blue, still night in the City), civil twilight -6 to 0 (light,
+// blue: Dublin is fairly light by civil dawn), the golden hour 0 to +6, day
+// above +6. Pure (tests/kingdom-twilight.test.mjs).
+//   light    sky brightness 0..1 (0.12 at -6 deg, 0.75 at sunrise, 1 from +6)
+//   night    0..1, over 0.5 only below about -6 deg: the night HDRI, the
+//            night grade and the moon are for night alone
+//   golden   the warm tint, only within a few degrees of the horizon
+//            (peaks at sunrise and sunset; never darkens anything)
+//   lamps    window and street lights: on from shortly before sunset until
+//            shortly after sunrise (full below -2 deg, off above +4 deg)
+//   exposure the tone-mapping exposure: night level (0.7) only at night,
+//            never while the sun is up or in civil twilight
+//   phase    'night' | 'nautical' | 'civil' | 'golden' | 'day'
+//   tint     'dawn' (morning) or 'dusk' (evening), where the golden hour faces
+export const TWILIGHT = Object.freeze({ civil: -6, nautical: -12, golden: 6 });
+const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+export function skyState(elevation, { morning = true } = {}) {
+  const deg = elevation / RAD;
+  const light = deg <= -12 ? 0 : deg <= -6 ? 0.12 * ss(-12, -6, deg) : deg <= 0 ? 0.12 + 0.63 * ss(-6, 0, deg) : 0.75 + 0.25 * ss(0, 6, deg);
+  const night = 1 - ss(-8, -4, deg);
+  const golden = deg < -4 || deg > 10 ? 0 : deg < 1 ? ss(-4, 1, deg) : 1 - ss(1, 10, deg);
+  const lamps = 1 - ss(-2, 4, deg);
+  const exposure = 0.7 + 0.22 * ss(-8, -1, deg);
+  const phase = deg < -12 ? 'night' : deg < -6 ? 'nautical' : deg < 0 ? 'civil' : deg < 6 ? 'golden' : 'day';
+  return { deg, light, night, golden, lamps, exposure, phase, tint: morning ? 'dawn' : 'dusk' };
+}
+
+// Day (1) to night (0): the sky's brightness on the real twilight bands (skyState).
 export function daylight(elevation) {
-  const t = Math.min(1, Math.max(0, (elevation + 0.1) / 0.25));
-  return t * t * (3 - 2 * t);
+  return skyState(elevation).light;
 }
 
 // --- where callers come from ---------------------------------------------------------------

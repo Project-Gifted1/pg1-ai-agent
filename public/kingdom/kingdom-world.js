@@ -61,6 +61,14 @@ function rng(seed) { let s = seed >>> 0 || 1; return () => { s = (Math.imul(s, 1
 
 // The buildings' boxes, for the camera: hit(x, y, z, margin) -> the box or
 // null. A grid of 100 m cells keeps it cheap.
+// Overcast or rain over a colour of the sky: towards its own grey (lower
+// contrast), dimmed a little by day and more at night: a grey day stays day.
+export function greyed(c, storm, light) {
+  const g = (c.r + c.g + c.b) / 3;
+  c.r += (g - c.r) * storm * 0.7; c.g += (g - c.g) * storm * 0.7; c.b += (g - c.b) * storm * 0.7;
+  return c.multiplyScalar(1 - storm * (0.45 - 0.25 * light));
+}
+
 export function makeObstacleIndex(boxes, cell = 100) {
   const grid = new Map();
   const key = (i, j) => `${i},${j}`;
@@ -975,7 +983,9 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       beacons.forEach((b, i) => { b.approval = i < n; if (!b.until) b.goal = b.approval ? 1 : 0; });
       return n;
     },
-    update(dt, t, { sunDir, light, storm, cover = 0.3 + storm * 0.5, wind = 0, sunny = 0.5, dusk = 0, fogColor = null }) {
+    // lamps / night (kingdom-data.js skyState): the lights, and the moonlit night
+    // look, which only starts below about -6 deg; both default to the old rule.
+    update(dt, t, { sunDir, light, storm, cover = 0.3 + storm * 0.5, wind = 0, sunny = 0.5, dusk = 0, lamps = null, night = null, fogColor = null }) {
       if (fogColor) gradU.uFog.value.copy(fogColor);
       env.night = 1 - light;
       const mode = this.state ? this.state.beacon : 'unknown';
@@ -986,21 +996,23 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       tmp.copy(sunDir);
       sun.position.copy(tmp).multiplyScalar(900); if (sun.position.y < 70) sun.position.y = 70;
       sun.target.position.set(0, 0, 0);
-      const moon = 1 - light;
+      const moon = night === null ? 1 - light : night;
+      const lit = lamps === null ? Math.max(dusk, moon) : lamps;
       sun.intensity = 2.3 * light * (1 - storm * 0.55) * (0.85 + 0.15 * sunny) + 0.25 * moon;
       // Crisp shadows under a clear sky, soft under cloud.
       if (sun.shadow) sun.shadow.radius = 1.5 + 5 * (1 - sunny);
       sun.color.setRGB(1, 0.6 + 0.32 * (1 - dusk) * light, 0.36 + 0.52 * (1 - dusk) * light).lerp(cool, moon * 0.8);
       // A night that still reads on a phone: moonlit blue fill, not black.
       // Kept low: enough to separate the buildings from the sky, still night.
-      hemi.intensity = 0.3 + 0.35 * light * (1 - storm * 0.4) + (lookFlags.moon ? 0.08 * moon : 0);
+      // Overcast and rain: softer, a little dimmer light (still day), never night.
+      hemi.intensity = 0.3 + 0.35 * light * (1 - storm * 0.2) + (lookFlags.moon ? 0.08 * moon : 0);
       moonFill.intensity = lookFlags.moon ? 0.32 * moon * (1 - storm * 0.35) : 0;
       moonFill.visible = moonFill.intensity > 0.001;
       gradU.uSunDir.value.copy(tmp);
-      gradU.uTop.value.setRGB(0.04 + 0.16 * light * (1 - dusk), 0.07 + 0.3 * light * (1 - dusk), 0.17 + 0.55 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.5);
-      gradU.uMid.value.setRGB(0.18 + 0.4 * light * (1 - dusk), 0.25 + 0.45 * light * (1 - dusk), 0.45 + 0.4 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.45);
+      gradU.uTop.value.setRGB(0.04 + 0.16 * light * (1 - 0.5 * dusk), 0.07 + 0.3 * light * (1 - 0.5 * dusk), 0.17 + 0.55 * light * (1 - 0.5 * dusk)); greyed(gradU.uTop.value, storm, light);
+      gradU.uMid.value.setRGB(0.18 + 0.4 * light * (1 - 0.5 * dusk), 0.25 + 0.45 * light * (1 - 0.5 * dusk), 0.45 + 0.4 * light * (1 - 0.5 * dusk)); greyed(gradU.uMid.value, storm, light);
       // Golden hour, not red: the horizon stays amber-peach (red is the enemy's colour).
-      gradU.uHorizon.value.setRGB(0.95, 0.74 + 0.16 * (1 - dusk), 0.52 + 0.36 * (1 - dusk)).multiplyScalar((0.25 + 0.75 * light) * (1 - storm * 0.5));
+      gradU.uHorizon.value.setRGB(0.95, 0.74 + 0.16 * (1 - dusk), 0.52 + 0.36 * (1 - dusk)).multiplyScalar(0.25 + 0.75 * light); greyed(gradU.uHorizon.value, storm, light);
       gradU.uGlow.value.setRGB(1, 0.84, 0.62).multiplyScalar(Math.max(0.08, dusk) * (1 - storm));
       if (riverMat.uniforms) {
         riverMat.uniforms.uTime.value = t;
@@ -1023,14 +1035,14 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
         cu.uWarm.value.setRGB(1, 0.74 + 0.22 * (1 - dusk), 0.52 + 0.44 * (1 - dusk));
       }
       // Window glow: stronger at night with the look's glow (kingdom-look.js).
-      facade.userData.windows.uNight.value = (0.15 + 1.6 * Math.max(dusk * 0.8, moon)) * (lookFlags.glow ? 1 + 0.5 * moon : 1);
+      facade.userData.windows.uNight.value = (0.15 + 1.6 * lit) * (lookFlags.glow ? 1 + 0.5 * moon : 1);
       facade.userData.windows.uSkyTop.value.copy(gradU.uTop.value).lerp(gradU.uMid.value, 0.5).multiplyScalar(1.15);
       facade.userData.windows.uSkyHor.value.copy(gradU.uMid.value).lerp(gradU.uHorizon.value, 0.45);
       facade.userData.windows.uGround.value.setRGB(0.1, 0.105, 0.115).multiplyScalar(0.4 + 0.6 * light);
       facade.userData.windows.uTime.value = t;
-      lampMat.color.setHex(moon > 0.3 || dusk > 0.5 ? 0xffd9a0 : 0x6a6252);
-      poolMat.opacity = Math.max(0, Math.max(dusk * 0.7, moon) - 0.25) * 0.9; lampPools.visible = poolMat.opacity > 0.01;
-      streakMat.opacity = 0.25 + 0.7 * Math.max(dusk, moon);
+      lampMat.color.setHex(lit > 0.3 ? 0xffd9a0 : 0x6a6252);
+      poolMat.opacity = Math.max(0, lit * (1 - 0.6 * light) - 0.25) * 0.9; lampPools.visible = poolMat.opacity > 0.01;
+      streakMat.opacity = 0.25 + 0.7 * lit;
       // Streaks shimmer with the ripples.
       for (let i = 0; i < streakSeeds.length; i++) { const s = streakSeeds[i]; const w = 1 + 0.35 * Math.sin(t * 2.2 + s.ph); set(streaks, i, s.x + Math.sin(t * 0.8 + s.ph) * 0.6, -3.0, RIVER.z + s.side * (RIVER.half - s.len / 2 - 1), w * 1.2, s.len, 1, 0, -Math.PI / 2); }
       streaks.instanceMatrix.needsUpdate = true;
@@ -1049,7 +1061,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       sealMat.emissiveIntensity += (0.25 - sealMat.emissiveIntensity) * Math.min(1, dt * 1.2);
       // The emblem: its gold edge glows at dusk and night; a pulse when a gadget fires.
       emblemPulse = Math.max(0, emblemPulse - dt * 0.9);
-      const dark = Math.max(dusk, moon);
+      const dark = lit;
       for (const e of emblems3d) { e.gold.emissiveIntensity = 0.12 + 0.35 * dark + 1.4 * emblemPulse; e.edge.opacity = Math.min(1, 0.35 + 0.65 * dark + emblemPulse); }
       if (hologram) { hologram.uniforms.uTime.value = t; hologram.uniforms.uAlpha.value = Math.max(0, moon - 0.35) * 1.4 + emblemPulse * 0.3; hologram.mesh.rotation.y = t * 0.15; hologram.mesh.visible = hologram.uniforms.uAlpha.value > 0.01; }
       if (emblemGlow) emblemGlow.material.opacity = 0.12 + 0.3 * dark + 0.4 * emblemPulse;
