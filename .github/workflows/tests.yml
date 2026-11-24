@@ -148,15 +148,15 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg
-      # The sandbox's 3D tests run in the job below. npm run test:browser
-      # still runs every browser test, for running them all locally.
+      # The sandbox's and the City's 3D tests run in the job below. npm run
+      # test:browser still runs every browser test, for running them all locally.
       - name: Browser tests but the sandbox's (network blocked)
         env:
           NODE_OPTIONS: --import=./tests/ci/no-network.mjs
           PG1_NET_GUARD_LOG: ${{ runner.temp }}/network-violations.jsonl
         run: |
           set -o pipefail
-          files=$(ls tests/browser/*.test.mjs | grep -v '^tests/browser/sandbox')
+          files=$(ls tests/browser/*.test.mjs | grep -vE '^tests/browser/(sandbox|kingdom)')
           node --import ./tests/helpers/spend-cap.mjs --test $files | tee "$RUNNER_TEMP/browser.tap"
           # The browser tests skip themselves when Chromium is missing;
           # here that would be a silent pass, so treat it as a failure.
@@ -184,12 +184,16 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # The sandbox viewer's tests draw 3D in software (SwiftShader), which uses
-  # every core. Run together in one job, several at once, they starved each
-  # other: 40 frames could take over four minutes and the job ran near its
-  # hour. Here each group has a runner of its own and runs one file at a time.
+  # The sandbox viewer's and the City's tests draw 3D in software
+  # (SwiftShader), which uses every core. Run together in one job, several at
+  # once, they starved each other: 40 frames could take over four minutes, and
+  # the City's frames measured 2-4x their cost alone (24 Nov 2026: 799-2031 ms
+  # per frame at the Phone tier beside the twilight and flight tests, the
+  # "empty feed" test failing on main and on #439). Here each group has a
+  # runner of its own and runs one file at a time, so a frame time is the
+  # City's own cost on a 4-core runner.
   sandbox-browser:
-    name: sandbox browser tests (${{ matrix.group }})
+    name: 3D browser tests (${{ matrix.group }})
     # Pinned: Playwright 1.56.1 cannot install Chromium on ubuntu-latest
     # (Ubuntu 26.04). Move back once Playwright supports it.
     runs-on: ubuntu-24.04
@@ -204,6 +208,10 @@ jobs:
             files: tests/browser/sandbox.browser.test.mjs tests/browser/sandbox-effects.browser.test.mjs tests/browser/sandbox-play.browser.test.mjs
           - group: life
             files: tests/browser/sandbox-benin-warri.browser.test.mjs tests/browser/sandbox-rescue.browser.test.mjs tests/browser/sandbox-social.browser.test.mjs tests/browser/sandbox-sound.browser.test.mjs
+          - group: city
+            files: tests/browser/kingdom.browser.test.mjs tests/browser/kingdom-city.browser.test.mjs
+          - group: city-phones
+            files: tests/browser/kingdom-a07.browser.test.mjs tests/browser/kingdom-flight.browser.test.mjs tests/browser/kingdom-twilight.browser.test.mjs
     steps:
       - uses: actions/checkout@v4
         with:
@@ -215,12 +223,12 @@ jobs:
       - run: npm ci
       - name: Install Chromium (version pinned by package-lock.json)
         run: npx playwright install --with-deps chromium
-      - name: Every sandbox browser file is in a group
+      - name: Every sandbox and City browser file is in a group
         run: |
-          for f in tests/browser/sandbox*.test.mjs; do
-            grep -q "$f" .github/workflows/tests.yml || { echo "::error::$f is in no sandbox group"; exit 1; }
+          for f in tests/browser/sandbox*.test.mjs tests/browser/kingdom*.test.mjs; do
+            grep -q "$f" .github/workflows/tests.yml || { echo "::error::$f is in no 3D group"; exit 1; }
           done
-      - name: Sandbox browser tests, ${{ matrix.group }} (network blocked)
+      - name: 3D browser tests, ${{ matrix.group }} (network blocked)
         env:
           NODE_OPTIONS: --import=./tests/ci/no-network.mjs
           PG1_NET_GUARD_LOG: ${{ runner.temp }}/network-violations.jsonl
@@ -245,7 +253,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sandbox-screenshots-${{ matrix.group }}
+          name: 3d-screenshots-${{ matrix.group }}
           path: docs/screenshots/*.png
           if-no-files-found: ignore
           retention-days: 7
