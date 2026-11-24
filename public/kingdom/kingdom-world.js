@@ -799,7 +799,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   const lampN = phone ? 90 : 220;
   const lampPoles = named(new THREE.InstancedMesh(new THREE.CylinderGeometry(0.15, 0.2, 8, 6), mats.steelDark, lampN), 'street-light-poles');
   const lampMat = new THREE.MeshBasicMaterial({ color: 0x6a6252 });
-  const lampHeads = named(new THREE.InstancedMesh(new THREE.SphereGeometry(0.55, 8, 6), lampMat, lampN), 'street-lights');
+  const lampHeads = named(new THREE.InstancedMesh(legacy ? new THREE.SphereGeometry(0.55, 5, 3) : new THREE.SphereGeometry(0.55, 8, 6), lampMat, lampN), 'street-lights'); // Legacy: 20-triangle lamp heads (the same glow at a phone's distance), keeping its night view under 150k triangles
   for (let i = 0; i < lampN; i++) {
     const side = i % 2 ? 1 : -1; const x = -1600 + Math.floor(i / 2) * (3200 / (lampN / 2));
     set(lampPoles, i, x, 4, RIVER.z + side * (RIVER.half + 3)); set(lampHeads, i, x, 8.2, RIVER.z + side * (RIVER.half + 3));
