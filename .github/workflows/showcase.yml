@@ -14,7 +14,7 @@ name: PG1 Showcase render
 # the City is calm and the universe shot uses the universe template.
 # manifest.json says which data each shot used.
 #
-# Reel mode (reel: inside-city, the 24 Nov post): the ten City shots of
+# Reel mode (reel: inside-city, the 24 Nov post): the thirteen City shots (day and night) of
 # lib/showcase/reel.mjs, each on its own runner at once, all replaying the
 # same real 7-day window of the defence feed (one epoch for every job).
 # Each job's artifact holds its MP4, still and manifest; the post is built

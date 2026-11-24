@@ -51,7 +51,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, readdirSync
 import { dirname, extname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { SHOTS, shotById as baseShotById, planShot, poseAt, frameCount, SHOWCASE_FPS, STILLS, stillById } from '../lib/showcase/shots.mjs';
+import { SHOTS, shotById as baseShotById, planShot, poseAt, frameCount, SHOWCASE_FPS, STILLS, stillById, cameraPosition } from '../lib/showcase/shots.mjs';
 import { REEL_ID, REEL_SHOTS, REEL_WINDOW_DAYS, reelShotById, planReelShot, followPose, pickReelEvents, reelCounts, pickWeatherChange, weatherFromRecord } from '../lib/showcase/reel.mjs';
 
 // A Showcase shot or a reel shot (lib/showcase/reel.mjs), by id.
@@ -453,6 +453,26 @@ async function renderShot(browser, origin, shot, opts, log) {
 
 // The public part of a real event, for the reel's captions and copy: never a
 // caller hash, an IP or anything else that identifies a caller.
+// Where an airliner crosses the view: far behind the subject, a little
+// above the centre of the frame, at least 230 m up and 700 m out (a plane in
+// the sky, never one beside a building). null when the view looks down too
+// steeply to show sky, unless the camera is high enough to see it below.
+export function skyPoint(pose) {
+  const cam = cameraPosition(pose);
+  const f = [pose.target[0] - cam[0], pose.target[1] - cam[1], pose.target[2] - cam[2]]; const fl = Math.hypot(...f); const fw = f.map((v) => v / fl);
+  const right = [fw[2], 0, -fw[0]]; const rl = Math.hypot(...right) || 1; const rt = right.map((v) => v / rl);
+  const up = [rt[1] * fw[2] - rt[2] * fw[1], rt[2] * fw[0] - rt[0] * fw[2], rt[0] * fw[1] - rt[1] * fw[0]];
+  const a = ((pose.fov || 40) * Math.PI / 180) * 0.4;
+  const d = fw.map((v, i) => v * Math.cos(a) + up[i] * Math.sin(a) * Math.sign(up[1] || 1));
+  if (d[1] < 0.03) {
+    // Looking down from above 290 m: the airliner below the camera, over the city, mid-frame at 240 m.
+    if (cam[1] > 290 && pose.target[1] < 240) { const k = (cam[1] - 240) / (cam[1] - pose.target[1]); return [cam[0] + f[0] * k, 240, cam[2] + f[2] * k]; }
+    return null;
+  }
+  const R = Math.max(700, pose.dist * 1.6, (230 - cam[1]) / d[1]);
+  return [cam[0] + d[0] * R, cam[1] + d[1] * R, cam[2] + d[2] * R];
+}
+
 export const publicEvent = (e) => (e ? { id: e.id, time: e.time, last: e.last, kind: e.kind, gadget: e.gadget, role: e.role, severity: e.severity, country_code: e.country_code || null, check: e.check, verdict_code: e.verdict_code, reasons: (e.reasons || []).slice(0, 2), count: e.count } : null);
 const recordedMs = (iso) => Date.parse(`${iso}:00Z`); // Open-Meteo local time; Dublin is on GMT in November
 
@@ -475,12 +495,12 @@ export async function renderReelShot(browser, origin, shot, opts, data, log) {
     await new Promise((r) => setTimeout(r, 250));
   }
   const dayNight = shot.light === 'day-to-night' ? [dublinEpoch(15, 50), dublinEpoch(17, 25)] : null;
-  const epoch = dayNight ? dayNight[0] : shot.light === 'recorded' ? recordedMs(wx.change.rain.time) : shot.light === 'night' ? dublinEpoch(23, 10) : dublinEpoch(22, 0);
+  const epoch = dayNight ? dayNight[0] : shot.light === 'recorded' ? recordedMs(wx.change.rain.time) : shot.light === 'day' ? dublinEpoch(13, 0) : shot.light === 'night' ? dublinEpoch(23, 10) : dublinEpoch(22, 0);
   const weather = shot.light === 'recorded' ? wx.rain : shot.weather;
   await page.evaluate((o) => window.showcase.setup(o), { light: 'live', weather, epoch });
   await page.evaluate(() => window.__showcase.lock());
   const { HERO_BEARING } = await import('../public/kingdom/kingdom-world.js').catch(() => ({ HERO_BEARING: 0.16 }));
-  const plan = planReelShot(shot.id, { heroBearing: HERO_BEARING, landmarks: await page.evaluate(() => window.showcase.landmarks()), junction: await page.evaluate(() => window.showcase.junction()) });
+  const plan = planReelShot(shot.id, { heroBearing: HERO_BEARING, landmarks: await page.evaluate(() => window.showcase.landmarks()), junction: await page.evaluate(() => window.showcase.junction()), trams: await page.evaluate(() => window.showcase.scene.trams()) });
   const total = opts.frames || frameCount(shot.seconds, opts.fps);
   const step = 1000 / opts.fps;
   if (!plan.director) await page.evaluate((p) => window.showcase.pose(p), poseAt(plan, 0));
@@ -501,6 +521,14 @@ export async function renderReelShot(browser, origin, shot, opts, data, log) {
   // A probe: from its origin until it is 2.2 s from the gate (the shot sees it arrive and the Gate Wardens turn it back).
   if (shot.replay === 'probe') { const left = await page.evaluate((id) => { for (let i = 0; i < 600; i++) { const eta = window.showcase.eta(id); if (eta == null || eta <= 2.2) return eta; window.showcase.scene.runActors(0.1); } return window.showcase.eta(id); }, ids[0]); log(`${shot.id}: run-up done, ${left == null ? 'no group' : `${left.toFixed(1)} s to the gate`}`); await settle(); }
   if (shot.replay === 'signed') await page.evaluate(() => { for (let i = 0; i < 4; i++) window.__showcase.advance(100); });
+  // Several real events in a camera shot (not the director): run on until the first is 2 s from its mark, so arrivals and answers land in the shot.
+  if (shot.replay === 'director' && !plan.director) { await page.evaluate((x) => { for (let i = 0; i < 600; i++) { const etas = x.map((id) => window.showcase.eta(id)).filter((v) => v != null); if (!etas.length || Math.min(...etas) <= 2) return; window.showcase.scene.runActors(0.1); } }, ids); await settle(); }
+  // The city's own life in the frame (ambient, never an event): an airliner crossing the view mid-shot, boats sailing past the target.
+  if (shot.ambient && !plan.director) {
+    const mid = poseAt(plan, 0.5);
+    if (shot.ambient.aircraft) { const pt = skyPoint(mid); if (pt) await page.evaluate(([p0, sec]) => window.showcase.scene.aircraftThrough(p0, sec, 0), [pt, ((total - 1) / 2) * step / 1000]); }
+    if (shot.ambient.boats) await page.evaluate((x) => window.showcase.scene.boatsPast(x, 120), mid.target[0]);
+  }
   // Director: on, its first cut at once; 5 s on (clock and actors) the next cut lands 1.5 s into the shot.
   if (plan.director) { await page.evaluate(() => { window.showcase.pose(null); window.showcase.director(true); window.__showcase.advance(100); window.__showcase.skip(5000); window.showcase.scene.runActors(5); }); await settle(); }
   const focuses = new Set(); const t0 = Date.now(); const infos = {}; let cleared = false;
@@ -509,6 +537,7 @@ export async function renderReelShot(browser, origin, shot, opts, data, log) {
     let pose = plan.director ? null : poseAt(plan, t);
     if (pose && plan.follow === 'event') pose = followPose(pose, await page.evaluate((id) => window.showcase.whereIs(id), ids[0]), t);
     if (pose && plan.follow === 'seal') pose = followPose(pose, await page.evaluate(() => window.showcase.sealAt()), t);
+    if (pose && plan.follow === 'tram') pose = followPose(pose, await page.evaluate(() => { const tr = window.showcase.scene.trams()[0]; return tr ? { x: tr.x - tr.dir * 40, y: 17, z: tr.z } : null; }), t);
     if (dayNight) await page.evaluate((ms) => window.__showcase.setDate(ms), dayNight[0] + (dayNight[1] - dayNight[0]) * t);
     if (shot.light === 'recorded' && !cleared && t >= 0.42) { cleared = true; await page.evaluate((w) => window.showcase.weatherNow(w), wx.clear); }
     await page.evaluate(([p, ms]) => { if (p) window.showcase.pose(p); window.__showcase.advance(ms); }, [pose, step]);

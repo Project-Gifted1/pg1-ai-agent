@@ -113,7 +113,7 @@ CI runs only a 2-frame smoke test (`tests/browser/showcase-smoke.browser.test.mj
 
 ## The reel: "Inside PG1 City" (24 November 2026)
 
-`lib/showcase/reel.mjs` holds ten City shots (4.5 s; director mode 6 s), each
+`lib/showcase/reel.mjs` holds thirteen City shots (day and night) (4.5 s; director mode 6 s), each
 replaying real data only:
 
 | Shot | What it replays |
@@ -121,8 +121,10 @@ replaying real data only:
 | `crown-tower` | PG1's real state (beacons, shield); no event staged |
 | `probe-arrives` | the latest probe with a country in the last 7 days, followed from its origin to the Gate Wardens |
 | `seal-forge` | the latest signed result (left out if PG1 signed none in the window) |
-| `junction-traffic`, `river-bridge`, `drone-patrol`, `city-wide` | the city's own life and PG1's state; no event staged |
+| `junction-traffic`, `river-bridge` | the street in front of the shopping centre, and boats on the river with their lights: the city's own life, no event staged |
+| `drone-patrol`, `city-wide` | the window's most important real events arriving, with PG1's answers; an airliner and boats as ambient life |
 | `dublin-weather` | Dublin's recorded hourly weather (Open-Meteo archive, else the forecast API's past days): the latest rain hour followed by clearing, at its own hour |
+| `street-level`, `tram`, `city-day` | by day (13:00 Dublin): the plaza at eye level with its people, cafes and buskers; alongside a tram on the elevated line; the city from the air. The city's own life only (ambient), no event staged |
 | `day-to-night` | the clock run from 15:50 to 17:25 Dublin time |
 | `director` | director mode on, with up to four of the window's most important real events |
 

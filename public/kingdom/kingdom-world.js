@@ -79,6 +79,15 @@ export function makeObstacleIndex(boxes, cell = 100) {
         }
       }
       return null;
+    },
+    // The highest roof under (x, z), padded by margin; 0 when nothing is
+    // there. PG1's own tower (pg1: true) is left out: its drones dock on it.
+    topAt(x, z, margin = 0) {
+      const i = Math.floor(x / cell); const j = Math.floor(z / cell); let top = 0;
+      for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) for (const b of grid.get(key(i + di, j + dj)) || []) {
+        if (!b.pg1 && Math.abs(x - b.x) <= b.hw + margin && Math.abs(z - b.z) <= b.hd + margin && b.top > top) top = b.top;
+      }
+      return top;
     }
   };
 }
@@ -421,9 +430,21 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     if (l.x > 150 && l.x < 270 && l.z > 10 && l.z < RIVER.z) return false;
     if (inPark(l.x, l.z, big)) return false;
     if (inHeroCorridor(l.x, l.z, big * 0.6)) return false;
+    // Never into the shopping centre or the retail parade (reserved first).
+    if (reserved.some((q) => Math.abs(l.x - q.x) < (l.w + q.w) / 2 + 6 && Math.abs(l.z - q.z) < (l.d + q.d) / 2 + 6)) return false;
     lots.push({ seed: r() * 1000, ...l });
+    if (l.kind) reserved.push(l);
     return true;
   };
+  const reserved = [];
+  // Street-level retail: a shopping centre (a broad, low block of shop
+  // fronts with lit sign bands, awnings and a glass atrium on the roof) and
+  // a parade of two-storey shop units along the next street. Same materials
+  // as the rest of the skyline, so no new draw calls on a phone.
+  let mall = null;
+  for (const [mx, mz] of [[240, -120], [240, -280], [-400, -120], [400, -280]]) if (tryLot({ ring: 'near', kind: 'mall', x: mx, z: mz, w: 96, d: 64, h: 18, shape: 'box', style: STYLES.podium })) { mall = lots[lots.length - 1]; break; }
+  const parade = [];
+  for (let x = 340; x <= 452; x += 22) if (tryLot({ ring: 'near', kind: 'shop', x, z: -122, w: 18, d: 14, h: 8, shape: 'box', style: STYLES.podium })) parade.push(lots[lots.length - 1]);
   const pickShape = () => { const k = r(); return k < 0.32 ? 'box' : k < 0.48 ? 'round' : k < 0.62 ? 'taper' : k < 0.76 ? 'twist' : 'setback'; };
   for (let i = 0; i < nearN * 8 && lots.filter((l) => l.ring === 'near').length < nearN; i++) {
     const a = r() * Math.PI * 2; const d = 75 + Math.pow(r(), 0.8) * 430;
@@ -461,6 +482,8 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     // A podium at street level under the tall ones.
     let base = 0;
     if (l.ring === 'near' && l.h > 70) { add('box', l.x, 0, l.z, l.w * 1.35, 9, l.d * 1.35, { style: STYLES.podium }); base = 9; detail.podiums.push({ x: l.x, z: l.z, w: l.w * 1.35, d: l.d * 1.35, ry }); }
+    // The shopping centre and the shop units: shop fronts all round, awnings, and the centre's glass atrium.
+    if (l.kind) { detail.podiums.push({ x: l.x, z: l.z, w: l.w, d: l.d, ry }); if (l.kind === 'mall') add('box', l.x, l.h, l.z, l.w * 0.45, 7, l.d * 0.4, { style: STYLES.glass }); }
     if (l.ring === 'near' || l.ring === 'mid' || l.ring === 'river') detail.lots.push(l);
     const h = l.h - base;
     if (l.shape === 'setback') {
@@ -597,7 +620,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   const spire = named(new THREE.InstancedMesh(spireGeo, facade, 1), 'tower-spire');
   set(spire, 0, 0, PODIUM_H, 0, 1, 1, 1, Math.PI / 6);
   keep.add(spire);
-  obstacles.push({ x: 0, z: 0, hw: 30, hd: 30, top: PODIUM_H + 60 }, { x: 0, z: 0, hw: 20, hd: 20, top: PODIUM_H + 120 }, { x: 0, z: 0, hw: 12, hd: 12, top: TOWER_TOP });
+  obstacles.push({ x: 0, z: 0, hw: 30, hd: 30, top: PODIUM_H + 60, pg1: true }, { x: 0, z: 0, hw: 20, hd: 20, top: PODIUM_H + 120, pg1: true }, { x: 0, z: 0, hw: 12, hd: 12, top: TOWER_TOP, pg1: true });
   const radiusAt = (y) => 24 - (24 - 2.2) * ((y - PODIUM_H) / SPIRE_H);
   for (let k = 0; k < 6; k++) {
     const a = (k / 6) * Math.PI * 2;
@@ -934,7 +957,19 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   let cloudLag = 0;
   let wetNow = 0;
   let cloudClock = 0;
+  // The shopping centre's sign over its entrance (desktop tiers: one more
+  // draw call; the phone tiers keep the lit sign bands of the shop fronts).
+  if (mall && !phone && !legacy) {
+    const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 128; const g = cv.getContext('2d');
+    g.fillStyle = '#0c0e12'; g.fillRect(0, 0, 1024, 128); g.fillStyle = '#ffe7b8'; g.font = '600 74px Inter, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('SHOPPING CENTRE', 512, 68);
+    const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+    const sign = named(new THREE.Mesh(new THREE.PlaneGeometry(36, 4.5), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false })), 'shopping-centre-sign');
+    const ry = (mall.seed % 1) * 0.3;
+    sign.position.set(mall.x + Math.sin(ry) * (mall.d / 2 + 0.3), 12.5, mall.z + Math.cos(ry) * (mall.d / 2 + 0.3)); sign.rotation.y = ry;
+    root.add(sign);
+  }
   return {
+    mall: mall ? { x: mall.x, z: mall.z, w: mall.w, d: mall.d, h: mall.h, ry: (mall.seed % 1) * 0.3 } : null,
     root, gates, portcullis, vaultDoors, beacons, lanterns, forge: { group: forge, seal: sealMat }, harbour: { bearing: Math.atan2(harbourPoint.x, -harbourPoint.z), point: harbourPoint },
     tollBarrier: barrier, toll, dome: domeUniforms, domeMesh: dome, preflight, crane, xray, deckY: DECK_Y, tip: tip.position, roofSpots,
     fogBearing, keep, sun, hemi, sky, windows: facade.userData.windows, env, buildingCount: lots.length,

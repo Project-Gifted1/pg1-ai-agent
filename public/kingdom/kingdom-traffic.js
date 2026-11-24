@@ -356,7 +356,9 @@ export function createTraffic({ density = 1, seed = 11, cols = 6, rowsNorth = 4,
   const boatList = [];
   const RIVER_LANES = [{ z: RIVER_Z - 8, dir: 1 }, { z: RIVER_Z + 8, dir: -1 }];
   const RIVER_END = 1400;
-  if (boats) for (const lane of RIVER_LANES) { lane.boats = []; for (let i = 0; i < 4; i++) { const ferry = r() < 0.3; const b = { ferry, len: ferry ? 25 : 14.5, wid: ferry ? 7 : 4, v0: ferry ? 5 : 8.5, v: 4, x: -RIVER_END + i * 650 + r() * 200, z: lane.z, lane, heading: lane.dir > 0 ? Math.PI / 2 : -Math.PI / 2 }; lane.boats.push(b); boatList.push(b); } lane.boats.sort((a, b) => (b.x - a.x) * lane.dir); }
+  // Seven boats a lane over the city stretch, so a shot along the river has some in it.
+  const BOATS_PER_LANE = 7;
+  if (boats) for (const lane of RIVER_LANES) { lane.boats = []; for (let i = 0; i < BOATS_PER_LANE; i++) { const ferry = r() < 0.3; const b = { ferry, len: ferry ? 25 : 14.5, wid: ferry ? 7 : 4, v0: ferry ? 5 : 8.5, v: 4, x: -1100 + i * (2200 / BOATS_PER_LANE) + r() * 120, z: lane.z, lane, heading: lane.dir > 0 ? Math.PI / 2 : -Math.PI / 2 }; lane.boats.push(b); boatList.push(b); } lane.boats.sort((a, b) => (b.x - a.x) * lane.dir); }
   function stepBoats(dt, external = []) {
     for (const lane of RIVER_LANES) {
       if (!lane.boats) continue;

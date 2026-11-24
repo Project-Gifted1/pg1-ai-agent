@@ -710,10 +710,14 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     if (showcasePose && post && post.setFocus) post.setFocus(showcasePose.focus === null ? null : showcasePose.focus || controls.dist);
     // The camera never goes into or through a building: lifted clear of
     // every box on its line of sight, smoothly (but never left inside one).
-    const needY = clearCamera(camera.position, controls.target, world.obstacles);
+    // A scripted Showcase pose marked free (street level, beside the tram) is
+    // checked by its plan instead: no lift over nearby buildings. Every
+    // other camera is still lifted clear of them.
+    const free = !!(showcasePose && showcasePose.free) && !world.obstacles.hit(camera.position.x, camera.position.y, camera.position.z, 0);
+    const needY = free ? 0 : clearCamera(camera.position, controls.target, world.obstacles);
     camLift += (Math.max(0, needY - camera.position.y) - camLift) * Math.min(1, dt * 3);
     camera.position.y += camLift;
-    const hardY = clearCamera(camera.position, controls.target, world.obstacles, 2);
+    const hardY = free ? 0 : clearCamera(camera.position, controls.target, world.obstacles, 2);
     if (hardY > camera.position.y) camera.position.y = hardY;
     camera.lookAt(controls.target);
     if (world.obstacles.hit(camera.position.x, camera.position.y, camera.position.z, 0)) camInside++;
@@ -913,7 +917,13 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     // before a replayed real event reaches its mark; nothing is added).
     runActors(seconds) { let tt = (performance.now() - t0) / 1000; for (let k = 0; k < Math.min(1200, Math.round(seconds / 0.1)); k++) { tt += 0.1; actors.update(0.1, tt, camera, { storm: 0 }); } },
     sealAt: () => actors.sealAt(),
-    landmarks: () => ({ deckY: world.deckY, emblemY: world.emblemY, tip: world.tip ? [world.tip.x, world.tip.y, world.tip.z] : null, forge: [world.forge.group.position.x, world.forge.group.position.y, world.forge.group.position.z], harbour: [world.harbour.point.x, world.harbour.point.y, world.harbour.point.z] }),
+    // Showcase, ambient only (never an event): an airliner through a point of the view, boats past a point of the river.
+    aircraftThrough: (point, inSeconds, i) => life.aircraftThrough(point, inSeconds, i),
+    aircraft: () => life.aircraft(),
+    boatsPast: (x, spread) => life.boatsPast(x, spread),
+    trams: () => life.trams(),
+    vehicles: (n) => life.vehicles(n),
+    landmarks: () => ({ deckY: world.deckY, emblemY: world.emblemY, tip: world.tip ? [world.tip.x, world.tip.y, world.tip.z] : null, forge: [world.forge.group.position.x, world.forge.group.position.y, world.forge.group.position.z], harbour: [world.harbour.point.x, world.harbour.point.y, world.harbour.point.z], mall: world.mall }),
     // For screenshots: the tallest towers near the centre (x, z, height, width).
     towers: () => world.roofSpots.filter((r) => r.ring === 'near').slice(0, 12).map((r) => ({ x: Math.round(r.x), z: Math.round(r.z), h: Math.round(r.h), w: Math.round(r.w) })),
     // For tuning: what each named object costs (renderables, triangles), largest first.

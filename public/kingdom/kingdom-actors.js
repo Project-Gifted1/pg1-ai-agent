@@ -583,6 +583,11 @@ export function createActors(THREE, scene, world, settings) {
     // The underglow: faint, at night only.
     const glow = DRONE_LOOK.glowNight * Math.max(0, Math.min(1, (world.env && world.env.night) || 0));
     for (const m of underMats) m.opacity = glow;
+    // Nothing that flies goes through a building: every drone stays at least
+    // 10 m above the highest roof under it (6 m around it). PG1's own tower
+    // is left out (its drones dock on its deck), and the patrol rings keep
+    // their distance from it by design.
+    if (world.obstacles && world.obstacles.topAt) for (const c of crowds) if (c.fly) for (const a of c.agents) { const top = world.obstacles.topAt(a.x, a.z, 6); if (top > 0 && a.y < top + 10) a.y = top + 10; }
     for (const c of crowds) c.write(t, camTmp);
   }
 

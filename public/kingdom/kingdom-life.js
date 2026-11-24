@@ -97,29 +97,81 @@ export function createLife(THREE, scene, world, settings) {
   // --- traffic: the lane simulation, drawn ---
   const traffic = createTraffic({ density: k, cols: phone ? 4 : 6, rowsNorth: phone ? 3 : 4, rowsSouth: phone ? 3 : 4, tramZ: TRAM_Z, pedestrians: Math.max(0.35, k) });
   const CAP = traffic.target + 40;
-  const carBodyGeo = new THREE.BoxGeometry(1.9, 0.8, 4.5); carBodyGeo.translate(0, 0.55, 0);
-  const carCabGeo = new THREE.BoxGeometry(1.7, 0.6, 2.3); carCabGeo.translate(0, 1.25, -0.25);
-  const vanGeo = new THREE.BoxGeometry(2.1, 2.3, 5.8); vanGeo.translate(0, 1.3, 0);
-  const busGeo = new THREE.BoxGeometry(2.5, 3.1, 12); busGeo.translate(0, 1.7, 0);
-  const carPalette = [0x1f2a36, 0x8a9099, 0xd8dde3, 0x2f4a6b, 0x3a3f46, 0x6b5a45, 0x1c3b2f];
-  const carBodies = dyn(named(new THREE.InstancedMesh(carBodyGeo, std(0xffffff, { metalness: 0.6, roughness: 0.3 }), CAP), 'car-bodies'));
+  // Vehicle models (1.24 look): shaped from their side profiles, not boxes.
+  // One geometry per kind with per-vertex colour: paint (white, so the
+  // instance colour shows), dark glass, black tyres and grey rims. The
+  // instance colour multiplies it, so glass and tyres stay dark on every car.
+  const lowPoly = !!(settings.legacy);
+  const WHITE = [1, 1, 1]; const GLASS = [0.07, 0.09, 0.12]; const TYRE = [0.035, 0.035, 0.04]; const RIM = [0.55, 0.57, 0.6]; const TRIM = [0.16, 0.17, 0.19];
+  // A side profile [[z, y], ...] (z forward) extruded across the width, centred.
+  const profile = (pts, width, col) => { const sh = new THREE.Shape(pts.map(([z, y]) => new THREE.Vector2(z, y))); const g = new THREE.ExtrudeGeometry(sh, { depth: width, bevelEnabled: !lowPoly, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 1, curveSegments: 1 }); g.translate(0, 0, -width / 2); g.rotateY(-Math.PI / 2); return { g, col }; };
+  const wheels = (axles, track, r) => axles.flatMap((z) => [-1, 1].flatMap((side) => { const t = new THREE.CylinderGeometry(r, r, 0.26, lowPoly ? 6 : 12); t.rotateZ(Math.PI / 2); t.translate(side * track, r, z); const h = new THREE.CylinderGeometry(r * 0.55, r * 0.55, 0.28, lowPoly ? 6 : 10); h.rotateZ(Math.PI / 2); h.translate(side * (track + 0.01), r, z); return [{ g: t, col: TYRE }, { g: h, col: RIM }]; }));
+  const vehicleGeo = (parts) => { const gs = parts.map(({ g, col, glow = 0 }) => { const n = g.index ? g.toNonIndexed() : g; const c = new Float32Array(n.attributes.position.count * 3); const w = new Float32Array(n.attributes.position.count * 3); for (let i = 0; i < c.length; i += 3) { c[i] = col[0]; c[i + 1] = col[1]; c[i + 2] = col[2]; w[i] = glow; w[i + 1] = glow * 0.78; w[i + 2] = glow * 0.5; } n.setAttribute('color', new THREE.BufferAttribute(c, 3)); n.setAttribute('aGlow', new THREE.BufferAttribute(w, 3)); n.deleteAttribute('uv'); return n; }); const total = gs.reduce((a, g) => a + g.attributes.position.count, 0); const out = new THREE.BufferGeometry(); for (const name of ['position', 'normal', 'color', 'aGlow']) { const arr = new Float32Array(total * 3); let o = 0; for (const g of gs) { arr.set(g.attributes[name].array, o); o += g.attributes[name].array.length; } out.setAttribute(name, new THREE.BufferAttribute(arr, 3)); } gs.forEach((g) => g.dispose()); return out; };
+  // A car (4.5 m): bumpers, bonnet, raked windscreen, glass house, boot; the glass a little narrower than the body.
+  const carBodyGeo = vehicleGeo([
+    profile([[-2.25, 0.32], [2.25, 0.32], [2.32, 0.55], [2.2, 0.82], [1.15, 0.95], [-1.85, 0.95], [-2.25, 0.82], [-2.3, 0.5]], 1.86, WHITE),
+    profile([[1.2, 0.95], [0.25, 1.5], [-1.0, 1.52], [-1.8, 1.0], [-1.85, 0.95]], 1.66, GLASS),
+    profile([[0.27, 1.5], [-0.99, 1.52], [-0.98, 1.57], [0.2, 1.56]], 1.52, WHITE),
+    profile([[2.3, 0.32], [2.33, 0.45], [2.34, 0.45], [2.31, 0.32]], 1.7, TRIM), profile([[-2.31, 0.32], [-2.34, 0.48], [-2.33, 0.48], [-2.3, 0.32]], 1.7, TRIM),
+    ...wheels([1.42, -1.42], 0.86, 0.34)
+  ]);
+  const carCabGeo = new THREE.BoxGeometry(0.01, 0.01, 0.01);
+  // A van (5.8 m): sloped cab, tall cargo box, a glass windscreen and side windows in the cab.
+  const vanGeo = vehicleGeo([
+    profile([[-2.9, 0.35], [2.9, 0.35], [2.95, 0.7], [2.75, 1.05], [2.1, 2.05], [-2.9, 2.35]], 2.06, WHITE),
+    profile([[2.72, 1.08], [2.12, 1.98], [1.6, 2.0], [1.6, 1.1]], 2.08, GLASS),
+    ...wheels([1.9, -1.9], 0.94, 0.38)
+  ]);
+  // A bus (12 m): rounded nose, a long band of windows both sides, a windscreen, a destination sign.
+  const busGeo = vehicleGeo([
+    profile([[-6, 0.35], [6, 0.35], [6.05, 2.7], [5.85, 3.15], [-5.9, 3.15], [-6.02, 2.8]], 2.5, WHITE),
+    { ...profile([[5.0, 1.25], [5.0, 2.65], [-5.6, 2.65], [-5.6, 1.25]], 2.54, GLASS), glow: 1 },
+    profile([[6.06, 1.0], [6.06, 2.6], [5.96, 2.6], [5.96, 1.0]], 2.3, GLASS),
+    { ...profile([[6.07, 2.68], [6.07, 3.0], [6.0, 3.0], [6.0, 2.68]], 1.6, [1.0, 0.72, 0.25]), glow: 1.6 },
+    ...wheels([4.1, -3.6], 1.1, 0.48)
+  ]);
+  // Real-world car colours (white, silver, greys, black, blues, a copper, a green, a bronze, a burgundy, a teal). Never
+  // the other side's red (isEnemyColour): red is theirs alone, so lamps and paint stay amber-red at most.
+  const carPalette = [0xeef0f2, 0xb9bec4, 0x8a9099, 0x4a4f56, 0x16181c, 0x1f2a36, 0x2f4a6b, 0x5b7fa6, 0xc0601e, 0x1c3b2f, 0x6b5a45, 0x5a1f2a, 0x2a5a5c, 0xc7c9cc];
+  // Body types, so no two streets of cars look alike: [length, height, width] scales of the base car.
+  const CAR_KINDS = [[0.86, 1.02, 0.94], [1, 1, 1], [1.08, 0.98, 1], [1.04, 1.28, 1.08], [0.96, 0.86, 1.02], [1.12, 1.06, 1.04]];
+  const carBodies = dyn(named(new THREE.InstancedMesh(carBodyGeo, std(0xffffff, { metalness: 0.55, roughness: 0.32, vertexColors: true }), CAP), 'car-bodies'));
   const carCabs = dyn(named(new THREE.InstancedMesh(carCabGeo, std(0x1a2129, { metalness: 0.8, roughness: 0.12 }), CAP), 'car-cabins'));
-  const vans = dyn(named(new THREE.InstancedMesh(vanGeo, std(LIFE_COLOURS.van, { roughness: 0.45 }), Math.max(1, Math.ceil(CAP * 0.15))), 'delivery-vans'));
-  const buses = dyn(named(new THREE.InstancedMesh(busGeo, std(LIFE_COLOURS.bus, { emissive: LIFE_COLOURS.busWin, emissiveIntensity: 0.25 }), Math.max(1, Math.ceil(CAP * 0.12))), 'buses'));
-  const lightGeo = new THREE.BoxGeometry(1.5, 0.25, 0.1);
-  const heads = dyn(named(new THREE.InstancedMesh(lightGeo, basic(LIFE_COLOURS.head), CAP), 'car-lights'));
-  const tails = dyn(named(new THREE.InstancedMesh(lightGeo, basic(LIFE_COLOURS.tail), CAP), 'car-lights'));
+  const vans = dyn(named(new THREE.InstancedMesh(vanGeo, std(LIFE_COLOURS.van, { roughness: 0.45, vertexColors: true }), Math.max(1, Math.ceil(CAP * 0.15))), 'delivery-vans'));
+  // Only the windows and the destination sign glow after dark (aGlow), never the paint.
+  const busMat = std(LIFE_COLOURS.bus, { roughness: 0.4, vertexColors: true }); const busLit = { value: 0 };
+  busMat.onBeforeCompile = (sh) => { sh.uniforms.uLit = busLit; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 aGlow;\nvarying vec3 vGlow;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = aGlow;'); sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vGlow;\nuniform float uLit;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGlow * uLit;'); };
+  busMat.customProgramCacheKey = () => 'pg1-bus-windows';
+  const buses = dyn(named(new THREE.InstancedMesh(busGeo, busMat, Math.max(1, Math.ceil(CAP * 0.12))), 'buses'));
+  // Lights (1.24 look): a pair of lamps each end (one draw call each, as
+  // before), brighter than white after dark so the glow pass takes them;
+  // tail lamps flare to brake red when a vehicle slows or waits.
+  const lampPair = (w, h, gap) => { const a = new THREE.BoxGeometry(w, h, 0.12); a.translate(-gap, 0, 0); const b = new THREE.BoxGeometry(w, h, 0.12); b.translate(gap, 0, 0); const ga = a.toNonIndexed(); const gb = b.toNonIndexed(); const n = ga.attributes.position.count + gb.attributes.position.count; const pos = new Float32Array(n * 3); const nor = new Float32Array(n * 3); pos.set(ga.attributes.position.array, 0); pos.set(gb.attributes.position.array, ga.attributes.position.count * 3); nor.set(ga.attributes.normal.array, 0); nor.set(gb.attributes.normal.array, ga.attributes.position.count * 3); const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); return g; };
+  const headMat = basic(LIFE_COLOURS.head); const tailMat = basic(0xffffff);
+  const heads = dyn(named(new THREE.InstancedMesh(lampPair(0.42, 0.24, 0.62), headMat, CAP), 'car-lights'));
+  const tails = dyn(named(new THREE.InstancedMesh(lampPair(0.36, 0.2, 0.68), tailMat, CAP), 'car-lights'));
+  const TAIL_RUN = new THREE.Color(0xa8420a); const TAIL_BRAKE = new THREE.Color(0xff6418);
+  for (let i = 0; i < CAP; i++) tails.setColorAt(i, TAIL_RUN);
+  // Desktop tiers: red tail reflections on wet streets, lit taxi roof signs.
+  const richLights = !phone && !settings.legacy && !settings.leanCity;
+  const tailGlareGeo = new THREE.PlaneGeometry(2.2, 9); tailGlareGeo.rotateX(-Math.PI / 2); tailGlareGeo.translate(0, 0.07, -5.5);
+  const tailGlareMat = new THREE.MeshBasicMaterial({ map: softTex, color: 0xff6a20, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+  const tailGlare = richLights ? dyn(named(new THREE.InstancedMesh(tailGlareGeo, tailGlareMat, CAP), 'wet-road-tail-glare')) : null;
+  const taxiSignGeo = new THREE.BoxGeometry(0.7, 0.22, 0.28); taxiSignGeo.translate(0, 1.6, -0.3);
+  const TAXI_CAP = Math.max(1, Math.ceil(CAP * 0.2));
+  const taxiSigns = richLights ? dyn(named(new THREE.InstancedMesh(taxiSignGeo, basic(LIFE_COLOURS.roof), TAXI_CAP), 'taxi-roof-signs')) : null;
+  if (tailGlare) { tailGlare.frustumCulled = false; root.add(tailGlare); } if (taxiSigns) { taxiSigns.frustumCulled = false; root.add(taxiSigns); }
   const sprayGeo = new THREE.PlaneGeometry(2.2, 3.5); sprayGeo.rotateX(-Math.PI / 2); sprayGeo.translate(0, 0.5, -1.75);
   const sprayMat = new THREE.MeshBasicMaterial({ map: softTex, color: 0xc9d3dd, transparent: true, opacity: 0, depthWrite: false });
   const spray = dyn(named(new THREE.InstancedMesh(sprayGeo, sprayMat, CAP), 'road-spray'));
-  // Wet nights: headlights throw a glossy streak on the road ahead (one draw call).
+  // After dark headlights light the road ahead; on a wet night it is a glossy streak (one draw call).
   const glareGeo = new THREE.PlaneGeometry(2.4, 14); glareGeo.rotateX(-Math.PI / 2); glareGeo.translate(0, 0.07, 9);
   const glareMat = new THREE.MeshBasicMaterial({ map: softTex, color: LIFE_COLOURS.head, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
   const glare = dyn(named(new THREE.InstancedMesh(glareGeo, glareMat, CAP), 'wet-road-glare'));
   root.add(glare);
   for (let i = 0; i < CAP; i++) carBodies.setColorAt(i, new THREE.Color(carPalette[i % carPalette.length]));
   for (const m of [carBodies, carCabs, vans, buses, heads, tails, spray]) root.add(m);
-  if (settings.legacy || settings.leanCity) carCabs.visible = false; // the cabin is the body's darker top on Low and a phone's Medium
+  carCabs.visible = false; // the glass house is part of the car's own model now (one draw call)
 
   // Signals at every junction of the simulated network: one head per approach.
   const juncs = traffic.net.junctions.filter((j) => !j.edge);
@@ -171,16 +223,70 @@ export function createLife(THREE, scene, world, settings) {
   const wakeGeo = new THREE.PlaneGeometry(10, 34); wakeGeo.rotateX(-Math.PI / 2); wakeGeo.translate(0, 0, -24);
   const wakes = dyn(named(new THREE.InstancedMesh(wakeGeo, wakeMat, Math.max(1, boats.length)), 'boat-wakes'));
   root.add(boatHull); root.add(boatCabin); root.add(wakes);
+  // Desktop tiers: a soft pool of the boat's light on the water after dark.
+  const boatPoolGeo = new THREE.PlaneGeometry(12, 26); boatPoolGeo.rotateX(-Math.PI / 2);
+  const boatPoolMat = new THREE.MeshBasicMaterial({ map: softTex, color: 0xffd9a0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+  const boatPools = !phone && !settings.legacy && !settings.leanCity ? dyn(named(new THREE.InstancedMesh(boatPoolGeo, boatPoolMat, Math.max(1, boats.length)), 'boat-light-pools')) : null;
+  if (boatPools) { boatPools.frustumCulled = false; root.add(boatPools); }
   const moored = named(new THREE.InstancedMesh(new THREE.BoxGeometry(3.6, 1.6, 13), std(LIFE_COLOURS.boat, { roughness: 0.4 }), 4), 'moored-boats');
   const pierX = 205; root.add(moored);
 
-  // --- the sky: aircraft on approach, birds at dusk, gulls, pigeons ---
-  const planes = []; for (let i = 0; i < 3; i++) planes.push({ a: r() * Math.PI * 2, rad: 1600 + i * 500, alt: 900 + i * 220, speed: 0.012 + r() * 0.006 });
-  const planeBody = named(new THREE.InstancedMesh(new THREE.BoxGeometry(4, 3, 38), std(0xd8dde3), planes.length), 'aircraft');
-  const planeWing = named(new THREE.InstancedMesh(new THREE.BoxGeometry(34, 0.6, 5), std(0xd8dde3), planes.length), 'aircraft-wings');
-  const strobeMat = basic(LIFE_COLOURS.strobe, { transparent: true, opacity: 1 });
-  const strobes = named(new THREE.InstancedMesh(new THREE.SphereGeometry(2.4, 8, 6), strobeMat, planes.length), 'aircraft-strobes');
-  root.add(planeBody); root.add(planeWing); root.add(strobes);
+  // --- the sky: airliners on approach and departure over the skyline (one
+  // mesh each: fuselage, wings, tailplane and fin), a helicopter along the
+  // river (not on a phone), birds at dusk, gulls, pigeons. Ambient: never an
+  // event, never counted or captioned. Their lights (red left, green right,
+  // a white tail strobe, landing lights at night) share one instanced mesh.
+  const merged = (parts) => { const gs = parts.map((g) => g.toNonIndexed()); const n = gs.reduce((a, g) => a + g.attributes.position.count, 0); const pos = new Float32Array(n * 3); const nor = new Float32Array(n * 3); let o = 0; for (const g of gs) { pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3); o += g.attributes.position.count; g.dispose(); } const out = new THREE.BufferGeometry(); out.setAttribute('position', new THREE.BufferAttribute(pos, 3)); out.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); return out; };
+  const box = (w, h, d, x = 0, y = 0, z = 0) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); return g; };
+  const airlinerGeo = merged([box(4, 3.6, 38), box(36, 0.6, 6, 0, -0.6, 1), box(13, 0.4, 3.2, 0, 0.8, -16.5), box(0.5, 6, 4.5, 0, 3.6, -16.5), box(2.2, 2.2, 4, 7, -1.8, 2), box(2.2, 2.2, 4, -7, -1.8, 2)]);
+  // Straight flight lines across the view of the city (x east, z south,
+  // metres), looping: [from, to, speed m/s]. Altitudes descend on approach
+  // and climb on departure.
+  const ROUTES = [
+    { from: [3200, 700, -1500], to: [-3200, 260, 700], v: 72 },
+    { from: [-3000, 230, 500], to: [3000, 950, -1700], v: 80 },
+    { from: [-3400, 1150, -2600], to: [3400, 1050, -900], v: 110 }
+  ];
+  const planes = ROUTES.slice(0, phone ? 2 : 3).map((rt, i) => {
+    const d = [rt.to[0] - rt.from[0], rt.to[2] - rt.from[2]]; const len = Math.hypot(d[0], d[1]);
+    return { o: [rt.from[0], rt.from[2]], dir: [d[0] / len, d[1] / len], len, alt0: rt.from[1], alt1: rt.to[1], v: rt.v, s: (0.2 + i * 0.33) * len, gap: 0 };
+  });
+  // Lift a flight line until it clears every roof under it (PG1's tower included) by 80 m.
+  const TOWER_CLEAR = (world.tip && world.tip.y ? world.tip.y : 320) + 80;
+  const clearRoute = (p) => {
+    let lift = 0;
+    for (let s2 = 0; s2 <= p.len; s2 += 40) {
+      const x = p.o[0] + p.dir[0] * s2; const z = p.o[1] + p.dir[1] * s2; const y = p.alt0 + (p.alt1 - p.alt0) * (s2 / p.len);
+      const top = Math.max(world.obstacles && world.obstacles.topAt ? world.obstacles.topAt(x, z, 40) : 0, Math.hypot(x, z) < 120 ? TOWER_CLEAR - 80 : 0);
+      if (top > 0) lift = Math.max(lift, top + 80 - y);
+    }
+    if (lift > 0) { p.alt0 += lift; p.alt1 += lift; }
+    return p;
+  };
+  planes.forEach(clearRoute);
+  const planeAt = (p) => { const k2 = p.s / p.len; return { x: p.o[0] + p.dir[0] * p.s, y: p.alt0 + (p.alt1 - p.alt0) * k2, z: p.o[1] + p.dir[1] * p.s, heading: Math.atan2(p.dir[0], p.dir[1]), pitch: -Math.atan2(p.alt1 - p.alt0, p.len) }; };
+  const planeBody = named(new THREE.InstancedMesh(airlinerGeo, std(0xe4e8ec, { roughness: 0.35, emissive: 0x9aa3ad, emissiveIntensity: 0.3 }), planes.length), 'aircraft');
+  // The helicopter's loop along the river, at least 30 m over the tallest roof under it.
+  const heliPath = (a) => [Math.cos(a) * 468, 120 + Math.sin(a) * 80];
+  let heliAlt = 160; if (world.obstacles && world.obstacles.topAt) for (let k = 0; k < 96; k++) { const [hx, hz] = heliPath((k / 96) * Math.PI * 2); heliAlt = Math.max(heliAlt, world.obstacles.topAt(hx, hz, 20) + 30); }
+  const heli = !phone && !settings.leanCity ? { a: 0, alt: heliAlt, v: 0.11 } : null;
+  const heliBody = heli ? named(new THREE.InstancedMesh(merged([box(3, 3, 9), box(0.8, 0.8, 9, 0, 0.6, -8), box(0.3, 2.4, 1.6, 0, 1.6, -12.4)]), std(0x2f4a6b, { roughness: 0.4, emissive: 0x1a2a3a, emissiveIntensity: 0.2 }), 1), 'helicopter') : null;
+  const heliRotor = heli ? named(new THREE.InstancedMesh(box(22, 0.15, 0.8), basic(0x9aa3ad, { transparent: true, opacity: 0.55 }), 2), 'helicopter-rotor') : null;
+  const LIGHTS_PER_PLANE = 5; // red, green, strobe, two landing lights
+  const nLights = planes.length * LIGHTS_PER_PLANE + (heli ? 3 : 0);
+  const strobeMat = basic(0xffffff, { transparent: true, opacity: 1 });
+  const strobes = named(new THREE.InstancedMesh(new THREE.SphereGeometry(1.6, 8, 6), strobeMat, nLights), 'aircraft-strobes');
+  const lightCol = new THREE.Color();
+  for (let i = 0; i < nLights; i++) { const kind = i < planes.length * LIGHTS_PER_PLANE ? i % LIGHTS_PER_PLANE : (i - planes.length * LIGHTS_PER_PLANE); strobes.setColorAt(i, lightCol.setHex(kind === 0 ? 0xff6a20 : kind === 1 ? 0x30ff6a : kind === 2 ? 0xffffff : 0xfff3d6)); }
+  strobes.name = 'aircraft-lights';
+  root.add(planeBody); root.add(strobes); if (heli) { root.add(heliBody); root.add(heliRotor); }
+  // They move far from where they started: never culled by stale bounds.
+  for (const m of [planeBody, strobes, heliBody, heliRotor]) if (m) m.frustumCulled = false;
+  // The lights of every boat on the river (not on a phone's lean city):
+  // a white masthead, red on the left, green on the right; one mesh.
+  const boatLights = !phone && !settings.leanCity ? named(new THREE.InstancedMesh(new THREE.SphereGeometry(0.45, 6, 4), basic(0xffffff), Math.max(1, boats.length * 3)), 'boat-lights') : null;
+  if (boatLights) boatLights.frustumCulled = false;
+  if (boatLights) { for (let i = 0; i < boats.length * 3; i++) boatLights.setColorAt(i, lightCol.setHex(i % 3 === 0 ? 0xfff3d6 : i % 3 === 1 ? 0xff6a20 : 0x30ff6a)); root.add(boatLights); }
   const nBirds = phone ? 24 : 60;
   const birdPos = new Float32Array(nBirds * 3); const birds = [];
   for (let i = 0; i < nBirds; i++) birds.push({ a: r() * Math.PI * 2, rad: 160 + r() * 260, alt: 60 + r() * 70, speed: 0.04 + r() * 0.03, ph: r() * 6 });
@@ -353,6 +459,24 @@ export function createLife(THREE, scene, world, settings) {
     get density() { return density; },
     // For the tests: every colour the city's life uses.
     colours: colourOf,
+    // Showcase (ambient only): put airliner `i` on a line through `point` that
+    // reaches it in `inSeconds`; move boats to sail past `x` on both lanes.
+    aircraftThrough(point, inSeconds = 2, i = 0) {
+      const p = planes[i % planes.length]; if (!p) return null;
+      const mid = p.len / 2; p.o = [point[0] - p.dir[0] * mid, point[2] - p.dir[1] * mid];
+      const yMid = (p.alt0 + p.alt1) / 2; const dy = point[1] - yMid; p.alt0 += dy; p.alt1 += dy;
+      clearRoute(p);
+      p.s = Math.max(0, mid - p.v * inSeconds); return planeAt(p);
+    },
+    aircraft: () => planes.map(planeAt),
+    // Showcase: where the trams are (the carriages run at 17.4 m on the elevated line).
+    trams: () => traffic.trams.map((tr) => ({ x: tr.x, y: 17.4, z: tr.z, dir: tr.dir, v: tr.v })),
+    vehicles: (n = 40) => traffic.vehicles.slice(0, n).map((v) => ({ x: v.x, y: v.y, z: v.z, heading: v.heading, type: v.type, id: v.id })),
+    boatsPast(x, spread = 140) {
+      const lanes = new Map(); for (const b of boats) { const l = lanes.get(b.lane) || []; l.push(b); lanes.set(b.lane, l); }
+      for (const [lane, list] of lanes) list.slice(0, 3).forEach((b, k) => { b.x = x - lane.dir * (k * spread + 40); });
+      return boats.filter((b) => Math.abs(b.x - x) < spread * 3).length;
+    },
     counts: () => ({ vehicles: traffic.vehicles.length, people: people.length + zebraPeds.length + stopPeople.length + cafes.length * 2 + buskers.length, boats: traffic.boats.length, planes: planes.length, birds: nBirds, gulls: nGulls, cyclists: nBikes, trams: traffic.trams.length, overlaps: traffic.overlaps().length }),
     update(dt, t, { dark = 0, dusk = 0, light = 1, hour = 19.5, wet = 0, rain = 0, wind = 0, external = [] } = {}) {
       traffic.step(Math.min(dt, 0.1), { external });
@@ -363,6 +487,7 @@ export function createLife(THREE, scene, world, settings) {
       // Vehicles.
       let ci = 0; let vi = 0; let bi = 0; let si = 0; let gi = 0;
       const wetNight = wet > 0.3 && dark > 0.4;
+      const nightRoad = dark > 0.4; let ti = 0;
       const vs = traffic.vehicles;
       for (let i = 0; i < vs.length; i++) {
         const v = vs[i];
@@ -370,18 +495,31 @@ export function createLife(THREE, scene, world, settings) {
         if (v.type === 'bus') set(buses, bi++, x, y, z, ry);
         else if (v.type === 'van') set(vans, vi++, x, y, z, ry);
         else {
-          set(carBodies, ci, x, y, z, ry); set(carCabs, ci, x, y, z, ry);
+          // Compact, saloon, estate, SUV, a low sporty one, a big saloon: from the car's own id.
+          const kk = CAR_KINDS[(v.id * 7 + 3) % CAR_KINDS.length]; set(carBodies, ci, x, y, z, ry, kk[2], kk[1], kk[0]); set(carCabs, ci, x, y, z, ry, kk[2] * 0.98, kk[1], kk[0] * (kk === CAR_KINDS[2] ? 1.18 : 1));
           if (v.type === 'taxi') carBodies.setColorAt(ci, tc.setHex(LIFE_COLOURS.taxi)); else carBodies.setColorAt(ci, tc.setHex(carPalette[v.id % carPalette.length]));
           ci++;
         }
         const fx = Math.sin(ry) * v.len / 2; const fz = Math.cos(ry) * v.len / 2;
-        set(heads, i, x + fx, y + 0.8, z + fz, ry); set(tails, i, x - fx, y + 0.9, z - fz, ry);
+        const lampY = v.type === 'bus' ? 1.1 : v.type === 'van' ? 1.0 : 0.75;
+        set(heads, i, x + fx, y + lampY, z + fz, ry); set(tails, i, x - fx, y + lampY + 0.1, z - fz, ry);
+        // Brake red while slowing or waiting at a light.
+        const braking = v.v < 1.5 || (v._pv != null && v.v < v._pv - 0.02); v._pv = v.v;
+        tails.setColorAt(i, braking ? TAIL_BRAKE : TAIL_RUN);
         // Spray off the tyres on a wet road, more the faster it goes.
         if (wet > 0.3 && v.v > 4) set(spray, si++, x - fx, y, z - fz, ry, 1, 1, Math.min(1.6, v.v / 8));
-        if (wetNight) set(glare, gi++, x + fx, y, z + fz, ry);
+        if (nightRoad) { set(glare, gi, x + fx, y, z + fz, ry); if (tailGlare && wetNight) set(tailGlare, gi, x - fx, y, z - fz, ry); gi++; }
+        if (taxiSigns && v.type === 'taxi' && ti < TAXI_CAP) set(taxiSigns, ti++, x, y, z, ry);
       }
+      if (tails.instanceColor) tails.instanceColor.needsUpdate = true;
+      // Lamp brightness: above white after dark (bloom), plain by day.
+      headMat.color.setHex(LIFE_COLOURS.head).multiplyScalar(1 + 2.2 * dark); tailMat.color.setRGB(1, 1, 1).multiplyScalar(1 + 1.8 * dark);
+      // Bus interiors lit after dark: the window band and the destination sign glow warm.
+      busLit.value = 0.55 * Math.max(0, dark - 0.15);
+      if (taxiSigns) { taxiSigns.count = ti; taxiSigns.material.color.setHex(LIFE_COLOURS.roof).multiplyScalar(1 + 1.5 * dark); taxiSigns.instanceMatrix.needsUpdate = true; }
+      if (tailGlare) { tailGlare.count = wetNight ? gi : 0; tailGlare.visible = wetNight && gi > 0; tailGlareMat.opacity = wetNight ? 0.3 * Math.min(1, wet) * Math.min(1, dark) : 0; tailGlare.instanceMatrix.needsUpdate = true; }
       carBodies.count = carCabs.count = ci; vans.count = vi; buses.count = bi; heads.count = tails.count = vs.length; spray.count = si; glare.count = gi; glare.visible = gi > 0;
-      glareMat.opacity = wetNight ? 0.35 * Math.min(1, wet) * Math.min(1, dark) : 0; glare.instanceMatrix.needsUpdate = true;
+      glareMat.opacity = nightRoad ? (wetNight ? 0.38 * Math.min(1, wet) : 0.16) * Math.min(1, dark) : 0; glare.instanceMatrix.needsUpdate = true;
       sprayMat.opacity = Math.max(0, wet - 0.3) * 0.5 * (0.6 + rain * 0.4);
       if (carBodies.instanceColor) carBodies.instanceColor.needsUpdate = true;
       for (const m of [carBodies, carCabs, vans, buses, heads, tails, spray]) m.instanceMatrix.needsUpdate = true;
@@ -395,12 +533,36 @@ export function createLife(THREE, scene, world, settings) {
         set(boatHull, i, b.x, -2.8, b.z, b.heading, b.wid, 1, b.len); set(boatCabin, i, b.x, -0.9, b.z, b.heading, b.wid * 0.8, 1, b.len * 0.42); set(wakes, i, b.x, -3.05, b.z, b.heading, sc, 1, sc * Math.min(1.2, 0.3 + b.v / 6));
       });
       boatHull.instanceMatrix.needsUpdate = true; boatCabin.instanceMatrix.needsUpdate = true; wakes.instanceMatrix.needsUpdate = true;
+      boatCabin.material.emissiveIntensity = 0.35 + 1.4 * dark;
+      if (boatPools) { boats.forEach((b, i) => set(boatPools, i, b.x, -3.0, b.z, b.heading, b.wid / 6, 1, b.len / 18)); boatPools.instanceMatrix.needsUpdate = true; boatPoolMat.opacity = 0.22 * Math.max(0, dark - 0.2); boatPools.visible = dark > 0.25; }
+      if (boatLights) {
+        boatLights.material.color.setRGB(1, 1, 1).multiplyScalar(1 + 2 * dark);
+        boats.forEach((b, i) => { const s = Math.sin(b.heading); const c = Math.cos(b.heading); const side = b.wid * 0.52; set(boatLights, i * 3, b.x + s * b.len * 0.1, 1.6, b.z + c * b.len * 0.1); set(boatLights, i * 3 + 1, b.x + c * side, -0.6, b.z - s * side); set(boatLights, i * 3 + 2, b.x - c * side, -0.6, b.z + s * side); });
+        boatLights.instanceMatrix.needsUpdate = true; boatLights.visible = dark > 0.25;
+      }
       for (let j = 0; j < 4; j++) set(moored, j, pierX + (j % 2 ? 11 : -11), -2.9 + Math.sin(t * 0.9 + j) * 0.12, RIVER.z - RIVER.half + 10 + Math.floor(j / 2) * 18, 0, 1, 1, 1, Math.sin(t * 0.7 + j * 2) * 0.03, Math.sin(t * 0.8 + j) * 0.05);
       moored.instanceMatrix.needsUpdate = true;
-      // Aircraft blinking high on approach.
-      planes.forEach((p, i) => { p.a += p.speed * dt; const x = Math.cos(p.a) * p.rad; const z = Math.sin(p.a) * p.rad; const ry = -p.a; set(planeBody, i, x, p.alt, z, ry); set(planeWing, i, x, p.alt, z, ry); set(strobes, i, x, p.alt - 2, z, ry, 1, 1, 1); });
-      planeBody.instanceMatrix.needsUpdate = true; planeWing.instanceMatrix.needsUpdate = true; strobes.instanceMatrix.needsUpdate = true;
-      strobeMat.opacity = (t % 1.4) < 0.12 ? 1 : 0.15;
+      // Airliners along their flight lines (looping), and the helicopter along the river.
+      const nightLights = dark > 0.35;
+      planes.forEach((p, i) => {
+        p.s += p.v * dt; if (p.s > p.len) p.s -= p.len;
+        const q = planeAt(p); const s = Math.sin(q.heading); const c = Math.cos(q.heading);
+        set(planeBody, i, q.x, q.y, q.z, q.heading, 1, 1, 1, q.pitch);
+        const L = i * LIGHTS_PER_PLANE; const wing = 18; const blink = (t * 1.1 + i * 0.37) % 1 < 0.08;
+        set(strobes, L, q.x + c * wing, q.y - 0.6, q.z - s * wing, 0, 0.45, 0.45, 0.45); set(strobes, L + 1, q.x - c * wing, q.y - 0.6, q.z + s * wing, 0, 0.45, 0.45, 0.45);
+        set(strobes, L + 2, q.x - s * 19, q.y + 5, q.z - c * 19, 0, blink ? 0.7 : 0.0001, blink ? 0.7 : 0.0001, blink ? 0.7 : 0.0001);
+        // Landing lights on approach (descending) after dark: bright, ahead of the wings.
+        const land = nightLights && p.alt1 < p.alt0 ? 0.75 : 0.0001;
+        set(strobes, L + 3, q.x + s * 19 + c * 4, q.y - 1.5, q.z + c * 19 - s * 4, 0, land, land, land); set(strobes, L + 4, q.x + s * 19 - c * 4, q.y - 1.5, q.z + c * 19 + s * 4, 0, land, land, land);
+      });
+      if (heli) {
+        heli.a += heli.v * dt; const [hx, hz] = heliPath(heli.a); const hh = -heli.a + Math.PI;
+        set(heliBody, 0, hx, heli.alt, hz, hh); set(heliRotor, 0, hx, heli.alt + 2.6, hz, t * 25); set(heliRotor, 1, hx, heli.alt + 2.6, hz, t * 25 + Math.PI / 2);
+        const L = planes.length * LIGHTS_PER_PLANE; const blink = (t * 1.3) % 1 < 0.1 ? 1 : 0.0001;
+        set(strobes, L, hx, heli.alt - 1.8, hz, 0, blink, blink, blink); set(strobes, L + 1, hx, heli.alt + 1.5, hz, 0, 0.6, 0.6, 0.6); set(strobes, L + 2, hx, heli.alt - 1.5, hz, 0, 0.6, 0.6, 0.6);
+        heliBody.instanceMatrix.needsUpdate = true; heliRotor.instanceMatrix.needsUpdate = true;
+      }
+      planeBody.instanceMatrix.needsUpdate = true; strobes.instanceMatrix.needsUpdate = true;
       // Birds at dusk; gulls over the river; pigeons on the roofs.
       birdPts.material.opacity = Math.min(0.8, dusk * 1.2 + light * 0.2);
       birds.forEach((b, i) => { b.a += b.speed * dt; birdPos[i * 3] = Math.cos(b.a) * b.rad + Math.sin(t + b.ph) * 6; birdPos[i * 3 + 1] = b.alt + Math.sin(t * 2 + b.ph) * 3; birdPos[i * 3 + 2] = Math.sin(b.a) * b.rad - 60; });

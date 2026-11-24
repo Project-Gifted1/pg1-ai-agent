@@ -19,8 +19,9 @@ import { poseAt } from '../lib/showcase/shots.mjs';
 const NOW = Date.parse('2026-11-23T20:00:00Z');
 const ev = (o) => ({ id: Math.random().toString(16).slice(2, 18).padEnd(16, '0'), time: new Date(NOW - 3600000).toISOString(), last: new Date(NOW - 3600000).toISOString(), kind: 'probe', gadget: 'gate_wardens', role: 'attacker', severity: 'low', country_code: 'DE', caller_hash: 'abcdef12', check: 'mcp_router', verdict_code: 'UNKNOWN_METHOD', reasons: [], count: 3, ...o });
 
-test('ten shots, 4-6 s each, each with a plan and a 2-6 word caption', () => {
-  assert.equal(REEL_SHOTS.length, 10);
+test('thirteen shots (day and night), 4-6 s each, each with a plan and a 2-6 word caption', () => {
+  assert.equal(REEL_SHOTS.length, 13);
+  for (const l of ['day', 'night-rain', 'day-to-night', 'recorded']) assert.ok(REEL_SHOTS.some((s) => s.light === l), l);
   const ctx = { landmarks: { deckY: 60, emblemY: 240, forge: [-40, 0, 24] }, junction: { x: 10, z: -40 } };
   for (const s of REEL_SHOTS) {
     assert.ok(s.seconds >= 4 && s.seconds <= 6, s.id);
@@ -72,10 +73,10 @@ test('a follow shot eases onto its subject', () => {
   assert.deepEqual(followPose(pose, { x: 100, y: 50, z: -20 }, 0.5).target, [100, 50, -20]);
 });
 
-test('the render: --reel takes the ten shots over 7 days, read only; the page never gets a caller hash', async () => {
+test('the render: --reel takes every shot over 7 days, read only; the page never gets a caller hash', async () => {
   const { parseArgs, publicEvent } = await import('../scripts/showcase-render.mjs');
   const o = parseArgs(['--reel', 'inside-city', '--epoch', '2026-11-23T20:00:00Z']);
-  assert.equal(o.days, 7); assert.equal(o.shots.length, 10); assert.equal(o.epoch, NOW);
+  assert.equal(o.days, 7); assert.equal(o.shots.length, 13); assert.equal(o.epoch, NOW);
   assert.deepEqual(parseArgs(['--shots', 'seal-forge', '--reel', 'inside-city']).shots, ['seal-forge']);
   assert.throws(() => parseArgs(['--reel', 'other']));
   const pub = publicEvent(ev({}));
@@ -117,4 +118,16 @@ test('the 24 Nov post, once built, keeps its rules', { skip: !existsSync(new URL
   assert.ok(!/caller_hash|\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/.test(copy), 'no caller hash, no IP');
   assert.ok(!/\b(attack|hostile|raiders?|safe)\b/i.test(copy.replace(/`[^`]*`/g, '')), 'wording');
   assert.ok(!/©/.test(copy)); assert.match(copy, /Project-Gifted1™/);
+});
+
+test('an airliner crosses the view high and far, never beside a building', async () => {
+  const { skyPoint } = await import('../scripts/showcase-render.mjs');
+  const { cameraPosition } = await import('../lib/showcase/shots.mjs');
+  for (const pose of [{ target: [0, 140, 0], dist: 180, theta: 0.3, phi: 1.38, fov: 36 }, { target: [240, 4, -82], dist: 40, theta: 1.7, phi: 1.53, fov: 50 }, { target: [0, 12, 120], dist: 250, theta: 0.08, phi: 1.51, fov: 37 }, { target: [-90, 65, 55], dist: 780, theta: 0.6, phi: 1.21, fov: 41 }]) {
+    const p = skyPoint(pose); const c = cameraPosition(pose);
+    assert.ok(p, JSON.stringify(pose));
+    assert.ok(p[1] >= 230, `${p[1]} m up`);
+    assert.ok(Math.hypot(p[0] - c[0], p[1] - c[1], p[2] - c[2]) >= 100, 'never at the camera');
+  }
+  assert.equal(skyPoint({ target: [0, 0, 0], dist: 100, theta: 0, phi: 0.6, fov: 40 }), null, 'a low camera looking down shows no sky');
 });
