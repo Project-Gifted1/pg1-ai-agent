@@ -107,7 +107,9 @@ jobs:
     needs: plan
     name: reel ${{ matrix.shot }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 300
+    # The event shots draw about 100 s a frame in software 3D (135 frames and
+    # a 2x still): just under GitHub's 6-hour limit.
+    timeout-minutes: 350
     strategy:
       fail-fast: false
       matrix:
@@ -133,7 +135,8 @@ jobs:
           EPOCH: ${{ needs.plan.outputs.epoch }}
           SUPABASE_URL: ${{ inputs.read_pg1_data && secrets.SUPABASE_URL || '' }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ inputs.read_pg1_data && secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
-        run: node scripts/showcase-render.mjs --reel "$REEL" --shots "$SHOT" --epoch "$EPOCH" --out showcase-out
+        # --warmup 12: the warm-up still runs until shaders and textures are stable (renderReelShot), without 40 frames at 100 s each.
+        run: node scripts/showcase-render.mjs --reel "$REEL" --shots "$SHOT" --epoch "$EPOCH" --warmup 12 --out showcase-out
       - name: Upload
         if: always()
         uses: actions/upload-artifact@v4
