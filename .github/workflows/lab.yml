@@ -115,6 +115,10 @@ jobs:
           # operator's own); web search, which needs a paid engine, is
           # skipped and named in the report.
           PG1_DAILY_SPEND_CAP_USD: ${{ vars.PG1_DAILY_SPEND_CAP_USD }}
+          # "on" lets a code experiment's build step use the operator-confirmed
+          # (signed) budget on a paid engine after the free engines failed to
+          # return usable JSON (lib/lab/runner.mjs). Unset is off.
+          PG1_LAB_PAID_BUILD: ${{ vars.PG1_LAB_PAID_BUILD }}
           GEMINI_API_KEY_FREE: ${{ secrets.GEMINI_API_KEY_FREE || secrets.GEMINI_API_KEY2 }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}

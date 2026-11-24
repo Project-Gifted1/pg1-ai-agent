@@ -120,6 +120,28 @@ None of this is assumed to exist today. Under *Settings → Branches → Add bra
 
 With this in place, a lab pull request reaches `main` only through your review and green CI.
 
+## How a code experiment builds a change
+
+- **The real code first** (`lib/lab/codeContext.mjs`). Before the build call, the runner looks through `lib/`, `api/`, `scripts/` and `tests/` for the names in the goal: identifiers, protocol methods, routes and tool names. It skips files the lab may not change, and puts the matching functions into the prompt with line numbers, about 7,000 tokens at most, as untrusted context.
+- **Targeted edits, not whole files** (`lib/lab/edits.mjs`). The model replies `{"summary","edits":[{"path","search","replace"}],"new_files":[{"path","content"}],"tests"}`.
+  - Each `search` must match its file **exactly once**, the rule of APPLY_SURGICAL_PATCH. Zero or several matches are refused, naming the file and the edit.
+  - New files may be whole.
+  - These still hold: the path allow-list, the size limit (counted over what the change writes), and every change needs a test under `tests/`.
+  - `scripts/lab-apply.mjs` applies the edits with the same rule on the test and PR jobs.
+- **Failures explain themselves.** Each has its own code, in `stages.build.failure`:
+  - `no_json`, `truncated` (the engine stopped at its output limit), `empty_edits`, `bad_fields`;
+  - `no_match`, `multiple_match` (with the file and edit);
+  - `refused_path`, `too_large`, `no_test`.
+  - The model's raw reply is kept as `build_reply`, with the engine and model that answered. Secret values and key patterns are scrubbed, and it is capped at 20 KB.
+- **Engines.** Free first.
+  - A reply cut off or with no JSON on a free engine is retried once on the next free engine, with the format said again.
+  - With `PG1_LAB_PAID_BUILD=on` (a repository variable; default off), the build step alone may then use the operator-confirmed, signed budget on a paid engine.
+  - The report's "Build calls" list says which engine answered each try, and whether the paid build was off, not needed or used.
+- **Don't chase correct behaviour** (`lib/lab/specCheck.mjs`). Before an error PG1 returns to callers becomes a task or an opportunity, PG1 checks it against the spec: JSON-RPC 2.0, the current MCP spec, A2A 1.0 or x402.
+  - When the error is the correct answer, it becomes a weekly report line: "correct behaviour, no change", with the source. An unknown method's -32601 is one example.
+  - A real, adopted spec method that PG1 doesn't answer becomes a task to support it. For example, `server/discover`, which MCP 2026-07-28 says servers MUST implement.
+- **Next step** after a failure (`lib/lab/nextStep.mjs`) says what a retry would do differently, or why it would fail the same way.
+
 ## Commands
 
 | Command | What it does |
