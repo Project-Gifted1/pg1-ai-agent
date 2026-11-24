@@ -27,7 +27,7 @@ Download: [reel-1080x1920.mp4](https://github.com/Project-Gifted1/pg1-ai-agent/r
 | Recorded weather | "Real weather, real time of day" | 4.2 s | recorded weather 2026-11-23T05:00 → 2026-11-23T06:00 |
 | The whole city | "Free checks for AI agents · Link in bio" | 4.2 s | check verdict DE Truth Lens: malicious (23 Nov, 12:16); check verdict US Repo Trap Scanner: malicious (21 Nov, 00:28); probe DE Gate Wardens: unknown method probe (23 Nov, 22:35); report Watchtower Beacons: report landed (23 Nov, 07:30) |
 
-Rendered for the carousel only (not in the reel): a result is signed, lane traffic at a junction, street level in the plaza, the tram line by day, the city by day, day to night.
+Rendered for the carousel only (not in the reel): a result is signed, lane traffic at a junction, the tram line by day, the city by day, day to night.
 
 ## Post captions (ready to paste)
 
@@ -91,9 +91,9 @@ _Image: the "junction-traffic" shot._
 
 ### 6. The river and the patrols · River and drones
 
-Boats pass under the arched bridge, with lamp pools along the promenade. PG1's drones patrol in rings round the tower, one for each live check, with navigation lights at night.
+Boats pass under the arched bridge, with lamp pools along the promenade. Overhead, PG1's drones patrol, one for each live check, with navigation lights at night.
 
-_Image: the "drone-patrol" shot._
+_Image: the "river-bridge" shot._
 
 **Note:** The river, bridges and promenade lamps: public/kingdom/kingdom-world.js; river life: public/kingdom/kingdom-life.js. Drones: public/kingdom/kingdom-actors.js (sentinels, one per live check from the MCP tool list; lit bodies, nav lights, strobe and night underglow since 23 Nov).
 

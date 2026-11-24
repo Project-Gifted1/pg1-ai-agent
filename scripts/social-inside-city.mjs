@@ -69,7 +69,7 @@ export function slides(m) {
     { id: 'events', file: 'slide-3-real-events.png', shot: 'probe-arrives', tag: Number.isFinite(c.countries) && c.countries > 0 ? `From ${c.countries} countries · ${range}` : 'Real events', title: 'Real probes and checks', line: 'Every arrival is one event PG1 logged: unknown tools and methods, malformed calls, flagged checks. Its origin country shows as a flag and an arc on the mini-globe, and the Gate Wardens turn probes back.', flags: (c.country_codes || []).slice(0, 8) },
     { id: 'signed', file: 'slide-4-signed-results.png', shot: 'seal-forge', fallbackShot: 'city-day', tag: 'Signed results', title: 'Signed results you can check', line: "When PG1 signs a tool result (Ed25519), the Seal Forge stamps a seal that rises into the tower. Anyone can check a result offline with PG1's public key, or with verify_result." },
     { id: 'traffic-weather', file: 'slide-5-traffic-weather.png', shot: 'junction-traffic', fallbackShot: 'street-level', tag: 'Traffic and weather', title: 'Lanes, rain and real weather', line: "Cars keep to their lanes, queue at red lights and clear on green. The sky follows the real weather and time of day; in rain the streets turn wet and mirror the lights." },
-    { id: 'river-drones', file: 'slide-6-river-drones.png', shot: 'drone-patrol', tag: 'River and drones', title: 'The river and the patrols', line: "Boats pass under the arched bridge, with lamp pools along the promenade. PG1's drones patrol in rings round the tower, one for each live check, with navigation lights at night." },
+    { id: 'river-drones', file: 'slide-6-river-drones.png', shot: 'river-bridge', fallbackShot: 'drone-patrol', tag: 'River and drones', title: 'The river and the patrols', line: "Boats pass under the arched bridge, with lamp pools along the promenade. Overhead, PG1's drones patrol, one for each live check, with navigation lights at night." },
     { id: 'end', file: 'slide-7-link-in-bio.png', shot: null, tag: '', title: 'Link in bio', line: 'Free checks for AI agents.' }
   ];
 }
@@ -97,7 +97,12 @@ const probe = (f) => { const r = spawnSync('ffprobe', ['-v', 'error', '-show_ent
 // Shots rendered but cut in the edit, with the reason (copy.md says so).
 // Director mode follows one real event into a dark close-up of the river;
 // the whole-city shot replays the same director events and reads better.
-export const REEL_CUTS = Object.freeze({ director: 'its follow camera ends in a dark close-up on the river; the whole-city shot replays the same director events' });
+export const REEL_CUTS = Object.freeze({
+  director: 'its follow camera ends in a dark close-up on the river; the whole-city shot replays the same director events',
+  // The plaza's walkers are plain low-detail figures at eye level: they read as
+  // mannequins, not shoppers, so the shot stays out until the figures improve.
+  'street-level': 'its eye-level walkers read as mannequins, not shoppers'
+});
 // The reel's cut (24 Nov re-cut), in order: six shots, each with its lower
 // third (lib/showcase/reel.mjs captions; the first on screen from frame one).
 // The other rendered shots are used for the carousel only.
