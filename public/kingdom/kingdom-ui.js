@@ -33,6 +33,17 @@ export const REPLAY_ON_OPEN = 6;
 export const TICKER_ROWS = 5;
 export const LIVE_WINDOW_MS = 90 * 1000;
 export const PAUSED_AFTER_FAILS = 2;
+// A fetch that takes longer than this counts as a failed one.
+export const FEED_TIMEOUT_MS = 12000;
+// Connected (the badge says LIVE): fewer than PAUSED_AFTER_FAILS fetches in
+// a row failed, and none of the attempts since the last success has gone
+// unanswered for 15 s. A page that is merely late to poll (a busy device, a
+// long frame) has made no attempt that failed: it stays live.
+export function feedConnected({ fails = 0, lastOkAt = 0, lastAttemptAt = 0, now = Date.now(), every = KINGDOM_POLL_MS } = {}) {
+  if (fails >= PAUSED_AFTER_FAILS || !lastOkAt) return false;
+  const pending = lastAttemptAt > lastOkAt ? now - lastAttemptAt : 0;
+  return pending < every * 3;
+}
 export const FLAG_PX = 24;
 // Threats only: payment events (a settled payment, a paid job) are not shown.
 export const isPayment = (e) => !!e && (e.verdict === 'SETTLED' || e.verdict === 'JOB_PAID');
@@ -84,7 +95,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
   let scene = null; let open = false; let pollTimer = null; let miniTimer = null; let lastAt = 0; let gadgets = []; let opening = null;
   let recording = null; let replaying = false; let replayTimers = []; let clipUrl = null;
   let pg1State = null; let loaded = false; let lastRec = null; let sound = null; let lastWeather = null;
-  let connected = false; let fails = 0; let lastOkAt = 0;
+  let connected = false; let fails = 0; let lastOkAt = 0; let lastAttemptAt = 0;
   const liveIds = new Set(); const replayIds = new Set();
   let ticker = []; let arcs = []; let captionEvent = null; let tickTimer = null; let pip = null; let introDone = false;
 
@@ -92,8 +103,10 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     const c = creds();
     if (!c || !c.user || !c.pass) return null;
     const url = since ? `/api/defense-feed?since=${Math.floor(since)}` : '/api/defense-feed';
+    lastAttemptAt = Date.now();
     try {
-      const res = await fetchImpl(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: c.user, pass: c.pass }) });
+      const signal = typeof AbortSignal !== 'undefined' && AbortSignal.timeout ? AbortSignal.timeout(FEED_TIMEOUT_MS) : undefined;
+      const res = await fetchImpl(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ user: c.user, pass: c.pass }), ...(signal ? { signal } : {}) });
       if (!res.ok) return null;
       const data = await res.json();
       return data && data.ok ? data : null;
@@ -200,7 +213,7 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
   function tick() {
     tickTimer = null;
     if (!open) return;
-    connected = fails < PAUSED_AFTER_FAILS && Date.now() - lastOkAt < KINGDOM_POLL_MS * 3;
+    connected = feedConnected({ fails, lastOkAt, lastAttemptAt, now: Date.now() });
     if (scene && scene.setPaused) scene.setPaused(!connected && !replaying);
     renderBadge();
     renderTicker();
