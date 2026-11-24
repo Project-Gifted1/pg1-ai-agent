@@ -416,12 +416,14 @@ test('approvals from the report: Approve runs the APPROVAL action, Decline chang
   const listing = await opStore.addTask({ finding_key: 'l', kind: 'listing', title: 'Registry out of date', status: 'needs_approval', approval: { action: 'directory:register', approvable: true, workflow: 'publish-mcp.yml', steps: ['a'] } });
   const dispatched = [];
   const gh = { dispatch: async (wf) => { dispatched.push(wf); return true; } };
-  await assert.rejects(decideTask({ id: listing.id, decision: 'approve', actor: 'pg1', opStore, env: ENV, audit: {}, gh }), SelfApprovalRefused);
+  // The registry is behind the live version (stubbed: no network), so the publish runs.
+  const listingDeps = { readState: async () => ({ listed: '1.20.0', live: '1.24.0', matches: false }) };
+  await assert.rejects(decideTask({ id: listing.id, decision: 'approve', actor: 'pg1', opStore, env: ENV, audit: {}, gh, listingDeps }), SelfApprovalRefused);
   assert.equal(listing.status, 'needs_approval');
-  const r = await decideTask({ id: listing.id, decision: 'approve', actor: 'operator', opStore, env: ENV, audit: {}, gh });
+  const r = await decideTask({ id: listing.id, decision: 'approve', actor: 'operator', opStore, env: ENV, audit: {}, gh, listingDeps });
   assert.equal(r.decision, 'approved');
   assert.deepEqual(dispatched, ['publish-mcp.yml']);
-  assert.equal(listing.status, 'done');
+  assert.equal(listing.status, 'approved', 'running: the card shows the run\'s real result when it ends (tests/operator-listing.test.mjs)');
   // A new-tool PR: approving merges it (code:merge, approved) and watches it.
   const pr = await opStore.addTask({ finding_key: 'n', kind: 'new', title: 'New tool get_token_risk', status: 'needs_approval', pr_number: 77, approval: { action: 'code:merge', approvable: true } });
   const merged = [];
