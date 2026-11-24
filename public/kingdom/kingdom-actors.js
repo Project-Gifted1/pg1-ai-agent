@@ -345,6 +345,8 @@ export function createActors(THREE, scene, world, settings) {
   // internal names or raw reason codes), and every label kept whole inside
   // a box of the frame (NDC), shrunk if it is wider than the box.
   let labelBox = null;
+  // Half the label's height in NDC: 0.016 is about 31 px of a 1920 px frame.
+  const LABEL_MIN_H = 0.016;
   function label(text, pos, color, ttl = 6) {
     if (!text) return;
     const sp = textSprite(THREE, text, color);
@@ -522,6 +524,9 @@ export function createActors(THREE, scene, world, settings) {
     const tanH = Math.tan((cam.fov * Math.PI) / 360);
     let hw = sp.scale.x / 2 / (depth * tanH * cam.aspect); let hh = sp.scale.y / 2 / (depth * tanH);
     const room = (b.x1 - b.x0) / 2 * 0.98;
+    // Never smaller than readable (a far label would shrink to a thin bar):
+    // at least LABEL_MIN_H of the frame's height, then never wider than the box.
+    if (hh < LABEL_MIN_H) { const k = LABEL_MIN_H / hh; sp.scale.multiplyScalar(k); hw *= k; hh *= k; }
     if (hw > room) { const k = room / hw; sp.scale.multiplyScalar(k); hw *= k; hh *= k; }
     fitV.copy(sp.position).project(cam);
     const cx = Math.min(b.x1 - hw, Math.max(b.x0 + hw, fitV.x));

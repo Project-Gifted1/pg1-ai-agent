@@ -91,7 +91,7 @@ export function createShops(THREE, root, units) {
   for (let k = 0; k < 9; k++) goods.push([0.28 + (k % 3) * 0.06, 0.25 + (k % 4) * 0.12, 0.28, -2.4 + k * 0.38, 0.9 + ((k % 4) * 0.12) / 2, -0.75 - (k % 2) * 0.25, GC[k % GC.length]]);
   for (let s = 0; s < 3; s++) for (let k = 0; k < 6; k++) goods.push([0.3, 0.22, 0.22, -2.3 + k * 0.62, 1.55 + s * 0.55, -1.75, GC[(k + s) % GC.length]]);
   const interiorGeo = merged(THREE, [
-    [W - 0.7, 3.2, 0.1, 0, 1.7, -2.0, [1.0, 0.9, 0.75]], [W - 0.7, 0.05, 2.0, 0, 0.12, -1.0, [0.55, 0.45, 0.35]],
+    [W - 0.7, 3.2, 0.1, 0, 1.7, -2.0, [0.52, 0.44, 0.36]], [W - 0.7, 0.05, 2.0, 0, 0.12, -1.0, [0.55, 0.45, 0.35]],
     [3.6, 0.5, 0.6, -1.0, 0.78, -0.75, [0.3, 0.25, 0.22]],
     [3.6, 0.05, 0.4, -1.0, 1.4, -1.8, [0.5, 0.42, 0.34]], [3.6, 0.05, 0.4, -1.0, 1.95, -1.8, [0.5, 0.42, 0.34]], [3.6, 0.05, 0.4, -1.0, 2.5, -1.8, [0.5, 0.42, 0.34]],
     [0.32, 1.1, 0.22, -2.45, 1.6, -0.55, [0.92, 0.9, 0.86]], [0.18, 0.2, 0.18, -2.45, 2.28, -0.55, [0.92, 0.9, 0.86]],
@@ -102,7 +102,8 @@ export function createShops(THREE, root, units) {
   const interior = new THREE.InstancedMesh(interiorGeo, interiorMat, n); interior.name = 'shop-interiors';
   // Glass: the display window and the door, faintly reflective.
   const glassGeo = merged(THREE, [[3.8, 2.85, 0.03, -1.05, 1.97, 0.04, [1, 1, 1]], [1.4, 2.85, 0.03, 1.85, 1.5, 0.04, [1, 1, 1]]]);
-  const glassMat = new THREE.MeshStandardMaterial({ color: 0xbfd2dc, roughness: 0.05, metalness: 0.6, transparent: true, opacity: 0.22, depthWrite: false });
+  // Clear shop glass: a faint tint and a little sheen, the lit display behind it shows.
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0xbfd2dc, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.12, depthWrite: false, envMapIntensity: 0.3 });
   const glass = new THREE.InstancedMesh(glassGeo, glassMat, n); glass.name = 'shop-glass'; glass.renderOrder = 2;
   // Fascia sign: one of the trades from the atlas (aSign).
   const signGeo = new THREE.PlaneGeometry(W - 0.9, 0.72); signGeo.translate(0, 4.1, 0.35);
@@ -120,7 +121,9 @@ export function createShops(THREE, root, units) {
   const awnings = new THREE.InstancedMesh(awningGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }), n); awnings.name = 'shop-awnings-striped';
   // Kiosks (the plaza's units): a body behind the front and a roof.
   const kiosks = units.filter((u) => u.kiosk);
-  const bodyGeo = merged(THREE, [[W, 4.6, 4.4, 0, 2.3, -2.3, [0.7, 0.68, 0.64]], [W + 0.6, 0.3, 5.2, 0, 4.85, -2.1, [0.3, 0.32, 0.35]]]);
+  // Hollow at the front: the shop room (2.1 m deep) is open behind the glass,
+  // walled at the sides and ceiled; the solid body starts behind its back wall.
+  const bodyGeo = merged(THREE, [[W, 4.6, 2.3, 0, 2.3, -3.25, [0.7, 0.68, 0.64]], [0.3, 4.6, 2.1, -W / 2 + 0.15, 2.3, -1.05, [0.7, 0.68, 0.64]], [0.3, 4.6, 2.1, W / 2 - 0.15, 2.3, -1.05, [0.7, 0.68, 0.64]], [W, 0.3, 2.1, 0, 3.45, -1.05, [0.85, 0.83, 0.8]], [W + 0.6, 0.3, 5.2, 0, 4.85, -2.1, [0.3, 0.32, 0.35]]]);
   const bodies = new THREE.InstancedMesh(bodyGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.85 }), Math.max(1, kiosks.length)); bodies.name = 'shop-kiosks';
   // Benches and planters on the pavement in front of every other unit.
   const benchGeo = merged(THREE, [[1.8, 0.07, 0.45, 0, 0.45, 0, [0.45, 0.32, 0.2]], [1.8, 0.4, 0.06, 0, 0.7, -0.2, [0.45, 0.32, 0.2]], [0.06, 0.45, 0.45, -0.8, 0.22, 0, [0.12, 0.13, 0.14]], [0.06, 0.45, 0.45, 0.8, 0.22, 0, [0.12, 0.13, 0.14]]]);

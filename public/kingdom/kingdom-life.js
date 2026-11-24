@@ -390,6 +390,10 @@ export function createLife(THREE, scene, world, settings) {
     else if (kind < 0.51) people.push({ bridge: true, pos: RIVER.z + (r() - 0.5) * 100, speed: (0.9 + r() * 0.5) * (r() < 0.5 ? 1 : -1), side: r() < 0.5 ? -9.2 : 9.2 });
     else { const alongX = r() < 0.5; const lane = (Math.floor(r() * 11) - 5) * GRID + (alongX ? -40 : 0) + (r() < 0.5 ? -1 : 1) * (ROAD_W / 2 + 2); if (alongX && inRiver(lane)) { i--; continue; } people.push({ alongX, lane, pos: (r() - 0.5) * 1600, speed: (0.9 + r() * 0.6) * (r() < 0.5 ? 1 : -1) }); }
   }
+  // Shoppers along the plaza's shop fronts (kingdom-shops.js plazaArcade, 59 m
+  // out), on the tiers that draw the shops: they walk the arc in front of the
+  // windows, both ways.
+  if (detailed) for (let i = 0; i < 70; i++) people.push({ ring: 53 + r() * 3, a: 0.55 + r() * 2.05, speed: (0.018 + r() * 0.012) * (r() < 0.5 ? 1 : -1), arc: [0.55, 2.6] });
   // The café tables and the buskers are people too.
   const cafes = []; for (let i = 0; i < (phone ? 6 : 14); i++) { const a = 0.6 + (i / 14) * 1.9; cafes.push({ x: Math.cos(a) * (PLAZA_R - 14), z: Math.sin(a) * (PLAZA_R - 14) }); }
   const buskers = [{ x: -12, z: 46 }, { x: -10.6, z: 47.2 }, { x: 14, z: 47 }];
@@ -696,7 +700,7 @@ export function createLife(THREE, scene, world, settings) {
       };
       people.forEach((p, i) => {
         let x; let z; let y = 0.05; let ry = 0;
-        if (p.ring) { p.a += p.speed * dt; x = Math.cos(p.a) * p.ring; z = Math.sin(p.a) * p.ring; ry = -p.a; }
+        if (p.ring) { p.a += p.speed * dt; if (p.arc) { if (p.a > p.arc[1]) p.a = p.arc[0]; else if (p.a < p.arc[0]) p.a = p.arc[1]; } x = Math.cos(p.a) * p.ring; z = Math.sin(p.a) * p.ring; ry = -p.a + (p.speed < 0 ? Math.PI : 0); }
         else if (p.bank) { p.pos += p.speed * dt; if (p.pos > 700) p.pos -= 1400; if (p.pos < -700) p.pos += 1400; x = p.pos; z = RIVER.z + p.bank * (RIVER.half + 2); ry = p.speed > 0 ? Math.PI / 2 : -Math.PI / 2; }
         else if (p.bridge) { p.pos += p.speed * dt; if (p.pos > RIVER.z + 55) p.pos = RIVER.z - 55; if (p.pos < RIVER.z - 55) p.pos = RIVER.z + 55; x = p.side; z = p.pos; y = 10.05; ry = p.speed > 0 ? 0 : Math.PI; }
         else { p.pos += p.speed * dt; if (p.pos > 800) p.pos -= 1600; if (p.pos < -800) p.pos += 1600; if (p.alongX) { x = p.pos; z = p.lane; ry = p.speed > 0 ? Math.PI / 2 : -Math.PI / 2; } else { x = p.lane; z = inRiver(p.pos) ? RIVER.z + RIVER.half + 3 : p.pos; ry = p.speed > 0 ? 0 : Math.PI; } }
