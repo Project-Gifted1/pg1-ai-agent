@@ -25,6 +25,8 @@ import { createEventStore, eventLine, enemyLine, defenceLine, dublinTime, verdic
 
 export const KINGDOM_POLL_MS = 5000;
 export const MINI_POLL_MS = 30000;
+// The wait before the next poll (fixed cadence from the poll's start; at least 250 ms).
+export const nextPollDelay = (began, now, every = KINGDOM_POLL_MS) => Math.max(250, every - Math.max(0, now - began));
 export const STAGE_RECENT_MS = 3 * 60 * 1000;
 export const FEED_ROWS = 200;
 export const REPLAY_ON_OPEN = 6;
@@ -276,14 +278,19 @@ export function createKingdomUi({ creds, fetchImpl = (...a) => fetch(...a), doc 
     if (open) { renderTicker(); renderBadge(); }
   }
 
+  // A fixed cadence, from the start of each poll: the next poll comes
+  // KINGDOM_POLL_MS after this one began, not after its fetch ended, so a
+  // slow fetch (a busy device or network) never stretches the gap between
+  // polls: a live event shows within one interval plus one fetch.
   async function poll() {
     pollTimer = null;
     if (!open) return;
+    const began = Date.now();
     if (!doc.hidden) {
       const feed = await fetchFeed(lastAt ? lastAt - POLL_OVERLAP_MS : 0);
       if (feed && open) { fails = 0; lastOkAt = Date.now(); apply(feed); } else if (!feed) fails++;
     }
-    if (open) pollTimer = setTimeout(poll, KINGDOM_POLL_MS);
+    if (open) pollTimer = setTimeout(poll, nextPollDelay(began, Date.now()));
   }
 
   async function openView() {

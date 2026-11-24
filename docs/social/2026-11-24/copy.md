@@ -17,18 +17,18 @@ Built by `scripts/social-inside-city.mjs` from the Showcase render (`scripts/sho
 | Shot | Lower third | In the reel | Real data replayed |
 |---|---|---|---|
 | The crown tower | "Every event is real" | 3.2 s | none (no event staged) |
-| A real probe arrives | "Probes from 12 countries" | 3.2 s | probe US mcp_router MALFORMED_REQUEST (23 Nov, 23:36) |
+| A real probe arrives | "Probes from 12 countries" | 3.2 s | probe US Gate Wardens: malformed call (23 Nov, 23:36) |
 | A result is signed | left out: no real signed result in the last 7 days | - | none (no event staged) |
 | Lane traffic at a junction | "Traffic keeps its lanes" | 3.2 s | none (no event staged) |
 | The river and the arched bridge | "Boats on the river" | 3.2 s | none (no event staged) |
-| Patrols meet real probes | "Patrols meet real probes" | 3.2 s | check_verdict DE check_agent_message malicious (23 Nov, 12:16); check_verdict US check_repo_trap malicious (21 Nov, 00:28); approval operator_task NEEDS_APPROVAL (23 Nov, 07:30); probe DE mcp_router UNKNOWN_METHOD (23 Nov, 22:35) |
+| Patrols meet real probes | "Patrols meet real probes" | 3.2 s | check verdict DE: flagged agent message (23 Nov, 12:16); check verdict US: flagged repo trap (21 Nov, 00:28); approval: waiting for approval (23 Nov, 07:30); probe DE Gate Wardens: unknown method probe (23 Nov, 22:35) |
 | Real Dublin weather | "Real Dublin weather" | 3.2 s | recorded weather 2026-11-23T05:00 → 2026-11-23T06:00 |
 | Street level in the plaza | "People in the plaza" | 3.2 s | none (no event staged) |
 | The tram line by day | "Trams on the line" | 3.2 s | none (no event staged) |
 | The city by day | "The city by day" | 3.2 s | none (no event staged) |
 | Day to night | "Windows follow Dublin time" | 3.2 s | none (no event staged) |
 | Director mode | left out: cut in the edit: its follow camera ends in a dark close-up on the river; the whole-city shot replays the same director events | - | none (no event staged) |
-| The whole city | "Inside PG1 City" | 3.2 s | check_verdict DE check_agent_message malicious (23 Nov, 12:16); check_verdict US check_repo_trap malicious (21 Nov, 00:28); approval operator_task NEEDS_APPROVAL (23 Nov, 07:30); probe DE mcp_router UNKNOWN_METHOD (23 Nov, 22:35) |
+| The whole city | "Inside PG1 City" | 3.2 s | check verdict DE: flagged agent message (23 Nov, 12:16); check verdict US: flagged repo trap (21 Nov, 00:28); approval: waiting for approval (23 Nov, 07:30); probe DE Gate Wardens: unknown method probe (23 Nov, 22:35) |
 
 ## Post caption (ready to paste)
 
@@ -62,7 +62,7 @@ _Image: the "probe-arrives" shot._
 
 **Note:** Real events: lib/defenseFeed.mjs reads PG1's own logs (agent_telemetry, pg1_defense_events and more), groups them into waves and never carries an IP; the reel replays them read only (scripts/showcase-render.mjs --reel). Flags and arcs: public/kingdom/kingdom-globe.js and kingdom-data.js flagOf. Gate Wardens: the gate_wardens gadget (unknown-tool and unknown-method probes, malformed calls). Countries come from IP geolocation at the network edge and are approximate.
 
-### 4. Every result signed · Signed results
+### 4. Signed results you can check · Signed results
 
 When PG1 signs a tool result (Ed25519), the Seal Forge stamps a seal that rises into the tower. Anyone can check a result offline with PG1's public key, or with verify_result.
 
