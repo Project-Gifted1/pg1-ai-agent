@@ -116,18 +116,22 @@ export function createLife(THREE, scene, world, settings) {
   // One geometry per kind with per-vertex colour: paint (white, so the
   // instance colour shows), dark glass, black tyres and grey rims. The
   // instance colour multiplies it, so glass and tyres stay dark on every car.
-  const lowPoly = !!(settings.legacy);
+  // The phone tiers (Low and Medium) draw the same silhouettes without
+  // bevels, wheels, rims or trim: about 40 triangles a car, not 535 (a
+  // street of a few hundred cars was 110k triangles on a phone's frame).
+  // High, Cinematic and the Showcase keep the full models.
+  const lowPoly = !!(settings.legacy) || phone || !!settings.coarse;
   const WHITE = [1, 1, 1]; const GLASS = [0.07, 0.09, 0.12]; const TYRE = [0.035, 0.035, 0.04]; const RIM = [0.55, 0.57, 0.6]; const TRIM = [0.16, 0.17, 0.19];
   // A side profile [[z, y], ...] (z forward) extruded across the width, centred.
   const profile = (pts, width, col) => { const sh = new THREE.Shape(pts.map(([z, y]) => new THREE.Vector2(z, y))); const g = new THREE.ExtrudeGeometry(sh, { depth: width, bevelEnabled: !lowPoly, bevelThickness: 0.05, bevelSize: 0.05, bevelSegments: 1, curveSegments: 1 }); g.translate(0, 0, -width / 2); g.rotateY(-Math.PI / 2); return { g, col }; };
-  const wheels = (axles, track, r) => axles.flatMap((z) => [-1, 1].flatMap((side) => { const t = new THREE.CylinderGeometry(r, r, 0.26, lowPoly ? 6 : 12); t.rotateZ(Math.PI / 2); t.translate(side * track, r, z); const h = new THREE.CylinderGeometry(r * 0.55, r * 0.55, 0.28, lowPoly ? 6 : 10); h.rotateZ(Math.PI / 2); h.translate(side * (track + 0.01), r, z); return [{ g: t, col: TYRE }, { g: h, col: RIM }]; }));
+  const wheels = (axles, track, r) => (lowPoly ? [] : axles.flatMap((z) => [-1, 1].flatMap((side) => { const t = new THREE.CylinderGeometry(r, r, 0.26, lowPoly ? 6 : 12); t.rotateZ(Math.PI / 2); t.translate(side * track, r, z); const h = new THREE.CylinderGeometry(r * 0.55, r * 0.55, 0.28, lowPoly ? 6 : 10); h.rotateZ(Math.PI / 2); h.translate(side * (track + 0.01), r, z); return [{ g: t, col: TYRE }, { g: h, col: RIM }]; })));
   const vehicleGeo = (parts) => { const gs = parts.map(({ g, col, glow = 0 }) => { const n = g.index ? g.toNonIndexed() : g; const c = new Float32Array(n.attributes.position.count * 3); const w = new Float32Array(n.attributes.position.count * 3); for (let i = 0; i < c.length; i += 3) { c[i] = col[0]; c[i + 1] = col[1]; c[i + 2] = col[2]; w[i] = glow; w[i + 1] = glow * 0.78; w[i + 2] = glow * 0.5; } n.setAttribute('color', new THREE.BufferAttribute(c, 3)); n.setAttribute('aGlow', new THREE.BufferAttribute(w, 3)); n.deleteAttribute('uv'); return n; }); const total = gs.reduce((a, g) => a + g.attributes.position.count, 0); const out = new THREE.BufferGeometry(); for (const name of ['position', 'normal', 'color', 'aGlow']) { const arr = new Float32Array(total * 3); let o = 0; for (const g of gs) { arr.set(g.attributes[name].array, o); o += g.attributes[name].array.length; } out.setAttribute(name, new THREE.BufferAttribute(arr, 3)); } gs.forEach((g) => g.dispose()); return out; };
   // A car (4.5 m): bumpers, bonnet, raked windscreen, glass house, boot; the glass a little narrower than the body.
   const carBodyGeo = vehicleGeo([
     profile([[-2.25, 0.32], [2.25, 0.32], [2.32, 0.55], [2.2, 0.82], [1.15, 0.95], [-1.85, 0.95], [-2.25, 0.82], [-2.3, 0.5]], 1.86, WHITE),
     profile([[1.2, 0.95], [0.25, 1.5], [-1.0, 1.52], [-1.8, 1.0], [-1.85, 0.95]], 1.66, GLASS),
-    profile([[0.27, 1.5], [-0.99, 1.52], [-0.98, 1.57], [0.2, 1.56]], 1.52, WHITE),
-    profile([[2.3, 0.32], [2.33, 0.45], [2.34, 0.45], [2.31, 0.32]], 1.7, TRIM), profile([[-2.31, 0.32], [-2.34, 0.48], [-2.33, 0.48], [-2.3, 0.32]], 1.7, TRIM),
+    ...(lowPoly ? [] : [profile([[0.27, 1.5], [-0.99, 1.52], [-0.98, 1.57], [0.2, 1.56]], 1.52, WHITE),
+      profile([[2.3, 0.32], [2.33, 0.45], [2.34, 0.45], [2.31, 0.32]], 1.7, TRIM), profile([[-2.31, 0.32], [-2.34, 0.48], [-2.33, 0.48], [-2.3, 0.32]], 1.7, TRIM)]),
     ...wheels([1.42, -1.42], 0.86, 0.34)
   ]);
   const carCabGeo = new THREE.BoxGeometry(0.01, 0.01, 0.01);
