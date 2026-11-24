@@ -36,7 +36,7 @@ import { buildWorld, RIVER, HERO_BEARING, TOWER_TOP } from './kingdom-world.js';
 import { createActors } from './kingdom-actors.js';
 import { createLife } from './kingdom-life.js';
 import { loadBrand, BRAND_SVG_URL } from './kingdom-emblem.js';
-import { dublinSun, daylight, pickDirectorEvent, normalizeState, windowRatios, dublinHour, weatherLook, GADGET_META } from './kingdom-data.js';
+import { dublinSun, daylight, skyState, pickDirectorEvent, normalizeState, windowRatios, dublinHour, weatherLook, GADGET_META } from './kingdom-data.js';
 import { createWeatherFx } from './kingdom-weather.js';
 import { mergeStatic, simplifyInstances, createLegacyWatch, STATIC_NAMES, PHONE_STATIC_INSTANCED } from './kingdom-legacy.js';
 import { createProbe, startTier, tierFromProbe, readProbeCache, writeProbeCache } from '../sandbox/tier-probe.js';
@@ -581,6 +581,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
 
   // The loop: paused while hidden; frame listeners (the recorder) after each frame.
   const frameFns = new Set();
+  const fogGrey = new THREE.Color();
   let raf = 0; let last = 0; let running = true; let t0 = performance.now(); let threat = 'calm'; let storm = 0; let alarm = 0;
   const sunDir = new THREE.Vector3();
   let camLift = 0; let camInside = 0; let paused = false;
@@ -648,36 +649,45 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
     // The light always follows real Dublin time (or the chosen dusk); an unread weather only means a calm, clear sky.
     const sun = lightMode === 'live' ? dublinSun(Date.now()) : DUSK_SUN;
     sunDir.set(Math.sin(sun.azimuth) * Math.cos(sun.elevation), Math.sin(sun.elevation), -Math.cos(sun.azimuth) * Math.cos(sun.elevation)).normalize();
-    const light = daylight(sun.elevation);
-    const dusk = Math.max(0, 1 - Math.abs(sun.elevation - 0.06) / 0.2);
+    // The sky on the real twilight bands (kingdom-data.js skyState): night
+    // only below about -6 deg; the golden hour a tint near the horizon, never
+    // a darkening; lamps from shortly before sunset to shortly after sunrise.
+    const sky = skyState(sun.elevation, { morning: sun.azimuth < Math.PI });
+    const light = sky.light;
+    const dusk = sky.golden;
+    const dark = sky.lamps;
     // The sky's greyness follows the weather; the threat level only lights
     // PG1's own rovers (never the weather).
     storm += (look.dark - storm) * Math.min(1, dt * 0.25);
     alarm += ((threat === 'storm' ? 1 : threat === 'watch' ? 0.3 : 0) - alarm) * Math.min(1, dt * 0.5);
-    world.update(dt, t, { sunDir, light, storm, cover: look.cover, wind: wx.state.wind, sunny: look.sun, dusk, fogColor: scene.fog.color });
+    world.update(dt, t, { sunDir, light, storm, cover: look.cover, wind: wx.state.wind, sunny: look.sun, dusk, lamps: dark, night: sky.night, fogColor: scene.fog.color });
     // Blue atmospheric haze, warmer at dusk, that fades the far city.
-    scene.fog.color.setRGB(0.14 + 0.32 * light * (1 - dusk) + 0.08 * dusk, 0.19 + 0.36 * light * (1 - dusk) + 0.05 * dusk, 0.36 + 0.36 * light * (1 - dusk)).multiplyScalar(1 - storm * 0.4);
+    // Overcast and rain grey the haze and dim it a little: still daytime.
+    scene.fog.color.setRGB(0.14 + 0.32 * light * (1 - 0.5 * dusk) + 0.08 * dusk, 0.19 + 0.36 * light * (1 - 0.5 * dusk) + 0.05 * dusk, 0.36 + 0.36 * light * (1 - 0.5 * dusk));
+    { const g = (scene.fog.color.r + scene.fog.color.g + scene.fog.color.b) / 3; scene.fog.color.lerp(fogGrey.setRGB(g, g, g), storm * 0.6).multiplyScalar(1 - storm * (0.4 - 0.25 * light)); }
     // The live fog follows the real weather, scaled and capped (kingdom-look.js
     // liveFog); with PG1_FOG_START the first 400 m stay clear. The Showcase keeps its own.
     scene.fog.density = settings.noFog ? 0 : offline ? (fogBase + storm * 0.0005 + look.fog * 0.0024) * (settings.fogScale || 1) : liveFog({ fogBase, storm, fog: look.fog });
-    renderer.toneMappingExposure = 0.7 + 0.22 * light * (1 - dusk);
+    renderer.toneMappingExposure = sky.exposure;
     wx.update(dt, t, look, { target: controls.target, sunDir, light, dusk });
     world.setWet(wx.state.wet);
-    if (wetStreets) wetStreets.update(wx.state.wet, Math.max(dusk, 1 - light));
+    if (wetStreets) wetStreets.update(wx.state.wet, dark);
     // The live grade follows the hour and the weather (night teal and orange).
-    if (post && post.setMood && (Number(container.dataset.frames) || 0) % 30 === 0) { const mood = liveMood({ light, dusk, rain: look.rain }); if (mood !== container.dataset.grade) { post.setMood(mood); container.dataset.grade = mood; } }
+    if (post && post.setMood && (Number(container.dataset.frames) || 0) % 30 === 0) { const mood = liveMood({ light, dusk, rain: look.rain, night: sky.night }); if (mood !== container.dataset.grade) { post.setMood(mood); container.dataset.grade = mood; } }
     // The night HDRI as the environment (loaded lazily, small) at night; the sky's by day.
-    if (nightEnv && !ladderOff.has('hdri')) { const night = Math.max(dusk, 1 - light) > 0.5; if (night && scene.environment !== nightEnv) { scene.environment = nightEnv; scene.environmentIntensity = 0.35; } else if (!night && scene.environment === nightEnv) { scene.environment = envRT ? envRT.texture : null; scene.environmentIntensity = 0.9; } }
+    if (nightEnv && !ladderOff.has('hdri')) { const night = sky.night > 0.5; if (night && scene.environment !== nightEnv) { scene.environment = nightEnv; scene.environmentIntensity = 0.35; } else if (!night && scene.environment === nightEnv) { scene.environment = envRT ? envRT.texture : null; scene.environmentIntensity = 0.9; } }
     if (!lazyStarted && (Number(container.dataset.frames) || 0) > 20) { lazyStarted = true; loadLazy(); }
-    if (now - envAt > 180000) { envAt = now; refreshEnv(); if (post && post.setNight) post.setNight(Math.max(dusk, 1 - light)); }
+    if (now - envAt > 180000) { envAt = now; refreshEnv(); if (post && post.setNight) post.setNight(Math.max(sky.night, dark * 0.6)); }
     actors.update(dt, t, camera, { storm: alarm });
-    life.update(dt, t, { dark: Math.max(dusk, 1 - light), dusk, light, hour: lightMode === 'dusk' ? 19.5 : dublinHour(Date.now()), wet: wx.state.wet, rain: wx.state.rain, wind: wx.state.wind, external: actors.riverBoats ? actors.riverBoats() : [] });
+    life.update(dt, t, { dark, dusk, light, hour: lightMode === 'dusk' ? 19.5 : dublinHour(Date.now()), wet: wx.state.wet, rain: wx.state.rain, wind: wx.state.wind, external: actors.riverBoats ? actors.riverBoats() : [] });
     // Windows by the hour in Dublin, and the day's weather (scenery), every few seconds.
     if (now - ambientAt > 5000) {
       ambientAt = now;
       const hour = lightMode === 'dusk' ? 19.5 : dublinHour(Date.now());
-      world.setWindowRatios(windowRatios(hour));
+      world.setWindowRatios(windowRatios(hour, lightMode === 'dusk' ? null : dark));
       container.dataset.windowHour = String(Math.floor(hour));
+      // The sky as drawn (tests: tests/browser/kingdom-twilight.browser.test.mjs).
+      container.dataset.skyPhase = sky.phase; container.dataset.skyLight = sky.light.toFixed(2); container.dataset.skyNight = sky.night.toFixed(2); container.dataset.exposure = renderer.toneMappingExposure.toFixed(2); container.dataset.lamps = dark.toFixed(2); container.dataset.nightEnv = nightEnv && scene.environment === nightEnv ? 'yes' : 'no';
       container.dataset.weather = look.state;
       container.dataset.weatherSource = look.source;
     }
