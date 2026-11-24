@@ -49,7 +49,12 @@ on:
         default: ''
         type: string
       reel_shots:
-        description: The reel's shots, comma-separated (empty for all ten)
+        description: The reel's shots, comma-separated (empty for all of them)
+        required: false
+        default: ''
+        type: string
+      reel_epoch:
+        description: The data window's "now" (ISO, e.g. 2026-11-24T00:14:54Z) to re-render shots on an earlier run's window; empty for now
         required: false
         default: ''
         type: string
@@ -77,9 +82,15 @@ jobs:
         env:
           REEL: ${{ inputs.reel }}
           REEL_SHOTS: ${{ inputs.reel_shots }}
+          REEL_EPOCH: ${{ inputs.reel_epoch }}
         run: |
           node -e "import('./lib/showcase/reel.mjs').then(m => { if (process.env.REEL !== m.REEL_ID) throw new Error('unknown reel'); const all = m.REEL_SHOTS.map(s => s.id); const want = (process.env.REEL_SHOTS || '').split(',').map(s => s.trim()).filter(Boolean); for (const w of want) if (!all.includes(w)) throw new Error('unknown shot ' + w); console.log('shots=' + JSON.stringify(want.length ? want : all)); })" >> "$GITHUB_OUTPUT"
-          echo "epoch=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          if [ -n "$REEL_EPOCH" ]; then
+            if ! printf '%s' "$REEL_EPOCH" | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$'; then echo "reel_epoch must be an ISO UTC time" >&2; exit 1; fi
+            echo "epoch=$REEL_EPOCH" >> "$GITHUB_OUTPUT"
+          else
+            echo "epoch=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          fi
 
   reel:
     if: inputs.reel != ''

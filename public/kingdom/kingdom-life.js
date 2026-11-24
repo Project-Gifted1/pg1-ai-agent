@@ -49,9 +49,20 @@ export function personGeometry(THREE, { low = false } = {}) {
   const trousers = [0.16, 0.17, 0.2];
   for (const x of [-0.1, 0.1]) { const l = new THREE.CylinderGeometry(0.075, 0.065, 0.86, sides, 1, true); l.translate(x, 0.45, 0); add(l, trousers, 0); }
   if (!low) for (const x of [-0.1, 0.1]) { const sh = new THREE.BoxGeometry(0.11, 0.07, 0.24); sh.translate(x, 0.035, 0.04); add(sh, [0.08, 0.08, 0.09], 0); }
-  const torso = new THREE.CylinderGeometry(0.21, 0.16, 0.62, sides, 1, false); torso.translate(0, 1.18, 0); add(torso, [1, 1, 1], 1);
-  if (!low) for (const x of [-0.25, 0.25]) { const a = new THREE.CylinderGeometry(0.05, 0.045, 0.58, 4, 1, true); a.translate(x, 1.17, 0); add(a, [1, 1, 1], 1); }
-  const head = new THREE.SphereGeometry(0.115, low ? 5 : 7, low ? 3 : 5); head.scale(1, 1.12, 1); head.translate(0, 1.64, 0); add(head, [1, 1, 1], 2);
+  if (low) { const torso = new THREE.CylinderGeometry(0.21, 0.16, 0.62, sides, 1, false); torso.translate(0, 1.18, 0); add(torso, [1, 1, 1], 1); }
+  else {
+    // Hips, a torso with shoulders, a neck; arms with skin-toned hands; hair.
+    const hips = new THREE.CylinderGeometry(0.17, 0.16, 0.16, 8, 1, false); hips.translate(0, 0.9, 0); add(hips, trousers, 0);
+    const torso = new THREE.CylinderGeometry(0.22, 0.165, 0.56, 8, 1, false); torso.scale(1, 1, 0.72); torso.translate(0, 1.25, 0); add(torso, [1, 1, 1], 1);
+    const shoulders = new THREE.SphereGeometry(0.22, 8, 3, 0, Math.PI * 2, 0, Math.PI / 2); shoulders.scale(1, 0.35, 0.72); shoulders.translate(0, 1.52, 0); add(shoulders, [1, 1, 1], 1);
+    const neck = new THREE.CylinderGeometry(0.05, 0.055, 0.09, 6, 1, true); neck.translate(0, 1.56, 0); add(neck, [1, 1, 1], 2);
+    for (const x of [-0.255, 0.255]) {
+      const a = new THREE.CylinderGeometry(0.058, 0.048, 0.56, 6, 1, true); a.rotateZ(x > 0 ? 0.08 : -0.08); a.translate(x, 1.23, 0); add(a, [1, 1, 1], 1);
+      const h = new THREE.SphereGeometry(0.05, 5, 4); h.translate(x * 1.08, 0.92, 0); add(h, [1, 1, 1], 2);
+    }
+  }
+  const head = new THREE.SphereGeometry(0.115, low ? 5 : 9, low ? 3 : 7); head.scale(1, 1.12, 1); head.translate(0, 1.7, 0); add(head, [1, 1, 1], 2);
+  if (!low) { const hair = new THREE.SphereGeometry(0.122, 9, 4, 0, Math.PI * 2, 0, Math.PI * 0.55); hair.scale(1, 1.1, 1.04); hair.translate(0, 1.715, -0.012); add(hair, [0.1, 0.075, 0.06], 0); }
   const n = parts.reduce((k, g) => k + g.attributes.position.count, 0);
   const out = new THREE.BufferGeometry();
   for (const [name, size] of [['position', 3], ['normal', 3], ['color', 3], ['aTint', 1]]) {
@@ -210,8 +221,47 @@ export function createLife(THREE, scene, world, settings) {
   const platforms = named(new THREE.InstancedMesh(new THREE.BoxGeometry(100, 0.6, 3), std(0xb7babf, { roughness: 0.7 }), traffic.stations.length * 2), 'tram-platforms');
   traffic.stations.forEach((x, i) => { set(platforms, i * 2, x, 15.9, TRAM_Z - 6); set(platforms, i * 2 + 1, x, 15.9, TRAM_Z + 6); });
   root.add(platforms);
-  const tramTex = (() => { const cv = document.createElement('canvas'); cv.width = 128; cv.height = 32; const g = cv.getContext('2d'); g.fillStyle = '#20262e'; g.fillRect(0, 0, 128, 32); g.fillStyle = '#ffe2b0'; for (let x = 6; x < 128; x += 16) g.fillRect(x, 9, 10, 12); const t = new THREE.CanvasTexture(cv); t.colorSpace = THREE.SRGBColorSpace; return t; })();
-  const carriages = dyn(named(new THREE.InstancedMesh(new THREE.BoxGeometry(18, 3.4, 2.8), new THREE.MeshStandardMaterial({ color: LIFE_COLOURS.tram, emissive: 0xffffff, emissiveMap: tramTex, emissiveIntensity: 0.9, roughness: 0.4, metalness: 0.5 }), 10), 'tram'));
+  // The tram (1.24 look): one model of the whole five-car set, not boxes.
+  // Articulated cars with bellows between them, a raked cab nose with a
+  // windscreen at each end (it runs both ways), a glazed window band and
+  // glazed doors that light up after dark, a livery stripe, bogies, roof
+  // equipment and a pantograph on alternate cars. One instance a tram, one
+  // draw call. Built along z (cars 18 m, 0.6 m bellows), floor at y 0.
+  const TRAM_CAR = 18; const TRAM_GAP = 0.6; const TRAM_SET = 5 * TRAM_CAR + 4 * TRAM_GAP;
+  const rect = (z0, z1, y0, y1, w, col, glow = 0) => ({ ...profile([[z0, y0], [z1, y0], [z1, y1], [z0, y1]], w, col), glow });
+  const LIVERY = [0.18, 0.43, 0.71]; const SHELL = [0.93, 0.94, 0.95]; const ROOFGREY = [0.42, 0.44, 0.47]; const BOGIE = [0.1, 0.1, 0.11]; const LAMP = [1, 0.97, 0.9];
+  const tramParts = [];
+  for (let c = 0; c < 5; c++) {
+    const z0 = -TRAM_SET / 2 + c * (TRAM_CAR + TRAM_GAP); const z1 = z0 + TRAM_CAR; const zc = (z0 + z1) / 2;
+    tramParts.push(
+      rect(z0, z1, 0.35, 3.2, 2.62, SHELL),                                   // the body shell
+      rect(z0 + 0.8, z1 - 0.8, 1.3, 2.7, 2.66, GLASS, 1),                     // the window band, lit inside after dark
+      rect(zc - 5.4, zc - 3.8, 0.45, 2.75, 2.68, [0.12, 0.15, 0.18], 0.7),    // glazed doors, two a side
+      rect(zc + 3.8, zc + 5.4, 0.45, 2.75, 2.68, [0.12, 0.15, 0.18], 0.7),
+      rect(z0, z1, 0.62, 0.95, 2.67, LIVERY),                                 // the livery stripe
+      rect(z0, z1, 2.82, 2.95, 2.67, LIVERY),                                 // and the cant rail
+      ({ ...profile([[z0 + 0.3, 3.2], [z1 - 0.3, 3.2], [z1 - 0.6, 3.42], [z0 + 0.6, 3.42]], 2.3, SHELL) }), // the roof's curve
+      rect(zc - 3.2, zc + 3.2, 3.42, 3.75, 1.5, ROOFGREY),                    // roof equipment
+      rect(z0 + 2.2, z0 + 4.6, 0, 0.42, 2.2, BOGIE), rect(z1 - 4.6, z1 - 2.2, 0, 0.42, 2.2, BOGIE)
+    );
+    if (c % 2 === 0) tramParts.push(rect(zc - 0.1, zc + 0.1, 3.75, 4.6, 1.6, ROOFGREY), rect(zc - 0.7, zc + 0.7, 4.55, 4.65, 1.7, ROOFGREY)); // pantograph
+    if (c < 4) tramParts.push(rect(z1, z1 + TRAM_GAP, 0.5, 3.0, 2.3, BOGIE));  // bellows
+  }
+  for (const s of [-1, 1]) {
+    const e = s * TRAM_SET / 2; const f = (dz) => e + s * dz; const nose = (pts) => (s > 0 ? pts : pts.slice().reverse()).map(([dz, y]) => [f(dz), y]);
+    tramParts.push(
+      profile(nose([[0, 0.35], [0.9, 0.45], [1.25, 1.2], [1.1, 2.9], [0.6, 3.38], [0, 3.42]]), 2.5, SHELL),   // the raked cab nose
+      { ...profile(nose([[0.05, 1.3], [1.28, 1.3], [1.13, 2.85], [0.62, 3.2], [0.05, 3.2]]), 2.2, GLASS), glow: 0.25 }, // windscreen
+      rect(Math.min(f(0.9), f(1.27)), Math.max(f(0.9), f(1.27)), 0.6, 0.95, 2.52, LIVERY),
+      ...[-0.85, 0.85].map((x) => { const l = rect(Math.min(f(1.0), f(1.3)), Math.max(f(1.0), f(1.3)), 0.75, 0.92, 0.4, LAMP, 2.4); l.g.translate(x, 0, 0); return l; }), // headlamps at the corners
+      { ...rect(Math.min(f(0.7), f(1.0)), Math.max(f(0.7), f(1.0)), 2.95, 3.2, 1.3, [1, 0.72, 0.25]), glow: 1.6 } // destination sign
+    );
+  }
+  const tramGeo = vehicleGeo(tramParts);
+  const tramMat = std(0xffffff, { roughness: 0.38, metalness: 0.35, vertexColors: true }); const tramLit = { value: 0.2 };
+  tramMat.onBeforeCompile = (sh) => { sh.uniforms.uLit = tramLit; sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 aGlow;\nvarying vec3 vGlow;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = aGlow;'); sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vGlow;\nuniform float uLit;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vGlow * uLit;'); };
+  tramMat.customProgramCacheKey = () => 'pg1-tram-windows';
+  const carriages = dyn(named(new THREE.InstancedMesh(tramGeo, tramMat, 2), 'tram'));
   root.add(carriages);
 
   // --- the river: boats in lanes, with wakes; moored boats rocking ---
@@ -524,9 +574,10 @@ export function createLife(THREE, scene, world, settings) {
       if (carBodies.instanceColor) carBodies.instanceColor.needsUpdate = true;
       for (const m of [carBodies, carCabs, vans, buses, heads, tails, spray]) m.instanceMatrix.needsUpdate = true;
       // The trams.
-      traffic.trams.forEach((tr, n) => { for (let i = 0; i < 5; i++) set(carriages, n * 5 + i, tr.x - tr.dir * (i * 18.6 + 9), 17.4, tr.z); });
-      carriages.count = traffic.trams.length * 5; carriages.instanceMatrix.needsUpdate = true;
-      carriages.material.emissiveIntensity = 0.3 + 0.9 * dark;
+      // One set a tram, its front at tr.x, floor on the viaduct deck (15.7 m); built along z, turned onto the line.
+      traffic.trams.forEach((tr, n) => set(carriages, n, tr.x - tr.dir * (TRAM_SET / 2), 15.7, tr.z, Math.PI / 2));
+      carriages.count = Math.min(2, traffic.trams.length); carriages.instanceMatrix.needsUpdate = true;
+      tramLit.value = 0.02 + 0.85 * dark;
       // Boats on the river, and moored ones rocking.
       boats.forEach((b, i) => {
         const sc = b.len / 18;

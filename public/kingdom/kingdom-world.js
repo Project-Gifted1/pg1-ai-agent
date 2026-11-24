@@ -607,13 +607,42 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       #endif`);
   };
   mats.leaf.customProgramCacheKey = () => 'pg1-leaf-wind';
-  const crowns = named(new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2.2, 0), mats.leaf, treeSpots.length), 'tree-crowns');
-  treeSpots.forEach(([x, z], i) => { set(trunks, i, x, 1.5, z); set(crowns, i, x, 4.4, z, 1, 1.2, 1, i); });
+  // Crowns: on the desktop tiers, a clump of three rounded masses (an oval
+  // canopy, not a gem); on the phone tiers the single low crown. Each tree
+  // takes its own shade of green and size, so a row never looks stamped out.
+  const richTrees = !phone && !settings.leanCity;
+  const crownGeo = (() => {
+    if (!richTrees) return new THREE.IcosahedronGeometry(2.2, 0);
+    const lumps = [[0, 0.2, 0, 1.9], [-0.95, -0.35, 0.45, 1.45], [0.9, -0.25, -0.4, 1.5], [0.15, -0.4, 0.95, 1.3]].map(([x, y, z, r]) => { const g = new THREE.IcosahedronGeometry(r, 1); g.translate(x, y, z); return g.toNonIndexed(); });
+    const total = lumps.reduce((a, g) => a + g.attributes.position.count, 0); const out = new THREE.BufferGeometry();
+    for (const name of ['position', 'normal']) { const arr = new Float32Array(total * 3); let o = 0; for (const g of lumps) { arr.set(g.attributes[name].array, o); o += g.attributes[name].array.length; } out.setAttribute(name, new THREE.BufferAttribute(arr, 3)); }
+    lumps.forEach((g) => g.dispose()); out.computeBoundingSphere(); return out;
+  })();
+  const crowns = named(new THREE.InstancedMesh(crownGeo, mats.leaf, treeSpots.length), 'tree-crowns');
+  { const tc = rng(29); const shade = new THREE.Color();
+    treeSpots.forEach(([x, z], i) => { const s = 0.82 + tc() * 0.4; set(trunks, i, x, 1.5 * s, z, 1, s, 1, 0); set(crowns, i, x, 4.4 * s, z, s, s * (1.05 + tc() * 0.2), s, i);
+      if (richTrees) crowns.setColorAt(i, shade.setRGB(0.78 + tc() * 0.4, 0.85 + tc() * 0.3, 0.7 + tc() * 0.35)); }); }
   root.add(trunks); root.add(crowns);
 
   // --- the PG1 Tower ---
   const keep = named(new THREE.Group(), 'pg1-tower');
-  const podium = named(new THREE.Mesh(new THREE.CylinderGeometry(30, 32, PODIUM_H, 6), mats.steelDark), 'tower-podium'); podium.position.y = PODIUM_H / 2; podium.rotation.y = Math.PI / 6; keep.add(podium);
+  // The podium: on the desktop tiers a lit glass lobby between stone bands
+  // (at eye level the plain dark steel read as a black wall); the phone tiers
+  // keep one plain material (one draw call).
+  const podiumMats = (() => {
+    if (phone) return mats.steelDark;
+    const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 64; const g = cv.getContext('2d');
+    g.fillStyle = '#8f949b'; g.fillRect(0, 0, 1024, 64); g.fillStyle = '#1e2933'; g.fillRect(0, 12, 1024, 44);
+    g.fillStyle = '#c9ccd1'; for (let x = 0; x < 1024; x += 32) g.fillRect(x, 12, 3, 44); g.fillRect(0, 12, 1024, 2); g.fillRect(0, 54, 1024, 2);
+    const map = new THREE.CanvasTexture(cv); map.colorSpace = THREE.SRGBColorSpace; map.anisotropy = 4;
+    const ecv = document.createElement('canvas'); ecv.width = 1024; ecv.height = 64; const e = ecv.getContext('2d'); e.fillStyle = '#000'; e.fillRect(0, 0, 1024, 64);
+    e.fillStyle = '#6b5a3c'; for (let x = 3; x < 1024; x += 32) e.fillRect(x, 16, 29, 38);
+    const emissiveMap = new THREE.CanvasTexture(ecv); emissiveMap.colorSpace = THREE.SRGBColorSpace;
+    const side = new THREE.MeshStandardMaterial({ color: 0xffffff, map, emissive: 0xffffff, emissiveMap, emissiveIntensity: 0.9, roughness: 0.35, metalness: 0.2 });
+    const top = std(0x7d838b, { roughness: 0.6, metalness: 0.15 });
+    return [side, top, top];
+  })();
+  const podium = named(new THREE.Mesh(new THREE.CylinderGeometry(30, 32, PODIUM_H, 6), podiumMats), 'tower-podium'); podium.position.y = PODIUM_H / 2; podium.rotation.y = Math.PI / 6; keep.add(podium);
   const spireGeo = new THREE.CylinderGeometry(2.2, 24, SPIRE_H, 6, 1, true); spireGeo.translate(0, SPIRE_H / 2, 0);
   spireGeo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(new Float32Array([777]), 1));
   spireGeo.setAttribute('aStyle', new THREE.InstancedBufferAttribute(new Float32Array([STYLES.glass]), 1));
@@ -814,7 +843,7 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   const lampN = phone ? 90 : 220;
   const lampPoles = named(new THREE.InstancedMesh(new THREE.CylinderGeometry(0.15, 0.2, 8, 6), mats.steelDark, lampN), 'street-light-poles');
   const lampMat = new THREE.MeshBasicMaterial({ color: 0x6a6252 });
-  const lampHeads = named(new THREE.InstancedMesh(new THREE.SphereGeometry(0.55, 8, 6), lampMat, lampN), 'street-lights');
+  const lampHeads = named(new THREE.InstancedMesh(legacy ? new THREE.SphereGeometry(0.55, 5, 3) : new THREE.SphereGeometry(0.55, 8, 6), lampMat, lampN), 'street-lights'); // Legacy: 20-triangle lamp heads (the same glow at a phone's distance), keeping its night view under 150k triangles
   for (let i = 0; i < lampN; i++) {
     const side = i % 2 ? 1 : -1; const x = -1600 + Math.floor(i / 2) * (3200 / (lampN / 2));
     set(lampPoles, i, x, 4, RIVER.z + side * (RIVER.half + 3)); set(lampHeads, i, x, 8.2, RIVER.z + side * (RIVER.half + 3));

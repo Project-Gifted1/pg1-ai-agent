@@ -28,7 +28,7 @@ test('thirteen shots (day and night), 4-6 s each, each with a plan and a 2-6 wor
     const words = captionFor(s, { countries: 12 }).split(/\s+/).filter(Boolean).length;
     assert.ok(words >= 2 && words <= 6, `${s.id}: ${words} words`);
     const plan = planReelShot(s.id, ctx);
-    for (const t of [0, 0.5, 1]) { const p = poseAt(plan, t); assert.ok(p.dist > 0 && p.phi > 0.8 && p.phi < 1.6, `${s.id} ${t}`); }
+    for (const t of [0, 0.5, 1]) { const p = poseAt(plan, t); assert.ok(p.dist > 0 && p.phi > 0.8 && p.phi < (p.free ? 1.75 : 1.6), `${s.id} ${t}`); } // eye-level (free) shots may look a little up at the tower
   }
   assert.equal(captionFor(REEL_SHOTS.find((s) => s.id === 'probe-arrives'), { countries: 12 }), 'Probes from 12 countries');
 });

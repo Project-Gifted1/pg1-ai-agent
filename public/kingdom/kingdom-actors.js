@@ -124,7 +124,7 @@ function navGeo(THREE) {
 }
 // The drone's lights, all unlit: nav lights, the strobe, the underglow.
 function droneLights(THREE, light) {
-  const strobe = strobeGeoQ || (strobeGeoQ = new THREE.SphereGeometry(0.11, 8, 6));
+  const strobe = strobeGeoQ || (strobeGeoQ = LEAN ? new THREE.SphereGeometry(0.11, 4, 3) : new THREE.SphereGeometry(0.11, 8, 6));
   const under = underGeoQ || (underGeoQ = (() => { const g = new THREE.CircleGeometry(1.15, 20); g.rotateX(-Math.PI / 2); return g; })());
   const um = new THREE.MeshBasicMaterial({ color: light, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
   um.name = 'drone-underglow';
@@ -195,12 +195,14 @@ function quadParts(THREE, M, light, body = ENEMY_BODY, lean = LEAN || LEAN_DRONE
     { geo: new THREE.SphereGeometry(0.1, 8, 6), mat: new THREE.MeshBasicMaterial({ color: light }), offset: [0, -0.1, 0.5], swing: null, flat: true }
   ];
   if (lean) {
+    // Legacy (LEAN): the lamps as 16-triangle spheres (the same points of light at a phone's distance; the night view stays under 150k triangles).
+    const sph = (r) => (LEAN ? new THREE.SphereGeometry(r, 4, 3) : new THREE.SphereGeometry(r, 8, 6));
     const one = mergeColoured(THREE, [
       { geo: parts[0].geo, color: body, glow: DRONE_LOOK.selfLight },
       { geo: armsX(THREE), at: [0, 0.05, 0], color: arms, glow: DRONE_LOOK.selfLight },
-      { geo: parts[2].geo, at: [0, -0.1, 0.5], color: light, glow: 1.6 },
-      { geo: new THREE.SphereGeometry(0.12, 8, 6), at: [0.78, 0.1, 0.78], color: DRONE_LOOK.navRed, glow: 1.6 },
-      { geo: new THREE.SphereGeometry(0.12, 8, 6), at: [-0.78, 0.1, 0.78], color: DRONE_LOOK.navGreen, glow: 1.6 }
+      { geo: LEAN ? sph(0.1) : parts[2].geo, at: [0, -0.1, 0.5], color: light, glow: 1.6 },
+      { geo: sph(0.12), at: [0.78, 0.1, 0.78], color: DRONE_LOOK.navRed, glow: 1.6 },
+      { geo: sph(0.12), at: [-0.78, 0.1, 0.78], color: DRONE_LOOK.navGreen, glow: 1.6 }
     ]);
     const [, strobe, under] = droneLights(THREE, light);
     return [{ geo: one, mat: glowMaterial(THREE), offset: [0, 0, 0], swing: null, nav: true, look: parts[0].look }, strobe, under];

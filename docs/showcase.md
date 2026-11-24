@@ -130,7 +130,9 @@ replaying real data only:
 
 Run it on GitHub: **PG1 Showcase render** with `reel: inside-city`. A plan job
 fixes one "now", then every shot renders on its own runner at once, all reading
-the same 7-day window (`--epoch`). Locally, for one shot:
+the same 7-day window (`--epoch`). To re-render some shots on an earlier run's
+window, give `reel_shots` and that run's `reel_epoch` (its manifest's
+`window.now`). Locally, for one shot:
 
 ```sh
 node scripts/showcase-render.mjs --reel inside-city --shots crown-tower --epoch 2026-11-23T20:00:00Z
