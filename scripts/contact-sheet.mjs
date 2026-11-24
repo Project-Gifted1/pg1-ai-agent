@@ -16,7 +16,7 @@ import os from 'node:os';
 const ff = (args) => { const r = spawnSync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', ...args], { stdio: 'inherit' }); if (r.status !== 0) throw new Error(`ffmpeg failed: ${args.join(' ')}`); };
 const seconds = (f) => Number(spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f], { encoding: 'utf8' }).stdout) || 0;
 
-export const COLS = 10; export const TW = 216; export const TH = 384;
+export const COLS = 8; export const TW = 270; export const TH = 480;
 
 // The times sampled: 0, every, 2 * every, ... up to the reel's end.
 export const sampleTimes = (duration, every = 0.5) => { const out = []; for (let t = 0; t <= duration - 0.02 + 1e-9; t += every) out.push(Number(t.toFixed(3))); return out; };
@@ -24,7 +24,7 @@ export const sampleTimes = (duration, every = 0.5) => { const out = []; for (let
 export function contactSheet({ reel, stills = [], out, every = 0.5, frames = null }) {
   const tmp = join(os.tmpdir(), `pg1-sheet-${process.pid}`); rmSync(tmp, { recursive: true, force: true }); mkdirSync(tmp, { recursive: true });
   try {
-    const times = sampleTimes(seconds(reel), every);
+    const times = reel ? sampleTimes(seconds(reel), every) : [];
     if (frames) { mkdirSync(frames, { recursive: true }); times.forEach((t, i) => ff(['-ss', t.toFixed(3), '-i', reel, '-frames:v', '1', join(frames, `reel-${String(i).padStart(3, '0')}-${t.toFixed(1)}s.png`)])); }
     const thumbs = times.map((t, i) => { const f = join(tmp, `t${String(i).padStart(3, '0')}.png`); ff(['-ss', t.toFixed(3), '-i', reel, '-frames:v', '1', '-vf', `scale=${TW}:${TH}:flags=lanczos`, f]); return f; });
     for (const [k, s] of stills.entries()) { const f = join(tmp, `s${k}.png`); ff(['-i', s, '-vf', `scale=${TW}:-2:flags=lanczos,pad=${TW}:${TH}:0:(oh-ih)/2:black`, f]); thumbs.push(f); }

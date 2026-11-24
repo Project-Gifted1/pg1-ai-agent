@@ -211,10 +211,13 @@ export async function build({ from, out }) {
     const coverSrc = still('city-wide') || still('crown-tower'); let coverBg = null;
     if (coverSrc) { coverBg = join(tmp, 'story-bg.png'); to1080(coverSrc, coverBg); }
     await shoot(cardHtml(sl[0], coverBg ? dataUrl(coverBg) : null, { hgt: 1920 }), 1080, 1920, join(out, 'story-1080x1920.png'));
-    // The contact sheet: a frame of the reel every 0.5 s (numbered by time),
-    // then every slide and the Story (scripts/contact-sheet.mjs).
+    // The review sheets (scripts/contact-sheet.mjs), in git so the post can
+    // be checked without the release asset: reel-contact-sheet.jpg, a frame of
+    // the reel every 0.5 s in 270 px tiles; contact-sheet.jpg, every slide and
+    // the Story.
     const { contactSheet } = await import('./contact-sheet.mjs');
-    contactSheet({ reel, stills: [...sl.map((h) => join(out, h.file)), join(out, 'story-1080x1920.png')], out: join(out, 'contact-sheet.jpg'), every: 0.5 });
+    contactSheet({ reel, stills: [], out: join(out, 'reel-contact-sheet.jpg'), every: 0.5 });
+    contactSheet({ reel: null, stills: [...sl.map((h) => join(out, h.file)), join(out, 'story-1080x1920.png')], out: join(out, 'contact-sheet.jpg') });
     writeFileSync(join(out, 'copy.md'), copyMd(m, sl, plan, used, info));
     return { reel: info, plan, missing: m.shots.filter((s) => s.missing).map((s) => ({ id: s.id, why: s.missing })) };
   } finally { await browser.close(); server.close(); rmSync(tmp, { recursive: true, force: true }); }
