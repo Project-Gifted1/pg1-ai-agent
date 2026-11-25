@@ -43,6 +43,7 @@ jobs:
     outputs:
       record_run: ${{ steps.p.outputs.record_run }}
       record_only: ${{ steps.p.outputs.record_only }}
+      frames_run: ${{ steps.p.outputs.frames_run }}
     steps:
       - uses: actions/checkout@v4
         with: { persist-credentials: false, sparse-checkout: .github }
@@ -51,7 +52,8 @@ jobs:
           f=.github/cycles-reel.json
           rr=$( [ -f $f ] && python3 -c "import json;print(json.load(open('$f')).get('record_run',''))" || echo '')
           ro=$( [ -f $f ] && python3 -c "import json;print(str(json.load(open('$f')).get('record_only',False)).lower())" || echo false)
-          echo "record_run=$rr" >> "$GITHUB_OUTPUT"; echo "record_only=$ro" >> "$GITHUB_OUTPUT"; echo "record_run=$rr record_only=$ro"
+          fr=$( [ -f $f ] && python3 -c "import json;print(json.load(open('$f')).get('frames_run',''))" || echo '')
+          echo "record_run=$rr" >> "$GITHUB_OUTPUT"; echo "record_only=$ro" >> "$GITHUB_OUTPUT"; echo "frames_run=$fr" >> "$GITHUB_OUTPUT"; echo "record_run=$rr record_only=$ro frames_run=$fr"
 
   record:
     needs: plan
@@ -86,7 +88,7 @@ jobs:
 
   frames:
     needs: [plan, record]
-    if: always() && needs.plan.outputs.record_only != 'true' && (needs.record.result == 'success' || needs.record.result == 'skipped')
+    if: always() && needs.plan.outputs.record_only != 'true' && needs.plan.outputs.frames_run == '' && (needs.record.result == 'success' || needs.record.result == 'skipped')
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     strategy:
@@ -128,7 +130,7 @@ jobs:
 
   post:
     needs: [plan, frames]
-    if: always() && needs.frames.result != 'skipped' && needs.frames.result != 'cancelled'
+    if: always() && needs.plan.outputs.record_only != 'true' && (needs.frames.result == 'success' || needs.plan.outputs.frames_run != '')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -136,9 +138,9 @@ jobs:
         with: { persist-credentials: false }
       - uses: actions/setup-node@v4
         with: { node-version-file: .nvmrc, cache: npm }
-      - run: npm ci && sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - run: npm ci && npx playwright install --with-deps chromium && sudo apt-get install -y -qq ffmpeg
       - uses: actions/download-artifact@v4
-        with: { pattern: 'cycles-frames-*', path: frames }
+        with: { pattern: 'cycles-frames-*', path: frames, run-id: '${{ needs.plan.outputs.frames_run || github.run_id }}', github-token: '${{ github.token }}' }
       - uses: actions/download-artifact@v4
         with: { pattern: 'pg1-reel-*', path: reel-artifacts, run-id: '${{ env.REEL_RUN }}', github-token: '${{ github.token }}' }
       - uses: actions/download-artifact@v4
