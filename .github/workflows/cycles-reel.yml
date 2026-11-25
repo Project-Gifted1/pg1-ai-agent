@@ -14,7 +14,7 @@ name: PG1 reel in Cycles
 #      crossfades), with the stills of the stills run; pushed to the branch
 #      cycles-out/<branch> for review. Nothing is published or posted.
 #
-# Runs on a push to cycles-reel/*. TEST=1 renders two frames of one shot.
+# Runs on a push to cycles-reel/*; a branch ending in -test renders two frames of one shot.
 
 on:
   push:
@@ -33,7 +33,7 @@ env:
   STILLS_RUN: '45519213609'
   SAMPLES: '32'
   FIRST: '9'
-  TEST: '0'
+  TEST: ${{ endsWith(github.ref_name, '-test') && '1' || '0' }}
 
 jobs:
   record:
