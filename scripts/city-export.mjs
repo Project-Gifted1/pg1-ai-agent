@@ -80,7 +80,7 @@ const EXPORT = async () => {
     return out;
   };
   const root = new THREE.Scene(); root.name = 'pg1-city';
-  let meshes = 0; let tris = 0;
+  let meshes = 0; let tris = 0; const buildings = [];
   scene.traverse((o) => {
     if (!o.isMesh) { if (o.isPoints || o.isLine || o.isSprite) skip(o, o.type); return; }
     if (!visible(o) || SKIP.test(o.name || '')) { skip(o, SKIP.test(o.name || '') ? (o.name || 'sky') : 'hidden'); return; }
@@ -91,6 +91,19 @@ const EXPORT = async () => {
     // The facade material (skyline, crown tower): its windows are drawn in a shader, so Blender draws its own.
     const facade = typeof mat.customProgramCacheKey === 'function' && /pg1-facade/.test(String(mat.customProgramCacheKey()));
     const base = facade ? null : (mat.color ? [mat.color.r, mat.color.g, mat.color.b] : [1, 1, 1]);
+    // Skyline buildings go out as records (kind, place, size, seed, style): Blender builds them in detail.
+    const kindOf = /^skyline-(box|round|taper|twist)$/.exec(o.name || '');
+    if (facade && o.isInstancedMesh && kindOf) {
+      const seed = o.geometry.attributes.aSeed; const style = o.geometry.attributes.aStyle;
+      const m4 = new THREE.Matrix4(); const p = new THREE.Vector3(); const q = new THREE.Quaternion(); const sc = new THREE.Vector3(); const e = new THREE.Euler();
+      for (let i = 0; i < o.count; i++) {
+        o.getMatrixAt(i, m4); m4.premultiply(o.matrixWorld);
+        if (!m4.elements.every(Number.isFinite) || Math.abs(m4.determinant()) < 1e-9) continue;
+        m4.decompose(p, q, sc); e.setFromQuaternion(q, 'YXZ');
+        buildings.push({ kind: kindOf[1], x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2), w: +sc.x.toFixed(2), h: +sc.y.toFixed(2), d: +sc.z.toFixed(2), ry: +e.y.toFixed(4), seed: seed ? +seed.getX(i).toFixed(3) : 0, style: style ? style.getX(i) : 0 });
+      }
+      return;
+    }
     if (o.isInstancedMesh) {
       const seed = o.geometry.attributes.aSeed; const style = o.geometry.attributes.aStyle;
       const m4 = new THREE.Matrix4(); const col = new THREE.Color();
@@ -128,7 +141,7 @@ const EXPORT = async () => {
   return {
     bytes: glb.byteLength,
     meta: {
-      meshes, triangles: Math.round(tris), left_out: left, heaviest: heavy,
+      meshes, triangles: Math.round(tris), left_out: left, heaviest: heavy, buildings,
       camera: { position: camera.position.toArray(), quaternion: camera.quaternion.toArray(), fov: cam.fov, aspect: cam.aspect, near: cam.near, far: cam.far },
       fog: scene.fog ? { color: scene.fog.color.toArray(), density: scene.fog.density } : null,
       lights: sun,
@@ -181,7 +194,7 @@ export async function main(argv = process.argv.slice(2)) {
     writeFileSync(join(o.out, 'city.glb'), glb);
     const info = { shot: shot.id, title: shot.title, light: shot.light, weather: weather ? weather.state : null, t, size: [o.width, o.height], data: data.sources.city, window: data.reel ? { now: data.reel.now, days: data.reel.days } : null, ...meta };
     writeFileSync(join(o.out, 'city-shot.json'), JSON.stringify(info, null, 2) + '\n');
-    log(`${shot.id}: ${meta.meshes} meshes, ${meta.triangles} triangles, ${(glb.length / 1e6).toFixed(1)} MB; left out ${JSON.stringify(meta.left_out)}`);
+    log(`${shot.id}: ${meta.buildings.length} buildings, ${meta.meshes} meshes, ${meta.triangles} triangles, ${(glb.length / 1e6).toFixed(1)} MB; left out ${JSON.stringify(meta.left_out)}`);
     return info;
   } finally { await browser.close(); server.close(); }
 }

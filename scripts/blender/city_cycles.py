@@ -33,7 +33,7 @@ cams = [o for o in scene.objects if o.type == 'CAMERA']
 if not cams:
     raise SystemExit('no camera in city.glb')
 scene.camera = cams[0]
-cams[0].data.clip_end = 20000
+cams[0].data.clip_end = 90000
 cams[0].data.clip_start = 0.5
 
 def node(nt, kind, x=0, y=0, **inputs):
@@ -49,75 +49,99 @@ def link(nt, a, b):
     nt.links.new(a, b)
 
 # --- the skyline facade: windows from world position, lit per window ---
+# Per style (glass, stone, brick, metal, georgian, podium): window cell width,
+# window share of the cell across and up, and the wall colour.
+STYLE_CELL = [1.5, 2.8, 2.4, 2.0, 2.2, 5.0]
+STYLE_WIN_U = [(0.04, 0.96), (0.22, 0.78), (0.2, 0.8), (0.08, 0.92), (0.25, 0.75), (0.05, 0.95)]
+STYLE_WIN_V = [(0.12, 0.9), (0.28, 0.8), (0.25, 0.78), (0.15, 0.88), (0.22, 0.82), (0.1, 0.85)]
+STYLE_CLUSTER = [6.0, 1.0, 1.0, 4.0, 1.0, 3.0]
+STYLE_WALL = [(0.035, 0.045, 0.06), (0.36, 0.33, 0.28), (0.26, 0.11, 0.07), (0.14, 0.15, 0.17), (0.24, 0.1, 0.06), (0.1, 0.1, 0.11)]
+
+def lookup(nt, src, values, x, y):
+    """A constant colour ramp on style/8: returns the socket with values[style] (floats or colours)."""
+    r = node(nt, 'ShaderNodeValToRGB', x, y); r.color_ramp.interpolation = 'CONSTANT'
+    link(nt, src, r.inputs['Fac'])
+    el = r.color_ramp.elements
+    def col(v):
+        return (*v, 1) if isinstance(v, tuple) else (v, v, v, 1)
+    el[0].position = 0.0; el[0].color = col(values[0])
+    el[1].position = 0.5 / 8; el[1].color = col(values[1])
+    for k, v in enumerate(values[2:], start=2):
+        el.new((k - 0.5) / 8).color = col(v)
+    if isinstance(values[0], tuple):
+        return r.outputs['Color']
+    sep = node(nt, 'ShaderNodeSeparateColor', x + 250, y); link(nt, r.outputs['Color'], sep.inputs['Color'])
+    return sep.outputs['Red']
+
+def math_node(nt, op, a, b=None, x=0, y=0):
+    n = node(nt, 'ShaderNodeMath', x, y, operation=op)
+    for k, v in enumerate((a, b)):
+        if v is None:
+            continue
+        if isinstance(v, (int, float)):
+            n.inputs[k].default_value = v
+        else:
+            link(nt, v, n.inputs[k])
+    return n.outputs[0]
+
 def facade_material():
     m = bpy.data.materials.new('pg1-facade'); m.use_nodes = True
     nt = m.node_tree; nt.nodes.clear()
-    out = node(nt, 'ShaderNodeOutputMaterial', 1600, 0)
-    geo = node(nt, 'ShaderNodeNewGeometry', -1400, 0)
-    attr = node(nt, 'ShaderNodeVertexColor', -1400, -400); attr.layer_name = 'Color'
-    sep_c = node(nt, 'ShaderNodeSeparateColor', -1200, -400)
-    link(nt, attr.outputs['Color'], sep_c.inputs['Color'])
-    sep_p = node(nt, 'ShaderNodeSeparateXYZ', -1200, 200); link(nt, geo.outputs['Position'], sep_p.inputs['Vector'])
-    sep_n = node(nt, 'ShaderNodeSeparateXYZ', -1200, 0); link(nt, geo.outputs['Normal'], sep_n.inputs['Vector'])
-    # Horizontal coordinate along the wall: y on walls facing x, x on walls facing y.
-    ax = node(nt, 'ShaderNodeMath', -1000, 0, operation='ABSOLUTE'); link(nt, sep_n.outputs['X'], ax.inputs[0])
-    ay = node(nt, 'ShaderNodeMath', -1000, -100, operation='ABSOLUTE'); link(nt, sep_n.outputs['Y'], ay.inputs[0])
-    facing_x = node(nt, 'ShaderNodeMath', -850, -50, operation='GREATER_THAN'); link(nt, ax.outputs[0], facing_x.inputs[0]); link(nt, ay.outputs[0], facing_x.inputs[1])
-    u = node(nt, 'ShaderNodeMix', -700, 150); u.data_type = 'FLOAT'
-    link(nt, facing_x.outputs[0], u.inputs['Factor']); link(nt, sep_p.outputs['X'], u.inputs['A']); link(nt, sep_p.outputs['Y'], u.inputs['B'])
-    wall = node(nt, 'ShaderNodeMath', -850, -250, operation='LESS_THAN'); az = node(nt, 'ShaderNodeMath', -1000, -250, operation='ABSOLUTE')
-    link(nt, sep_n.outputs['Z'], az.inputs[0]); link(nt, az.outputs[0], wall.inputs[0]); wall.inputs[1].default_value = 0.5
-    # Cells: 3.2 m wide, 3.6 m storeys.
-    cu = node(nt, 'ShaderNodeMath', -550, 200, operation='DIVIDE'); link(nt, u.outputs['Result'], cu.inputs[0]); cu.inputs[1].default_value = 3.2
-    cv = node(nt, 'ShaderNodeMath', -550, 50, operation='DIVIDE'); link(nt, sep_p.outputs['Z'], cv.inputs[0]); cv.inputs[1].default_value = 3.6
-    fu = node(nt, 'ShaderNodeMath', -400, 250, operation='FRACT'); link(nt, cu.outputs[0], fu.inputs[0])
-    fv = node(nt, 'ShaderNodeMath', -400, 100, operation='FRACT'); link(nt, cv.outputs[0], fv.inputs[0])
-    flu = node(nt, 'ShaderNodeMath', -400, 400, operation='FLOOR'); link(nt, cu.outputs[0], flu.inputs[0])
-    flv = node(nt, 'ShaderNodeMath', -400, -50, operation='FLOOR'); link(nt, cv.outputs[0], flv.inputs[0])
-    def band(src, lo, hi, x, y):
-        a = node(nt, 'ShaderNodeMath', x, y, operation='GREATER_THAN'); link(nt, src, a.inputs[0]); a.inputs[1].default_value = lo
-        b = node(nt, 'ShaderNodeMath', x, y - 80, operation='LESS_THAN'); link(nt, src, b.inputs[0]); b.inputs[1].default_value = hi
-        c = node(nt, 'ShaderNodeMath', x + 150, y - 40, operation='MULTIPLY'); link(nt, a.outputs[0], c.inputs[0]); link(nt, b.outputs[0], c.inputs[1])
-        return c.outputs[0]
-    wu = band(fu.outputs[0], 0.18, 0.82, -250, 300)
-    wv = band(fv.outputs[0], 0.3, 0.78, -250, 100)
-    win = node(nt, 'ShaderNodeMath', -50, 200, operation='MULTIPLY'); link(nt, wu, win.inputs[0]); link(nt, wv, win.inputs[1])
-    win2 = node(nt, 'ShaderNodeMath', 100, 200, operation='MULTIPLY'); link(nt, win.outputs[0], win2.inputs[0]); link(nt, wall.outputs[0], win2.inputs[1])
-    # Per window random: (cell u, cell v, seed) through white noise.
-    cell = node(nt, 'ShaderNodeCombineXYZ', -250, -150); link(nt, flu.outputs[0], cell.inputs['X']); link(nt, flv.outputs[0], cell.inputs['Y'])
-    sd = node(nt, 'ShaderNodeMath', -400, -200, operation='MULTIPLY'); link(nt, sep_c.outputs['Red'], sd.inputs[0]); sd.inputs[1].default_value = 997
-    link(nt, sd.outputs[0], cell.inputs['Z'])
-    wn = node(nt, 'ShaderNodeTexWhiteNoise', -100, -150); wn.noise_dimensions = '3D'; link(nt, cell.outputs['Vector'], wn.inputs['Vector'])
-    lit = node(nt, 'ShaderNodeMath', 50, -100, operation='GREATER_THAN'); link(nt, wn.outputs['Value'], lit.inputs[0]); lit.inputs[1].default_value = 0.68 if night else 0.995
-    litw = node(nt, 'ShaderNodeMath', 250, 0, operation='MULTIPLY'); link(nt, lit.outputs[0], litw.inputs[0]); link(nt, win2.outputs[0], litw.inputs[1])
-    # Warm to cool office light, per window.
-    ramp_l = node(nt, 'ShaderNodeValToRGB', 250, -250); link(nt, wn.outputs['Color'], ramp_l.inputs['Fac'])
-    el = ramp_l.color_ramp.elements; el[0].color = (1.0, 0.62, 0.32, 1); el[1].color = (1.0, 0.88, 0.7, 1); el.new(0.8).color = (0.75, 0.86, 1.0, 1)
-    # Wall colour by style (g = style / 8): glass, stone, brick, metal, georgian, podium.
-    ramp_s = node(nt, 'ShaderNodeValToRGB', -100, -500); ramp_s.color_ramp.interpolation = 'CONSTANT'; link(nt, sep_c.outputs['Green'], ramp_s.inputs['Fac'])
-    cols = [(0.05, 0.07, 0.10), (0.42, 0.38, 0.32), (0.32, 0.14, 0.09), (0.18, 0.19, 0.21), (0.30, 0.12, 0.08), (0.12, 0.12, 0.13)]
-    es = ramp_s.color_ramp.elements
-    es[0].position = 0.0; es[0].color = (*cols[0], 1)
-    es[1].position = 0.5 / 8; es[1].color = (*cols[1], 1)
-    for i, c in enumerate(cols[2:], start=2):
-        es.new((i - 0.5) / 8).color = (*c, 1)
-    glassy = node(nt, 'ShaderNodeMath', -100, -700, operation='LESS_THAN'); link(nt, sep_c.outputs['Green'], glassy.inputs[0]); glassy.inputs[1].default_value = 0.5 / 8
-    rough = node(nt, 'ShaderNodeMix', 100, -650); rough.data_type = 'FLOAT'; link(nt, glassy.outputs[0], rough.inputs['Factor']); rough.inputs['A'].default_value = 0.7; rough.inputs['B'].default_value = 0.12
-    # Windows (lit or not) are glass: dark and sharp; walls by style.
-    bsdf = node(nt, 'ShaderNodeBsdfPrincipled', 1100, 0)
-    basec = node(nt, 'ShaderNodeMix', 700, -300); basec.data_type = 'RGBA'
-    link(nt, win2.outputs[0], basec.inputs['Factor']); link(nt, ramp_s.outputs['Color'], basec.inputs[6]); basec.inputs[7].default_value = (0.02, 0.025, 0.035, 1)
+    out = node(nt, 'ShaderNodeOutputMaterial', 1800, 0)
+    geo = node(nt, 'ShaderNodeNewGeometry', -1600, 0)
+    attr = node(nt, 'ShaderNodeVertexColor', -1600, -400); attr.layer_name = 'Color'
+    sc = node(nt, 'ShaderNodeSeparateColor', -1400, -400); link(nt, attr.outputs['Color'], sc.inputs['Color'])
+    seed, style = sc.outputs['Red'], sc.outputs['Green']
+    P = node(nt, 'ShaderNodeSeparateXYZ', -1400, 200); link(nt, geo.outputs['Position'], P.inputs['Vector'])
+    N = node(nt, 'ShaderNodeSeparateXYZ', -1400, 0); link(nt, geo.outputs['Normal'], N.inputs['Vector'])
+    # Along the wall: the horizontal direction perpendicular to the normal (any wall angle).
+    along = math_node(nt, 'SUBTRACT', math_node(nt, 'MULTIPLY', P.outputs['X'], N.outputs['Y']), math_node(nt, 'MULTIPLY', P.outputs['Y'], N.outputs['X']))
+    wall = math_node(nt, 'LESS_THAN', math_node(nt, 'ABSOLUTE', N.outputs['Z']), 0.5)
+    cell = lookup(nt, style, STYLE_CELL, -1100, -700)
+    u_lo = lookup(nt, style, [a for a, b in STYLE_WIN_U], -1100, -900); u_hi = lookup(nt, style, [b for a, b in STYLE_WIN_U], -1100, -1050)
+    v_lo = lookup(nt, style, [a for a, b in STYLE_WIN_V], -1100, -1200); v_hi = lookup(nt, style, [b for a, b in STYLE_WIN_V], -1100, -1350)
+    cu = math_node(nt, 'DIVIDE', along, cell); cv = math_node(nt, 'DIVIDE', P.outputs['Z'], 3.6)
+    fu, fv = math_node(nt, 'FRACT', cu), math_node(nt, 'FRACT', cv)
+    inside = lambda f, lo, hi: math_node(nt, 'MULTIPLY', math_node(nt, 'GREATER_THAN', f, lo), math_node(nt, 'LESS_THAN', f, hi))
+    win = math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', inside(fu, u_lo, u_hi), inside(fv, v_lo, v_hi)), wall)
+    # Each window: white noise of (column, storey, building seed).
+    cellv = node(nt, 'ShaderNodeCombineXYZ', -300, -150)
+    # Offices light in runs along a floor (glass: about 6 panes), homes window by window.
+    clus = lookup(nt, style, STYLE_CLUSTER, -700, -1500)
+    link(nt, math_node(nt, 'FLOOR', math_node(nt, 'DIVIDE', math_node(nt, 'FLOOR', cu), clus)), cellv.inputs['X']); link(nt, math_node(nt, 'FLOOR', cv), cellv.inputs['Y']); link(nt, math_node(nt, 'MULTIPLY', seed, 997.0), cellv.inputs['Z'])
+    wn = node(nt, 'ShaderNodeTexWhiteNoise', -100, -150); wn.noise_dimensions = '3D'; link(nt, cellv.outputs['Vector'], wn.inputs['Vector'])
+    # Each building its own occupancy (0.2 to 0.6 of windows lit at night).
+    bn = node(nt, 'ShaderNodeTexWhiteNoise', -300, -350); bn.noise_dimensions = '1D'; link(nt, math_node(nt, 'MULTIPLY', seed, 997.0), bn.inputs['W'])
+    occ = math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', bn.outputs['Value'], 0.35), 0.15)
+    lit = math_node(nt, 'LESS_THAN', wn.outputs['Value'], occ if night else 0.004)
+    litw = math_node(nt, 'MULTIPLY', lit, win)
+    ramp_l = node(nt, 'ShaderNodeValToRGB', 300, -250); link(nt, wn.outputs['Color'], ramp_l.inputs['Fac'])
+    el = ramp_l.color_ramp.elements; el[0].color = (1.0, 0.58, 0.28, 1); el[1].color = (1.0, 0.86, 0.66, 1); el.new(0.82).color = (0.72, 0.84, 1.0, 1)
+    # Interior depth: brighter at the window top (ceiling lights), blinds part-way on some.
+    grad = math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', fv, 0.9), 0.4)
+    cellw = node(nt, 'ShaderNodeCombineXYZ', -300, 400); link(nt, math_node(nt, 'FLOOR', cu), cellw.inputs['X']); link(nt, math_node(nt, 'FLOOR', cv), cellw.inputs['Y']); link(nt, math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', seed, 997.0), 0.5), cellw.inputs['Z'])
+    wn2 = node(nt, 'ShaderNodeTexWhiteNoise', -100, 400); wn2.noise_dimensions = '3D'; link(nt, cellw.outputs['Vector'], wn2.inputs['Vector'])
+    var = node(nt, 'ShaderNodeMapRange', 300, 250); link(nt, wn2.outputs['Value'], var.inputs['Value']); var.inputs['To Min'].default_value = 0.35
+    strength = math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', litw, var.outputs['Result']), grad), 1.5 if night else 0.0)
+    wallc = lookup(nt, style, STYLE_WALL, 300, -700)
+    # Slight weathering on walls: large noise darkens and lightens them.
+    wnz = node(nt, 'ShaderNodeTexNoise', 300, -950); wnz.inputs['Scale'].default_value = 0.08; link(nt, geo.outputs['Position'], wnz.inputs['Vector'])
+    weather = node(nt, 'ShaderNodeMix', 550, -800); weather.data_type = 'RGBA'; weather.blend_type = 'MULTIPLY'
+    link(nt, wnz.outputs['Fac'], weather.inputs['Factor']); link(nt, wallc, weather.inputs[6]); weather.inputs[7].default_value = (0.75, 0.75, 0.75, 1)
+    bsdf = node(nt, 'ShaderNodeBsdfPrincipled', 1300, 0)
+    basec = node(nt, 'ShaderNodeMix', 900, -300); basec.data_type = 'RGBA'
+    link(nt, win, basec.inputs['Factor']); link(nt, weather.outputs[2], basec.inputs[6]); basec.inputs[7].default_value = (0.004, 0.006, 0.01, 1)
     link(nt, basec.outputs[2], bsdf.inputs['Base Color'])
-    rgh = node(nt, 'ShaderNodeMix', 700, -500); rgh.data_type = 'FLOAT'; link(nt, win2.outputs[0], rgh.inputs['Factor']); link(nt, rough.outputs['Result'], rgh.inputs['A']); rgh.inputs['B'].default_value = 0.04
+    glassy = math_node(nt, 'LESS_THAN', style, 0.5 / 8)
+    rgh = node(nt, 'ShaderNodeMix', 900, -500); rgh.data_type = 'FLOAT'; link(nt, win, rgh.inputs['Factor'])
+    link(nt, math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', glassy, -0.55), 0.7), rgh.inputs['A']); rgh.inputs['B'].default_value = 0.03
     link(nt, rgh.outputs['Result'], bsdf.inputs['Roughness'])
-    met = node(nt, 'ShaderNodeMix', 700, -650); met.data_type = 'FLOAT'; link(nt, glassy.outputs[0], met.inputs['Factor']); met.inputs['A'].default_value = 0.0; met.inputs['B'].default_value = 0.35
-    link(nt, met.outputs['Result'], bsdf.inputs['Metallic'])
+    # Window glass reflects less than a mirror (tinted, with lights behind it).
+    spec = node(nt, 'ShaderNodeMix', 900, -600); spec.data_type = 'FLOAT'; link(nt, win, spec.inputs['Factor']); spec.inputs['A'].default_value = 0.5; spec.inputs['B'].default_value = 0.18
+    link(nt, spec.outputs['Result'], bsdf.inputs['Specular IOR Level'])
+    link(nt, math_node(nt, 'MULTIPLY', glassy, 0.3), bsdf.inputs['Metallic'])
     link(nt, ramp_l.outputs['Color'], bsdf.inputs['Emission Color'])
-    # Brightness varies per window (blinds, lamps): 0.3 to 1 of the full strength.
-    var = node(nt, 'ShaderNodeMapRange', 300, 250); link(nt, wn.outputs['Color'], var.inputs['Value']); var.inputs['To Min'].default_value = 0.3
-    lv = node(nt, 'ShaderNodeMath', 400, 150, operation='MULTIPLY'); link(nt, litw.outputs[0], lv.inputs[0]); link(nt, var.outputs['Result'], lv.inputs[1])
-    strength = node(nt, 'ShaderNodeMath', 550, 100, operation='MULTIPLY'); link(nt, lv.outputs[0], strength.inputs[0]); strength.inputs[1].default_value = 2.2 if night else 0.0
-    link(nt, strength.outputs[0], bsdf.inputs['Emission Strength'])
+    link(nt, strength, bsdf.inputs['Emission Strength'])
     link(nt, bsdf.outputs['BSDF'], out.inputs['Surface'])
     return m
 
@@ -128,7 +152,41 @@ def simple(name, color, rough, metal=0.0, spec=0.5):
     return m
 
 FACADE = facade_material()
+TRIM = simple('pg1-trim', (0.16, 0.155, 0.15), 0.75)
+PLANT = simple('pg1-plant', (0.09, 0.095, 0.1), 0.45, metal=0.6)
+AVLIGHT = simple('pg1-aviation-light', (0.3, 0.02, 0.02), 0.4)
+_b = AVLIGHT.node_tree.nodes.get('Principled BSDF'); _b.inputs['Emission Color'].default_value = (1.0, 0.05, 0.03, 1); _b.inputs['Emission Strength'].default_value = 40.0 if night else 0.0
+AVLIGHT['pg1_boosted'] = 1
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pg1_buildings
+if meta.get('buildings'):
+    sky_ob = pg1_buildings.build_skyline(bpy, meta['buildings'], [FACADE, TRIM, PLANT, AVLIGHT])
+    print(f"[cycles] skyline: {len(meta['buildings'])} buildings, {len(sky_ob.data.polygons)} faces", flush=True)
 ASPHALT = simple('pg1-wet-asphalt', (0.025, 0.025, 0.028), 0.18 if rain else 0.45)
+if night:
+    # Past the modelled city (about 3 km out) the suburbs go on to the horizon:
+    # street lights and windows as small warm points on the ground.
+    an = ASPHALT.node_tree; ab = an.nodes.get('Principled BSDF')
+    ag = an.nodes.new('ShaderNodeNewGeometry'); al = an.nodes.new('ShaderNodeVectorMath'); al.operation = 'LENGTH'
+    an.links.new(ag.outputs['Position'], al.inputs[0])
+    far = an.nodes.new('ShaderNodeMapRange'); far.inputs['From Min'].default_value = 3000; far.inputs['From Max'].default_value = 4200
+    an.links.new(al.outputs['Value'], far.inputs['Value'])
+    vs_ = an.nodes.new('ShaderNodeVectorMath'); vs_.operation = 'SCALE'; vs_.inputs['Scale'].default_value = 1 / 18.0
+    an.links.new(ag.outputs['Position'], vs_.inputs[0])
+    vr = an.nodes.new('ShaderNodeTexVoronoi'); vr.inputs['Scale'].default_value = 1.0; vr.inputs['Randomness'].default_value = 1.0
+    an.links.new(vs_.outputs['Vector'], vr.inputs['Vector'])
+    pt = an.nodes.new('ShaderNodeMath'); pt.operation = 'LESS_THAN'; pt.inputs[1].default_value = 0.07
+    an.links.new(vr.outputs['Distance'], pt.inputs[0])
+    blk = an.nodes.new('ShaderNodeTexNoise'); blk.inputs['Scale'].default_value = 0.0012
+    an.links.new(ag.outputs['Position'], blk.inputs['Vector'])
+    bm_ = an.nodes.new('ShaderNodeMath'); bm_.operation = 'GREATER_THAN'; bm_.inputs[1].default_value = 0.42
+    an.links.new(blk.outputs['Fac'], bm_.inputs[0])
+    m1 = an.nodes.new('ShaderNodeMath'); m1.operation = 'MULTIPLY'; an.links.new(pt.outputs[0], m1.inputs[0]); an.links.new(far.outputs['Result'], m1.inputs[1])
+    m2 = an.nodes.new('ShaderNodeMath'); m2.operation = 'MULTIPLY'; an.links.new(m1.outputs[0], m2.inputs[0]); an.links.new(bm_.outputs[0], m2.inputs[1])
+    m3 = an.nodes.new('ShaderNodeMath'); m3.operation = 'MULTIPLY'; m3.inputs[1].default_value = 30.0; an.links.new(m2.outputs[0], m3.inputs[0])
+    vcol = an.nodes.new('ShaderNodeValToRGB'); an.links.new(vr.outputs['Color'], vcol.inputs['Fac'])
+    vcol.color_ramp.elements[0].color = (1.0, 0.55, 0.22, 1); vcol.color_ramp.elements[1].color = (1.0, 0.85, 0.65, 1)
+    an.links.new(vcol.outputs['Color'], ab.inputs['Emission Color']); an.links.new(m3.outputs[0], ab.inputs['Emission Strength'])
 WATER = simple('pg1-river', (0.004, 0.008, 0.014), 0.02)
 PAVING = simple('pg1-paving', (0.07, 0.07, 0.075), 0.3 if rain else 0.6)
 
@@ -187,25 +245,40 @@ else:
     ramp.color_ramp.elements[1].color = (0.25, 0.42, 0.72, 1)
     bg.inputs['Strength'].default_value = 1.5
 wn.links.new(tc.outputs['Generated'], mp.inputs['Vector']); wn.links.new(mp.outputs['Vector'], grad.inputs['Vector'])
-wn.links.new(grad.outputs['Fac'], ramp.inputs['Fac']); wn.links.new(ramp.outputs['Color'], bg.inputs['Color']); wn.links.new(bg.outputs['Background'], wo.inputs['Surface'])
-# Haze as a real volume, 2 km deep over the city: lamps glow through it, the
+wn.links.new(grad.outputs['Fac'], ramp.inputs['Fac'])
+if night:
+    # A few stars: thresholded noise on the view direction, through the haze only faintly.
+    st = wn.nodes.new('ShaderNodeTexWhiteNoise'); st.noise_dimensions = '3D'
+    sm = wn.nodes.new('ShaderNodeVectorMath'); sm.operation = 'SCALE'; sm.inputs['Scale'].default_value = 900.0
+    wn.links.new(tc.outputs['Generated'], sm.inputs[0]); wn.links.new(sm.outputs['Vector'], st.inputs['Vector'])
+    sth = wn.nodes.new('ShaderNodeMath'); sth.operation = 'GREATER_THAN'; sth.inputs[1].default_value = 0.9985
+    wn.links.new(st.outputs['Value'], sth.inputs[0])
+    sadd = wn.nodes.new('ShaderNodeMix'); sadd.data_type = 'RGBA'; sadd.blend_type = 'ADD'
+    sstr = wn.nodes.new('ShaderNodeMath'); sstr.operation = 'MULTIPLY'; sstr.inputs[1].default_value = 0.6
+    wn.links.new(sth.outputs[0], sstr.inputs[0]); wn.links.new(sstr.outputs[0], sadd.inputs['Factor'])
+    wn.links.new(ramp.outputs['Color'], sadd.inputs[6]); sadd.inputs[7].default_value = (0.8, 0.85, 1.0, 1)
+    wn.links.new(sadd.outputs[2], bg.inputs['Color'])
+else:
+    wn.links.new(ramp.outputs['Color'], bg.inputs['Color'])
+wn.links.new(bg.outputs['Background'], wo.inputs['Surface'])
+# Haze as a real volume, 900 m deep over the city: lamps glow through it, the
 # distance fades into it and the city's light lifts it (a sodium glow at night);
 # above it the sky shows through.
-HAZE = float(arg('--haze', '0.0004'))
+HAZE = float(arg('--haze', '0.00028'))
 if HAZE > 0:
-    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 1000))
-    hz = bpy.context.active_object; hz.name = 'pg1-haze'; hz.scale = (30000, 30000, 2000)
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 450))
+    hz = bpy.context.active_object; hz.name = 'pg1-haze'; hz.scale = (30000, 30000, 900)
     hm = bpy.data.materials.new('pg1-haze-volume'); hm.use_nodes = True
     hn = hm.node_tree; hn.nodes.clear()
     pv = hn.nodes.new('ShaderNodeVolumePrincipled'); ho = hn.nodes.new('ShaderNodeOutputMaterial')
     pv.inputs['Density'].default_value = HAZE; pv.inputs['Anisotropy'].default_value = 0.4
     pv.inputs['Color'].default_value = (0.8, 0.84, 0.95, 1) if night else (0.92, 0.94, 0.97, 1)
     if night:
-        pv.inputs['Emission Color'].default_value = (0.9, 0.6, 0.4, 1); pv.inputs['Emission Strength'].default_value = HAZE * 0.012
+        pv.inputs['Emission Color'].default_value = (0.9, 0.6, 0.4, 1); pv.inputs['Emission Strength'].default_value = HAZE * 0.005
     hn.links.new(pv.outputs['Volume'], ho.inputs['Volume'])
     hz.data.materials.append(hm)
 sun = bpy.data.lights.new('pg1-moon' if night else 'pg1-sun', 'SUN')
-sun.energy = 0.08 if night else 3.5; sun.color = (0.7, 0.8, 1.0) if night else (1.0, 0.95, 0.88); sun.angle = math.radians(0.6)
+sun.energy = 0.15 if night else 3.5; sun.color = (0.7, 0.8, 1.0) if night else (1.0, 0.95, 0.88); sun.angle = math.radians(0.6)
 so = bpy.data.objects.new(sun.name, sun); scene.collection.objects.link(so)
 d = (meta.get('lights') or [{}])[0].get('dir') if meta.get('lights') else None
 if d:
@@ -214,6 +287,45 @@ if d:
     so.rotation_euler = (math.acos(max(-1, min(1, v[2]))), 0, math.atan2(v[0], -v[1]))
 else:
     so.rotation_euler = (math.radians(55), 0, math.radians(30))
+
+# --- night sky: moonlit clouds over the city's glow, the moon, a few stars ---
+CLOUDS = arg('--clouds', 'on') != 'off'
+moon_dir = None
+if d:
+    moon_dir = (d[0], -d[2], d[1]); n_ = math.sqrt(sum(c * c for c in moon_dir)) or 1; moon_dir = tuple(c / n_ for c in moon_dir)
+if CLOUDS:
+    bpy.ops.mesh.primitive_plane_add(size=1, location=(0, 0, 2600))
+    cl = bpy.context.active_object; cl.name = 'pg1-clouds'; cl.scale = (60000, 60000, 1)
+    cm = bpy.data.materials.new('pg1-clouds'); cm.use_nodes = True; cn = cm.node_tree; cn.nodes.clear()
+    co = cn.nodes.new('ShaderNodeOutputMaterial')
+    tc2 = cn.nodes.new('ShaderNodeTexCoord')
+    nz = cn.nodes.new('ShaderNodeTexNoise'); nz.noise_dimensions = '3D'; nz.inputs['Scale'].default_value = 45.0
+    nz.inputs['Detail'].default_value = 12; nz.inputs['Roughness'].default_value = 0.62; nz.inputs['Distortion'].default_value = 0.4
+    cn.links.new(tc2.outputs['Generated'], nz.inputs['Vector'])
+    cr = cn.nodes.new('ShaderNodeValToRGB'); cn.links.new(nz.outputs['Fac'], cr.inputs['Fac'])
+    cr.color_ramp.elements[0].position = 0.42; cr.color_ramp.elements[0].color = (0, 0, 0, 1)
+    cr.color_ramp.elements[1].position = 0.62; cr.color_ramp.elements[1].color = (1, 1, 1, 1)
+    tr = cn.nodes.new('ShaderNodeBsdfTransparent'); df = cn.nodes.new('ShaderNodeBsdfPrincipled')
+    df.inputs['Base Color'].default_value = (0.5, 0.52, 0.58, 1) if night else (0.95, 0.95, 0.97, 1); df.inputs['Roughness'].default_value = 1.0
+    if night:
+        # Lit from below by the city: a warm glow on the cloud base.
+        df.inputs['Emission Color'].default_value = (0.9, 0.55, 0.32, 1); df.inputs['Emission Strength'].default_value = 0.16
+    mx = cn.nodes.new('ShaderNodeMixShader')
+    cn.links.new(cr.outputs['Color'], mx.inputs['Fac']); cn.links.new(tr.outputs['BSDF'], mx.inputs[1]); cn.links.new(df.outputs['BSDF'], mx.inputs[2])
+    cn.links.new(mx.outputs['Shader'], co.inputs['Surface'])
+    cl.data.materials.append(cm)
+    cl.visible_shadow = False
+if night and moon_dir and moon_dir[2] > 0.05:
+    # The moon itself, far out along the light's direction (the sun lamp lights the scene).
+    md = 40000
+    bpy.ops.mesh.primitive_uv_sphere_add(radius=md * 0.0045, location=tuple(c * md for c in moon_dir))
+    mo = bpy.context.active_object; mo.name = 'pg1-moon'
+    mm = bpy.data.materials.new('pg1-moon'); mm.use_nodes = True; mb = mm.node_tree.nodes.get('Principled BSDF')
+    mb.inputs['Base Color'].default_value = (0, 0, 0, 1); mb.inputs['Emission Color'].default_value = (0.92, 0.94, 1.0, 1); mb.inputs['Emission Strength'].default_value = 6.0
+    mo.data.materials.append(mm); mo.visible_shadow = False; mo.visible_diffuse = False; mo.visible_glossy = True
+    for f in mo.data.polygons:
+        f.use_smooth = True
+camera_far = 80000
 
 # --- render ---
 scene.render.engine = 'CYCLES'
