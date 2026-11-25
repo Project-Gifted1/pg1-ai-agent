@@ -37,6 +37,8 @@
 export const RIVER = Object.freeze({ z: 120, half: 45 });
 export const PLAZA_R = 52;
 export const CITY_R = 420;
+// Half the ground's (and the river's) length: past the camera's far plane (12 km).
+export const GROUND_HALF = 15000;
 export const SPIRE_H = 210;
 export const PODIUM_H = 8;
 export const DECK_Y = PODIUM_H + 150;
@@ -345,9 +347,12 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   const obstacles = [];
 
   // --- ground: both banks, the river between ---
-  const north = 4500 + RIVER.z - RIVER.half; const south = 4500 - RIVER.z - RIVER.half;
-  for (const [depth, cz] of [[north, (RIVER.z - RIVER.half - 4500) / 2], [south, (RIVER.z + RIVER.half + 4500) / 2]]) {
-    const ground = named(new THREE.Mesh(new THREE.PlaneGeometry(9000, depth), mats.concrete), 'ground');
+  // The ground (and the river) reach past the camera's far plane, so their
+  // edge is never on screen: at 4.5 km a still's lighter fog showed it as a
+  // hard seam under the sky.
+  const north = GROUND_HALF + RIVER.z - RIVER.half; const south = GROUND_HALF - RIVER.z - RIVER.half;
+  for (const [depth, cz] of [[north, (RIVER.z - RIVER.half - GROUND_HALF) / 2], [south, (RIVER.z + RIVER.half + GROUND_HALF) / 2]]) {
+    const ground = named(new THREE.Mesh(new THREE.PlaneGeometry(GROUND_HALF * 2, depth), mats.concrete), 'ground');
     ground.rotation.x = -Math.PI / 2; ground.position.z = cz; ground.receiveShadow = !!settings.shadows; root.add(ground);
   }
   const plaza = named(new THREE.Mesh(new THREE.CircleGeometry(PLAZA_R, 64), mats.plaza), 'plaza');
@@ -376,21 +381,21 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       vertexShader: base.vertexShader.replace('#include <logdepthbuf_pars_vertex>', '#include <logdepthbuf_pars_vertex>\n#include <fog_pars_vertex>').replace('gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );', 'vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );\n\t\t\tgl_Position = projectionMatrix * mvPosition;\n\t\t\t#include <fog_vertex>'),
       fragmentShader: base.fragmentShader.replace('#include <logdepthbuf_pars_fragment>', '#include <logdepthbuf_pars_fragment>\n#include <fog_pars_fragment>').replace('#include <colorspace_fragment>', '#include <colorspace_fragment>\n\t\t\t#include <fog_fragment>')
     };
-    mirror = named(new Reflector(new THREE.PlaneGeometry(9000, RIVER.half * 2), { textureWidth: 1024, textureHeight: 512, color: 0x46546a, shader: foggedShader }), 'river-mirror');
+    mirror = named(new Reflector(new THREE.PlaneGeometry(GROUND_HALF * 2, RIVER.half * 2), { textureWidth: 1024, textureHeight: 512, color: 0x46546a, shader: foggedShader }), 'river-mirror');
     mirror.material.fog = true;
     mirror.rotation.x = -Math.PI / 2; mirror.position.set(0, -3.3, RIVER.z); root.add(mirror);
   }
   if (!riverMat) riverMat = new THREE.MeshStandardMaterial({ color: 0x2c4c6c, roughness: 0.25, metalness: 0.1, emissive: 0x16243a, emissiveIntensity: 0.6 });
   if (waterMaterial && waterMaterial.uniforms) { waterMaterial.uniforms.uIslandCount.value = 0; waterMaterial.uniforms.uFoam.value = 0; waterMaterial.uniforms.uDeep.value.set(0x0b1f33); waterMaterial.uniforms.uShallow.value.set(0x173e57); }
-  const river = named(new THREE.Mesh(new THREE.PlaneGeometry(9000, RIVER.half * 2), riverMat), 'river');
+  const river = named(new THREE.Mesh(new THREE.PlaneGeometry(GROUND_HALF * 2, RIVER.half * 2), riverMat), 'river');
   river.rotation.x = -Math.PI / 2; river.position.set(0, -3.2, RIVER.z);
   if (mirror) { river.material = riverMat.clone ? riverMat.clone() : riverMat; river.material.transparent = true; river.material.opacity = 0.45; river.material.depthWrite = false; if (river.material.uniforms) river.visible = false; }
   root.add(river);
   // Stone embankments with railings and lamps.
   for (const side of [-1, 1]) {
-    const bank = named(new THREE.Mesh(new THREE.BoxGeometry(9000, 4.4, 2.4), mats.stone), 'embankment');
+    const bank = named(new THREE.Mesh(new THREE.BoxGeometry(GROUND_HALF * 2, 4.4, 2.4), mats.stone), 'embankment');
     bank.position.set(0, -2, RIVER.z + side * RIVER.half); root.add(bank);
-    const rail = named(new THREE.Mesh(new THREE.BoxGeometry(9000, 0.12, 0.12), mats.steel), 'embankment-railing'); rail.position.set(0, 1.1, RIVER.z + side * (RIVER.half - 0.6)); root.add(rail);
+    const rail = named(new THREE.Mesh(new THREE.BoxGeometry(GROUND_HALF * 2, 0.12, 0.12), mats.steel), 'embankment-railing'); rail.position.set(0, 1.1, RIVER.z + side * (RIVER.half - 0.6)); root.add(rail);
   }
   const postN = phone ? 200 : 600;
   const posts = named(new THREE.InstancedMesh(new THREE.BoxGeometry(0.12, 1.1, 0.12), mats.steel, postN), 'embankment-railing');
@@ -475,6 +480,18 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
     const a = r() * Math.PI * 2; const d = 600 + Math.pow(r(), 0.7) * 2400;
     tryLot({ ring: 'far', x: Math.sin(a) * d, z: -Math.cos(a) * d, w: 18 + r() * 26, d: 18 + r() * 26, h: 12 + r() * (d < 1200 ? 70 : 40), shape: r() < 0.85 ? 'box' : 'round', style: r() < 0.6 ? STYLES.glass : r() < 0.5 ? STYLES.stone : STYLES.brick });
   }
+  // Never into another tower: a near or mid-rise lot that overlaps an
+  // earlier one is dropped (a twisted tower's corners swing out to half its
+  // diagonal, so every lot is taken at that radius, podiums included; the
+  // shops are placed by the reserve). Done after placement so the rest of the
+  // skyline keeps its layout.
+  {
+    const rad = (q) => Math.hypot(q.w, q.d) * (q.ring === 'near' && q.h > 70 ? 1.35 : 1) / 2;
+    const tower = (q) => (q.ring === 'near' || q.ring === 'mid') && !q.kind;
+    const kept = [];
+    for (const l of lots) if (!tower(l) || !kept.some((q) => tower(q) && Math.hypot(l.x - q.x, l.z - q.z) < rad(l) + rad(q) + 4)) kept.push(l);
+    lots.length = 0; lots.push(...kept);
+  }
   const geos = {
     box: (() => { const g = new THREE.BoxGeometry(1, 1, 1); g.translate(0, 0.5, 0); return g; })(),
     round: (() => { const g = new THREE.CylinderGeometry(0.5, 0.5, 1, legacy ? 8 : phone ? 12 : 24, 1, legacy); g.translate(0, 0.5, 0); return g; })(),
@@ -499,6 +516,9 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
       add('box', l.x, base, l.z, l.w, h * 0.5, l.d);
       add('box', l.x, base + h * 0.5, l.z, l.w * 0.78, h * 0.3, l.d * 0.78);
       add('box', l.x, base + h * 0.8, l.z, l.w * 0.55, h * 0.2, l.d * 0.55);
+    } else if (l.shape === 'twist') {
+      // Twisted on a square plan: scaled unevenly, a twist shears into broken-looking slabs.
+      const side = Math.min(l.w, l.d); add('twist', l.x, base, l.z, side, h, side);
     } else add(l.shape, l.x, base, l.z, l.w, h, l.d);
     const top = l.h;
     if (l.ring === 'near' && (l.shape === 'box' || l.shape === 'setback') && r() < 0.35) { const cw = l.w * (l.shape === 'setback' ? 0.55 : 1); const cr = { x: l.x, y: top, z: l.z, w: cw, h: 10 + r() * 10, d: l.d * (l.shape === 'setback' ? 0.55 : 1), ry, seed: l.seed + 9, style: STYLES.glass }; parts.crown.push(cr); const f = footprint(cr.w, cr.d, ry); obstacles.push({ x: cr.x, z: cr.z, hw: f.hw, hd: f.hd, top: cr.y + cr.h }); }
