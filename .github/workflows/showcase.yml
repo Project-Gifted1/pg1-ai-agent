@@ -64,10 +64,15 @@ on:
         default: ''
         type: string
       release_run:
-        description: The run id whose reel artifacts the release is built from
+        description: The run id whose reel artifacts the release is built from; "REEL_RUN,STILLS_RUN" takes the slides' and Story's stills from a stills-only run and keeps the published reel
         required: false
         default: ''
         type: string
+      stills_only:
+        description: Reel mode, the 2x stills alone (slides and Story), no MP4s; set reel_epoch to the reel run's window
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -136,7 +141,8 @@ jobs:
           SUPABASE_URL: ${{ inputs.read_pg1_data && secrets.SUPABASE_URL || '' }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ inputs.read_pg1_data && secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
         # --warmup 12: the warm-up still runs until shaders and textures are stable (renderReelShot), without 40 frames at 100 s each.
-        run: node scripts/showcase-render.mjs --reel "$REEL" --shots "$SHOT" --epoch "$EPOCH" --warmup 12 --out showcase-out
+          STILLS_ONLY: ${{ inputs.stills_only && '--stills-only' || '' }}
+        run: node scripts/showcase-render.mjs --reel "$REEL" --shots "$SHOT" --epoch "$EPOCH" --warmup 12 $STILLS_ONLY --out showcase-out
       - name: Upload
         if: always()
         uses: actions/upload-artifact@v4
@@ -218,22 +224,61 @@ jobs:
           npx playwright install --with-deps chromium
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fonts-noto-color-emoji
+      - id: runs
+        env:
+          RUNS: ${{ inputs.release_run }}
+        run: |
+          if ! printf '%s' "$RUNS" | grep -Eq '^[0-9]+(,[0-9]+)?$'; then echo "release_run must be RUN or REEL_RUN,STILLS_RUN" >&2; exit 1; fi
+          echo "reel=${RUNS%%,*}" >> "$GITHUB_OUTPUT"
+          case "$RUNS" in *,*) echo "stills=${RUNS#*,}" >> "$GITHUB_OUTPUT";; *) echo "stills=" >> "$GITHUB_OUTPUT";; esac
       - uses: actions/download-artifact@v4
         with:
-          run-id: ${{ inputs.release_run }}
+          run-id: ${{ steps.runs.outputs.reel }}
           github-token: ${{ github.token }}
           pattern: pg1-reel-*
           path: reel-artifacts
+      - if: steps.runs.outputs.stills != ''
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ steps.runs.outputs.stills }}
+          github-token: ${{ github.token }}
+          pattern: pg1-reel-*
+          path: stills-artifacts
+      # The stills-only run's 2x stills replace the reel run's (same shots, same data window); its manifests are not used.
+      - name: Take the newer stills
+        if: steps.runs.outputs.stills != ''
+        run: |
+          n=0
+          for f in $(find stills-artifacts -name '*-still-2x.png'); do
+            b=$(basename "$f"); old=$(find reel-artifacts -name "$b" | head -1)
+            if [ -z "$old" ]; then echo "no $b in the reel run" >&2; exit 1; fi
+            cp "$f" "$old"; n=$((n+1)); echo "still: $b"
+          done
+          [ "$n" -gt 0 ] || { echo "no stills in run ${{ steps.runs.outputs.stills }}" >&2; exit 1; }
       - name: Build the post
         run: node scripts/social-inside-city.mjs --from reel-artifacts --out post
       - name: Publish the reel as a release asset
+        # A stills-only rebuild keeps the published reel as it is.
+        if: steps.runs.outputs.stills == ''
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_tag }}
         run: |
           if ! printf '%s' "$TAG" | grep -Eq '^social-[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then echo "release_tag must be social-YYYY-MM-DD" >&2; exit 1; fi
-          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Social post $TAG" --notes "The reel for the post (docs/social/, copy.md). Rendered by the PG1 Showcase render, run ${{ inputs.release_run }}."
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "Social post $TAG" --notes "The reel for the post (docs/social/, copy.md). Rendered by the PG1 Showcase render, run ${{ steps.runs.outputs.reel }}."
           gh release upload "$TAG" post/reel-1080x1920.mp4 --repo "$GITHUB_REPOSITORY" --clobber
+      # The built post as a branch too (post/<tag>): artifacts cannot be read
+      # from every network, git can. Slides, Story, contact sheets and copy.md;
+      # never the MP4. Copy the files into docs/social/ in a PR to keep them.
+      - name: Push the built post to post/${{ inputs.release_tag }}
+        env:
+          TAG: ${{ inputs.release_tag }}
+          TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p post-branch && cp post/*.png post/*.jpg post/copy.md post-branch/
+          cd post-branch && git init -q -b "post/$TAG" && git add -A
+          git -c user.name=pg1-showcase -c user.email=pg1-showcase@users.noreply.github.com commit -q -m "Built post $TAG (runs ${{ inputs.release_run }})"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "post/$TAG"
       - uses: actions/upload-artifact@v4
         with:
           name: pg1-post-${{ inputs.release_tag }}
