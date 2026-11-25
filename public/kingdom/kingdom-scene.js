@@ -578,7 +578,7 @@ async function create3d(container, { coarse, threeUrl, onFocus, onTier, onCaptio
   // Bottom right, above the caption, clear of the HUD.
   const debug = createDebugOverlay(container, { at: 'right:8px;bottom:92px' });
   // ?debug=1 only: the renderer and scene, for looking into a frame from the console.
-  if (debug && typeof window !== 'undefined') { window.__kingdomRenderer = renderer; window.__kingdomScene = scene; }
+  if (debug && typeof window !== 'undefined') { window.__kingdomRenderer = renderer; window.__kingdomScene = scene; window.__kingdomCamera = camera; }
   const debugInfo = { calls: 0, triangles: 0, tier, source: begin.source, probeMs: null, scale: 1 };
   const onProbe = (r) => {
     container.dataset.probeMs = String(r.workMs); debugInfo.probeMs = r.workMs;

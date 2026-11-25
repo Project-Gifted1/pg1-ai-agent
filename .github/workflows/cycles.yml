@@ -1,0 +1,59 @@
+name: PG1 City Cycles render (test)
+
+# A path-traced still of one reel shot: the City exported from the Showcase
+# page (scripts/city-export.mjs, the real 7-day window, read only), rendered
+# in Blender Cycles on the runner's CPU (scripts/blender/city_cycles.py).
+# Runs on a push to a cycles/* branch; the PNG is pushed to cycles-out/<branch>
+# (artifacts cannot be read from every network). For the full reel, the same
+# scripts run on a GPU machine.
+
+on:
+  push:
+    branches: ['cycles/**']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cycles-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  still:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      SHOT: crown-tower
+      SAMPLES: '128'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: npm ci
+      - name: Chromium and Blender (as a Python module, pinned)
+        run: |
+          npx playwright install --with-deps chromium
+          pip install bpy==5.3.0
+      - name: Export the shot
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: node scripts/city-export.mjs --shot "$SHOT" --epoch 2026-11-24T00:14:54Z --out cycles-in
+      - name: Render (Cycles, CPU)
+        run: python scripts/blender/city_cycles.py -- --in cycles-in --out cycles-out --samples "$SAMPLES"
+      - name: Push the still to cycles-out/<branch>
+        env:
+          TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          mkdir -p out-branch && cp cycles-out/*.png cycles-in/city-shot.json out-branch/
+          cd out-branch && git init -q -b "cycles-out/$BRANCH" && git add -A
+          git -c user.name=pg1-cycles -c user.email=pg1-cycles@users.noreply.github.com commit -q -m "Cycles still: $SHOT ($GITHUB_SHA)"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "cycles-out/$BRANCH"
