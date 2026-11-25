@@ -299,7 +299,7 @@ for o in list(scene.objects):
         assign(o, WATER)
     elif base in ('pavements', 'plaza', 'kerbs'):
         assign(o, PAVING)
-    elif base in ('lamp-pools', 'street-light-pools', 'boat-light-pools', 'wet-road-glare', 'wet-road-tail-glare', 'road-spray', 'boat-wakes', 'crowd', 'tower-beacon-halo'):
+    elif base in ('lamp-pools', 'street-light-pools', 'boat-light-pools', 'wet-road-glare', 'wet-road-tail-glare', 'road-spray', 'boat-wakes', 'tower-beacon-halo'):
         # Fake light pools and glows from the live view: Cycles lights the ground itself.
         o.hide_render = True; counts['hidden'] = counts.get('hidden', 0) + 1
     # The live view's fake glows (see-through, glowing cards and cones): Cycles makes real glow.
@@ -307,8 +307,11 @@ for o in list(scene.objects):
     for m in o.data.materials:
         if m and m.use_nodes and not m.name.startswith('pg1-'):
             b = m.node_tree.nodes.get('Principled BSDF')
-            if b and not b.inputs['Alpha'].is_linked and b.inputs['Alpha'].default_value < 0.95 and b.inputs['Emission Strength'].default_value > 0:
+            see_through = getattr(m, 'surface_render_method', '') == 'BLENDED' or (not b.inputs['Alpha'].is_linked and b.inputs['Alpha'].default_value < 0.95) if b else False
+            if b and see_through and b.inputs['Emission Strength'].default_value > 0:
                 fake = True
+    if fake and (base.startswith('pg1-emblem') or base == 'command-deck'):
+        fake = False  # PG1's own marks and the deck stay (drawn as lit glass)
     if fake:
         o.hide_render = True; counts['hidden'] = counts.get('hidden', 0) + 1; HIDDEN_FAKE.add(base)
         continue
@@ -326,7 +329,8 @@ for o in list(scene.objects):
         if b and 'Emission Strength' in b.inputs:
             col = b.inputs['Emission Color'].default_value; st = b.inputs['Emission Strength'].default_value
             em_linked = b.inputs['Emission Color'].is_linked
-            if st > 0 and (em_linked or max(col[0], col[1], col[2]) > 0.05) and not m.get('pg1_boosted'):
+            # Only the live view's unlit lamps (MeshBasic): painted parts keep their own small glow.
+            if st > 0 and m.name.startswith('MeshBasicMaterial') and (em_linked or max(col[0], col[1], col[2]) > 0.05) and not m.get('pg1_boosted'):
                 b.inputs['Emission Strength'].default_value = st * (6.0 if night else 1.5); m['pg1_boosted'] = 1
 
 # Real lights at the street lamps would be thousands; the lamp heads glow
