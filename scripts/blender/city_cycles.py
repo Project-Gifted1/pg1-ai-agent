@@ -276,8 +276,26 @@ if night:
     vcol = an.nodes.new('ShaderNodeValToRGB'); an.links.new(vr.outputs['Color'], vcol.inputs['Fac'])
     vcol.color_ramp.elements[0].color = (1.0, 0.55, 0.22, 1); vcol.color_ramp.elements[1].color = (1.0, 0.85, 0.65, 1)
     an.links.new(vcol.outputs['Color'], ab.inputs['Emission Color']); an.links.new(m3.outputs[0], ab.inputs['Emission Strength'])
-WATER = simple('pg1-river', (0.004, 0.008, 0.014), 0.02)
+WATER = simple('pg1-river', (0.003, 0.006, 0.01), 0.05)
+# Ripples: two scales of noise as a bump, so the river breaks up reflections as real water does.
+_wn = WATER.node_tree; _wb = _wn.nodes.get('Principled BSDF')
+_wt = _wn.nodes.new('ShaderNodeTexCoord'); _wz = _wn.nodes.new('ShaderNodeTexNoise'); _wz.noise_dimensions = '3D'
+_wz.inputs['Scale'].default_value = 0.35; _wz.inputs['Detail'].default_value = 8; _wz.inputs['Roughness'].default_value = 0.6
+_wmap = _wn.nodes.new('ShaderNodeMapping'); _wmap.inputs['Scale'].default_value = (1.0, 3.0, 1.0)
+_wn.links.new(_wt.outputs['Object'], _wmap.inputs['Vector']); _wn.links.new(_wmap.outputs['Vector'], _wz.inputs['Vector'])
+_wbump = _wn.nodes.new('ShaderNodeBump'); _wbump.inputs['Strength'].default_value = 0.35; _wbump.inputs['Distance'].default_value = 0.4
+_wn.links.new(_wz.outputs['Fac'], _wbump.inputs['Height']); _wn.links.new(_wbump.outputs['Normal'], _wb.inputs['Normal'])
+_wb.inputs['Specular IOR Level'].default_value = 0.5
+GLASS = simple('pg1-glass', (0.8, 0.85, 0.9), 0.05)
+_gb = GLASS.node_tree.nodes.get('Principled BSDF'); _gb.inputs['Transmission Weight'].default_value = 0.9
 PAVING = simple('pg1-paving', (0.07, 0.07, 0.075), 0.3 if rain else 0.6)
+
+# The river: the live view draws it with its own mirror shader (left out of
+# the export), so Cycles gets real water here: three.js RIVER z 120, half 45,
+# 3.3 m below the street, the length of the ground.
+bpy.ops.mesh.primitive_plane_add(size=1, location=(0, -120, -3.3))
+_rv = bpy.context.active_object; _rv.name = 'pg1-river-water'; _rv.scale = (30000, 90, 1)
+_rv.data.materials.append(WATER)
 
 def assign(o, m):
     o.data.materials.clear(); o.data.materials.append(m)
@@ -303,13 +321,18 @@ for o in list(scene.objects):
         # Fake light pools and glows from the live view: Cycles lights the ground itself.
         o.hide_render = True; counts['hidden'] = counts.get('hidden', 0) + 1
     # The live view's fake glows (see-through, glowing cards and cones): Cycles makes real glow.
+    # Everything the live view draws see-through (glows, trails, beams, rotor
+    # blur, light pools) comes in from glTF as solid: left out, except real
+    # glass (shop fronts, shelters, rails: made glass) and PG1's own marks.
     fake = False
     for m in o.data.materials:
         if m and m.use_nodes and not m.name.startswith('pg1-'):
             b = m.node_tree.nodes.get('Principled BSDF')
             see_through = getattr(m, 'surface_render_method', '') == 'BLENDED' or (not b.inputs['Alpha'].is_linked and b.inputs['Alpha'].default_value < 0.95) if b else False
-            if b and see_through and b.inputs['Emission Strength'].default_value > 0:
+            if b and see_through:
                 fake = True
+    if fake and base in ('shop-glass', 'bus-shelters', 'roof-terrace-rails'):
+        fake = False; assign(o, GLASS)
     if fake and (base.startswith('pg1-emblem') or base == 'command-deck'):
         fake = False  # PG1's own marks and the deck stay (drawn as lit glass)
     if fake:
