@@ -137,3 +137,11 @@ test('a showcase frame is refused if drawn with phone settings, a render scale b
   refused({ css: [540, 960], dpr: 1 }, /viewport/);
   assert.throws(() => checkShowcaseFrame(null, { width: 1080, height: 1920 }), /no scene/);
 });
+
+test('--stills-only: a reel shot\'s 2x still alone, off by default', () => {
+  assert.equal(parseArgs(['--reel', 'inside-city', '--shots', 'city-wide']).stillsOnly, false);
+  const o = parseArgs(['--reel', 'inside-city', '--shots', 'city-wide,crown-tower', '--stills-only', '--epoch', '2026-11-24T00:14:54Z']);
+  assert.equal(o.stillsOnly, true);
+  assert.deepEqual(o.shots, ['city-wide', 'crown-tower']);
+  assert.equal(o.epoch, Date.parse('2026-11-24T00:14:54Z'));
+});

@@ -62,7 +62,7 @@ const PUBLIC_DIR = join(ROOT, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.css': 'text/css; charset=utf-8', '.bin': 'application/octet-stream', '.ktx2': 'application/octet-stream' };
 
 export function parseArgs(argv) {
-  const o = { shots: SHOTS.map((s) => s.id), width: 1080, height: 1920, out: join(ROOT, 'showcase-out'), frames: null, warmup: 40, gpu: false, keepFrames: false, fps: SHOWCASE_FPS, jobs: 1, range: null, stills: null, reel: null, days: 1, epoch: null, at: null, cycles: null };
+  const o = { shots: SHOTS.map((s) => s.id), width: 1080, height: 1920, out: join(ROOT, 'showcase-out'), frames: null, warmup: 40, gpu: false, keepFrames: false, fps: SHOWCASE_FPS, jobs: 1, range: null, stills: null, reel: null, days: 1, epoch: null, at: null, cycles: null, stillsOnly: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]; const v = () => argv[++i];
     if (a === '--shots') o.shots = v().split(',').map((x) => x.trim()).filter(Boolean);
@@ -79,6 +79,9 @@ export function parseArgs(argv) {
     else if (a === '--at') { o.at = Number(v()); if (!(o.at >= 0 && o.at <= 1)) throw new Error('--at 0..1'); }
     // --cycles DIR: also record each frame (camera, everything that moves) and the scene for Blender Cycles (scripts/cycles-dump.mjs).
     else if (a === '--cycles') o.cycles = resolve(v());
+    // --stills-only: a reel shot's 2x still alone (the slides and Story), the clock skipped to the
+    // shot's last frame as in a full render; no MP4. The post is built with the MP4s of an earlier run.
+    else if (a === '--stills-only') o.stillsOnly = true;
     // --reel inside-city: the 24 Nov post's ten City shots, replaying the
     // defence feed's last 7 days (lib/showcase/reel.mjs).
     else if (a === '--reel') { const r = v(); if (r !== REEL_ID) throw new Error(`unknown reel ${r} (reels: ${REEL_ID})`); o.reel = r; o.days = REEL_WINDOW_DAYS; if (!argv.includes('--shots')) o.shots = REEL_SHOTS.map((x) => x.id); }
@@ -541,9 +544,9 @@ export async function renderReelShot(browser, origin, shot, opts, data, log) {
   const dump = opts.cycles && opts.at === null ? (await import('./cycles-dump.mjs')).cyclesDump(join(opts.cycles, shot.id), log) : null;
   const focuses = new Set(); const t0 = Date.now(); const infos = {}; let cleared = false;
   const stillIdx = Math.min(total, Math.max(1, Math.round(total * ((plan.still && plan.still.t) || 0.66)))); let stillFile = null; let lastPose = null;
-  const from = opts.at === null ? 0 : Math.round(opts.at * (total - 1));
+  const from = opts.at !== null ? Math.round(opts.at * (total - 1)) : opts.stillsOnly ? total - 1 : 0;
   if (from > 0) await page.evaluate((ms) => { window.__showcase.skip(ms); }, from * step);
-  for (let i = from; i < (opts.at === null ? total : from + 1); i++) {
+  for (let i = from; i < (opts.at === null && !opts.stillsOnly ? total : from + 1); i++) {
     const t = total > 1 ? i / (total - 1) : 0;
     let pose = plan.director ? null : poseAt(plan, t);
     if (pose && plan.follow === 'event') pose = followPose(pose, await page.evaluate((id) => window.showcase.whereIs(id), ids[0]), t);
@@ -579,6 +582,7 @@ export async function renderReelShot(browser, origin, shot, opts, data, log) {
     log(`${shot.id}: still at ${STILL_SCALE}x (${opts.width * STILL_SCALE} x ${opts.height * STILL_SCALE})`);
   }
   await ctx.close();
+  if (opts.stillsOnly && opts.at === null) { if (!opts.keepFrames) rmSync(framesDir, { recursive: true, force: true }); return { id: shot.id, title: shot.title, frames: 1, seconds: 0, mp4: null, still: stillFile, still2x: stillFile, stillsOnly: true, errors, plan: { move: shot.move }, diagnostics: infos, replayed: [], light: shot.light }; }
   if (opts.at !== null) { const f = join(opts.out, `${shot.id}-at-${opts.at}.png`); writeFileSync(f, readFileSync(join(framesDir, `${String(from + 1).padStart(5, '0')}.png`))); return { id: shot.id, title: shot.title, frames: 1, seconds: 0, mp4: null, still: f, errors, plan: { move: shot.move }, diagnostics: infos, replayed: [], light: shot.light }; }
   const still = join(opts.out, `${shot.id}.png`);
   writeFileSync(still, readFileSync(join(framesDir, `${String(stillIdx).padStart(5, '0')}.png`)));
