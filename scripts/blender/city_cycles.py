@@ -95,7 +95,10 @@ if ANIM:
         # Colour per instance (cars, boats): the colour attribute, as the static meshes have.
         cols = d.get('colours')
         ca = big.color_attributes.new('Color', 'FLOAT_COLOR', 'POINT')
-        if src.data.color_attributes and not rep:
+        if src.data.color_attributes and rep and d['name'] in pg1_vehicles.KEEP_COLOUR:
+            sa = src.data.color_attributes[0]; raw = np.empty(len(sa.data) * 4, dtype=np.float32); sa.data.foreach_get('color', raw)
+            sc_ = np.tile(raw.reshape(-1, 4).mean(axis=0), (nv, 1)).astype(np.float32)
+        elif src.data.color_attributes and not rep:
             sa = src.data.color_attributes[0]; nd = len(sa.data)
             raw = np.empty(nd * 4, dtype=np.float32); sa.data.foreach_get('color', raw); raw = raw.reshape(nd, 4)
             if sa.domain == 'POINT':
@@ -116,6 +119,37 @@ if ANIM:
         src.hide_render = True; src.hide_viewport = True
         DYN.append((d, ob, base3, nv))
     print(f'[cycles] moving: {len(DYN)} meshes, {sum(d["slots"] for d, *_ in DYN)} instances, {dyn_data.shape[0]} frames', flush=True)
+
+# The rooftop crane's mast: a solid box in the live view, a lattice here. It
+# comes in merged, in world space, so the lattice is fitted to the box's
+# bottom corners (centre, height and the turn about the vertical).
+for o in list(scene.objects):
+    if o.type != 'MESH' or not o.name.split('.')[0].startswith('construction-crane-mast'):
+        continue
+    me0 = o.data; nv0 = len(me0.vertices)
+    co = np.empty(nv0 * 3); me0.vertices.foreach_get('co', co); co = co.reshape(-1, 3)
+    W = np.array(o.matrix_world); co = co @ W[:3, :3].T + W[:3, 3]
+    if nv0 > 64:
+        continue
+    zmin, zmax = co[:, 2].min(), co[:, 2].max(); ctr = np.array([co[:, 0].mean(), co[:, 1].mean(), (zmin + zmax) / 2])
+    bot = co[co[:, 2] < zmin + 0.01][:, :2] - ctr[:2]
+    # A square's corners sit at turn + 45 deg + k * 90 deg from its centre.
+    c0 = bot[0]; th = (math.atan2(c0[1], c0[0]) - math.pi / 4) % (math.pi / 2)
+    side = float(np.hypot(*bot.T).mean()) * math.sqrt(2)
+    rv, rf = pg1_vehicles.crane_mast(w=side, h=float(zmax - zmin))
+    rv = np.array(rv)  # three.js local: along y
+    b = (C[:3, :3] @ rv.T).T  # Blender: along z
+    R3 = np.array([[math.cos(th), -math.sin(th), 0], [math.sin(th), math.cos(th), 0], [0, 0, 1]])
+    b = b @ R3.T + ctr
+    me = bpy.data.meshes.new('crane-mast-lattice'); me.from_pydata(b.tolist(), [], rf)
+    for m in me0.materials:
+        me.materials.append(m)
+    if me0.color_attributes:
+        sa = me0.color_attributes[0]; raw = np.empty(len(sa.data) * 4, dtype=np.float32); sa.data.foreach_get('color', raw)
+        ca = me.color_attributes.new(sa.name, 'FLOAT_COLOR', 'POINT')
+        ca.data.foreach_set('color', np.tile(raw.reshape(-1, 4).mean(axis=0), (len(me.vertices), 1)).ravel())
+    o.data = me; o.matrix_world = __import__('mathutils').Matrix.Identity(4)
+    print(f'[cycles] crane mast as a lattice: {side:.2f} m x {zmax - zmin:.1f} m, turned {math.degrees(th):.1f} deg', flush=True)
 
 def set_dynamic(fr):
     for d, ob, base3, nv in DYN:
@@ -313,6 +347,11 @@ for o in list(scene.objects):
         assign(o, FACADE); counts['facade'] = counts.get('facade', 0) + 1
     elif base in ('ground', 'road', 'puddles'):
         assign(o, ASPHALT)
+    elif base == 'construction-crane-light':
+        # The live view's 1.8 m white ball on the crane top: a small red aviation light.
+        co = np.empty(len(o.data.vertices) * 3); o.data.vertices.foreach_get('co', co); co = co.reshape(-1, 3)
+        cen = co.mean(axis=0); o.data.vertices.foreach_set('co', (cen + (co - cen) * 0.3).ravel()); o.data.update()
+        assign(o, AVLIGHT); continue
     elif base in ('river',):
         assign(o, WATER)
     elif base in ('pavements', 'plaza', 'kerbs'):
@@ -523,6 +562,13 @@ if ANIM:
     for fr in ([int(round((total - 1) * meta.get('still_t', 0.66)))] if still else range(a_, b_)):
         t0 = time.time()
         set_camera(fr); set_dynamic(fr)
+        if arg('--look'):
+            # Test view: from --look-from (x,y,z, Blender) at the named object's centre.
+            from mathutils import Vector
+            tgt = [o for o in scene.objects if o.name.startswith(arg('--look'))][0]
+            cen = sum((tgt.matrix_world @ Vector(c) for c in tgt.bound_box), Vector()) / 8
+            frm = Vector([float(x) for x in arg('--look-from').split(',')]) + cen
+            cams[0].location = frm; cams[0].rotation_euler = (cen - frm).to_track_quat('-Z', 'Y').to_euler()
         scene.render.filepath = os.path.join(OUT, f'{shot}-still.png' if still else f'frame_{fr + 1:05d}.png')
         bpy.ops.render.render(write_still=True)
         print(f'[cycles] {shot} frame {fr + 1}/{total} in {time.time() - t0:.0f} s', flush=True)

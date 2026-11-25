@@ -33,3 +33,4 @@ showcase-out/
 
 # The 24 Nov reel is a release asset (social-2026-11-24), never in git.
 docs/social/2026-11-24/reel-1080x1920.mp4
+__pycache__/

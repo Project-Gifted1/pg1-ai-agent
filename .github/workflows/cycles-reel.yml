@@ -44,6 +44,7 @@ jobs:
       record_run: ${{ steps.p.outputs.record_run }}
       record_only: ${{ steps.p.outputs.record_only }}
       frames_run: ${{ steps.p.outputs.frames_run }}
+      rerender: ${{ steps.p.outputs.rerender }}
     steps:
       - uses: actions/checkout@v4
         with: { persist-credentials: false, sparse-checkout: .github }
@@ -53,7 +54,8 @@ jobs:
           rr=$( [ -f $f ] && python3 -c "import json;print(json.load(open('$f')).get('record_run',''))" || echo '')
           ro=$( [ -f $f ] && python3 -c "import json;print(str(json.load(open('$f')).get('record_only',False)).lower())" || echo false)
           fr=$( [ -f $f ] && python3 -c "import json;print(json.load(open('$f')).get('frames_run',''))" || echo '')
-          echo "record_run=$rr" >> "$GITHUB_OUTPUT"; echo "record_only=$ro" >> "$GITHUB_OUTPUT"; echo "frames_run=$fr" >> "$GITHUB_OUTPUT"; echo "record_run=$rr record_only=$ro frames_run=$fr"
+          rs=$( [ -f $f ] && python3 -c "import json;print(','.join(json.load(open('$f')).get('rerender',[])))" || echo '')
+          echo "record_run=$rr" >> "$GITHUB_OUTPUT"; echo "record_only=$ro" >> "$GITHUB_OUTPUT"; echo "frames_run=$fr" >> "$GITHUB_OUTPUT"; echo "rerender=$rs" >> "$GITHUB_OUTPUT"; echo "record_run=$rr record_only=$ro frames_run=$fr rerender=$rs"
 
   record:
     needs: plan
@@ -88,7 +90,7 @@ jobs:
 
   frames:
     needs: [plan, record]
-    if: always() && needs.plan.outputs.record_only != 'true' && needs.plan.outputs.frames_run == '' && (needs.record.result == 'success' || needs.record.result == 'skipped')
+    if: always() && needs.plan.outputs.record_only != 'true' && (needs.plan.outputs.frames_run == '' || needs.plan.outputs.rerender != '') && (needs.record.result == 'success' || needs.record.result == 'skipped')
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     strategy:
@@ -105,7 +107,11 @@ jobs:
       - id: range
         env:
           CHUNK: ${{ matrix.chunk }}
+          SHOT: ${{ matrix.shot }}
+          RERENDER: ${{ needs.plan.outputs.rerender }}
         run: |
+          # "rerender": only these shots again; the rest come from frames_run.
+          if [ -n "$RERENDER" ] && ! echo ",$RERENDER," | grep -q ",$SHOT,"; then echo "run=0" >> "$GITHUB_OUTPUT"; exit 0; fi
           if [ -f cycles-in/skip ]; then echo "run=0" >> "$GITHUB_OUTPUT"; exit 0; fi
           total=$(python3 -c "import json;print(len(json.load(open('cycles-in/city-shot.json'))['frames']))")
           if [ "$TEST" = 1 ]; then a=$((total/2)); b=$((a+2)); [ "$CHUNK" = 0 ] || { echo "run=0" >> "$GITHUB_OUTPUT"; exit 0; }
@@ -130,7 +136,7 @@ jobs:
 
   post:
     needs: [plan, frames]
-    if: always() && needs.plan.outputs.record_only != 'true' && (needs.frames.result == 'success' || needs.plan.outputs.frames_run != '')
+    if: always() && needs.plan.outputs.record_only != 'true' && (needs.frames.result == 'success' || (needs.plan.outputs.frames_run != '' && needs.plan.outputs.rerender == ''))
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -141,6 +147,10 @@ jobs:
       - run: npm ci && npx playwright install --with-deps chromium && sudo apt-get install -y -qq ffmpeg
       - uses: actions/download-artifact@v4
         with: { pattern: 'cycles-frames-*', path: frames, run-id: '${{ needs.plan.outputs.frames_run || github.run_id }}', github-token: '${{ github.token }}' }
+      - if: needs.plan.outputs.rerender != '' && needs.plan.outputs.frames_run != ''
+        name: The re-rendered shots over the earlier run's
+        uses: actions/download-artifact@v4
+        with: { pattern: 'cycles-frames-*', path: frames, run-id: '${{ github.run_id }}', github-token: '${{ github.token }}' }
       - uses: actions/download-artifact@v4
         with: { pattern: 'pg1-reel-*', path: reel-artifacts, run-id: '${{ env.REEL_RUN }}', github-token: '${{ github.token }}' }
       - uses: actions/download-artifact@v4
