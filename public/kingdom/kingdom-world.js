@@ -980,10 +980,13 @@ export function buildWorld(THREE, scene, settings, { waterMaterial = null, Refle
   const lookFlags = { moon: false, glow: false };
 
   // --- the sky: a dusk gradient (warm horizon to deep blue) with a sun glow ---
+  // Its directions are taken from the camera (not the dome's centre), so its
+  // horizon, where it fades into the fog colour, is the camera's horizon: seen
+  // from high up the fogged ground met a sky still above its horizon, a seam.
   const gradU = { uFog: { value: new THREE.Color(0x2a3550) }, uTop: { value: new THREE.Color(0x0e1a36) }, uMid: { value: new THREE.Color(0x3a4f86) }, uHorizon: { value: new THREE.Color(0xf09a5a) }, uSunDir: { value: new THREE.Vector3(-1, 0.05, 0) }, uGlow: { value: new THREE.Color(0xffc27a) } };
   const sky = named(new THREE.Mesh(new THREE.SphereGeometry(7000, 32, 16), new THREE.ShaderMaterial({
     uniforms: gradU, side: THREE.BackSide, depthWrite: false, fog: false,
-    vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); gl_Position.z = gl_Position.w; }',
+    vertexShader: 'varying vec3 vD; void main(){ vD = normalize((modelMatrix*vec4(position,1.0)).xyz - cameraPosition); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.0); gl_Position.z = gl_Position.w; }',
     fragmentShader: 'uniform vec3 uFog; uniform vec3 uTop; uniform vec3 uMid; uniform vec3 uHorizon; uniform vec3 uSunDir; uniform vec3 uGlow; varying vec3 vD; void main(){ float h = clamp(vD.y, 0.0, 1.0); float s = max(dot(vD, normalize(uSunDir)), 0.0); vec3 hor = mix(uMid, uHorizon, pow(max(dot(normalize(vD.xz), normalize(uSunDir.xz)) * 0.5 + 0.5, 0.0), 2.5)); vec3 c = mix(hor, uMid, smoothstep(0.0, 0.18, h)); c = mix(c, uTop, smoothstep(0.15, 0.7, h)); c += uGlow * (pow(s, 12.0) * 0.35 + pow(s, 260.0) * 1.4) * (1.0 - h); c = mix(uFog, c, smoothstep(-0.01, 0.07, vD.y)); gl_FragColor = vec4(c, 1.0); }'
   })), 'sky');
   scene.add(sky);
