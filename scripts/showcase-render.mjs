@@ -62,7 +62,7 @@ const PUBLIC_DIR = join(ROOT, 'public');
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.css': 'text/css; charset=utf-8', '.bin': 'application/octet-stream', '.ktx2': 'application/octet-stream' };
 
 export function parseArgs(argv) {
-  const o = { shots: SHOTS.map((s) => s.id), width: 1080, height: 1920, out: join(ROOT, 'showcase-out'), frames: null, warmup: 40, gpu: false, keepFrames: false, fps: SHOWCASE_FPS, jobs: 1, range: null, stills: null, reel: null, days: 1, epoch: null, at: null };
+  const o = { shots: SHOTS.map((s) => s.id), width: 1080, height: 1920, out: join(ROOT, 'showcase-out'), frames: null, warmup: 40, gpu: false, keepFrames: false, fps: SHOWCASE_FPS, jobs: 1, range: null, stills: null, reel: null, days: 1, epoch: null, at: null, cycles: null };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]; const v = () => argv[++i];
     if (a === '--shots') o.shots = v().split(',').map((x) => x.trim()).filter(Boolean);
@@ -77,6 +77,8 @@ export function parseArgs(argv) {
     else if (a === '--keep-frames') o.keepFrames = true;
     // --at T (0..1): a reel shot's one frame at T, for a look before the full render (no MP4).
     else if (a === '--at') { o.at = Number(v()); if (!(o.at >= 0 && o.at <= 1)) throw new Error('--at 0..1'); }
+    // --cycles DIR: also record each frame (camera, everything that moves) and the scene for Blender Cycles (scripts/cycles-dump.mjs).
+    else if (a === '--cycles') o.cycles = resolve(v());
     // --reel inside-city: the 24 Nov post's ten City shots, replaying the
     // defence feed's last 7 days (lib/showcase/reel.mjs).
     else if (a === '--reel') { const r = v(); if (r !== REEL_ID) throw new Error(`unknown reel ${r} (reels: ${REEL_ID})`); o.reel = r; o.days = REEL_WINDOW_DAYS; if (!argv.includes('--shots')) o.shots = REEL_SHOTS.map((x) => x.id); }
@@ -491,7 +493,7 @@ export async function renderReelShot(browser, origin, shot, opts, data, log) {
   await ctx.addInitScript(CLOCK_SCRIPT);
   const page = await ctx.newPage(); const errors = [];
   page.on('pageerror', (e) => errors.push(String(e && e.message || e)));
-  await page.goto(`${origin}/showcase/city.html`, { waitUntil: 'load', timeout: 180000 });
+  await page.goto(`${origin}/showcase/city.html${opts.cycles ? '?debug=1' : ''}`, { waitUntil: 'load', timeout: 180000 });
   for (const t0 = Date.now(); ;) {
     if (errors.length) throw new Error(`${shot.id}: page error: ${errors[0]}`);
     if (await page.evaluate(() => !!(window.showcase && window.showcase.ready() && window.showcase.frames() > 2))) break;
@@ -536,6 +538,7 @@ export async function renderReelShot(browser, origin, shot, opts, data, log) {
   }
   // Director: on, its first cut at once; 5 s on (clock and actors) the next cut lands 1.5 s into the shot.
   if (plan.director) { await page.evaluate(() => { window.showcase.pose(null); window.showcase.director(true); window.__showcase.advance(100); window.__showcase.skip(5000); window.showcase.scene.runActors(5); }); await settle(); }
+  const dump = opts.cycles && opts.at === null ? (await import('./cycles-dump.mjs')).cyclesDump(join(opts.cycles, shot.id), log) : null;
   const focuses = new Set(); const t0 = Date.now(); const infos = {}; let cleared = false;
   const stillIdx = Math.min(total, Math.max(1, Math.round(total * ((plan.still && plan.still.t) || 0.66)))); let stillFile = null; let lastPose = null;
   const from = opts.at === null ? 0 : Math.round(opts.at * (total - 1));
@@ -551,6 +554,7 @@ export async function renderReelShot(browser, origin, shot, opts, data, log) {
     lastPose = pose;
     await page.evaluate(([p, ms]) => { if (p) window.showcase.pose(p); window.__showcase.advance(ms); }, [pose, step]);
     await page.screenshot({ path: join(framesDir, `${String(i + 1).padStart(5, '0')}.png`), type: 'png', timeout: 600000 });
+    if (dump) await dump.frame(page, i);
     const info = await page.evaluate(() => window.showcase.info());
     checkShowcaseFrame(info, opts);
     if (plan.director) focuses.add(await page.evaluate(() => window.showcase.focusOf()));
@@ -558,6 +562,7 @@ export async function renderReelShot(browser, origin, shot, opts, data, log) {
     if (i === total - 1) infos.last = info;
     if (i === 0 || (i + 1) % 15 === 0 || i === total - 1) log(`${shot.id}: frame ${i + 1}/${total} (${((Date.now() - t0) / 1000 / (i + 1)).toFixed(1)} s a frame)`);
   }
+  if (dump) await dump.finish(page, { shot: shot.id, title: shot.title, light: shot.light, weather: shot.light === 'recorded' ? 'recorded' : shot.weather ? shot.weather.state || null : null, size: [opts.width, opts.height], fps: 1000 / step, still_t: (plan.still && plan.still.t) || 0.66 });
   // The still (slides, Story): one more frame after the shot, drawn at 2x
   // with the still's look (lighter fog, less bloom) and its own pose where
   // the plan has one (else the pose at the still's moment; a follow shot

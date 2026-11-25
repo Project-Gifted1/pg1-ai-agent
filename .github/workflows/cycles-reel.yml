@@ -1,0 +1,151 @@
+name: PG1 reel in Cycles
+
+# The 24 Nov "Inside PG1 City" reel, path traced in Blender Cycles on the
+# runners' CPUs (no GPU needed, slower: many jobs in parallel).
+#
+#   1. record: each shot stepped exactly as the Showcase render does (same real
+#      7-day window and events), small, recording the camera and everything
+#      that moves per frame, plus the scene (scripts/cycles-dump.mjs).
+#   2. frames: each shot's frames in chunks, at 1080 x 1920, in Cycles
+#      (scripts/blender/city_cycles.py).
+#   3. shots: each shot's frames to an MP4 at 30 fps (the frames the reel skips,
+#      its first 0.3 s, repeat the first rendered one).
+#   4. post: the reel built as the Showcase release job builds it (captions,
+#      crossfades), with the stills of the stills run; pushed to the branch
+#      cycles-out/<branch> for review. Nothing is published or posted.
+#
+# Runs on a push to cycles-reel/*. TEST=1 renders two frames of one shot.
+
+on:
+  push:
+    branches: ['cycles-reel/**']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cycles-reel-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  EPOCH: '2026-11-24T00:14:54Z'
+  REEL_RUN: '45421308040'
+  STILLS_RUN: '45519213609'
+  SAMPLES: '32'
+  FIRST: '9'
+  TEST: '0'
+
+jobs:
+  record:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        shot: [crown-tower, probe-arrives, river-bridge, drone-patrol, dublin-weather, city-wide]
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: npm }
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Record ${{ matrix.shot }}
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SHOT: ${{ matrix.shot }}
+        run: |
+          if [ "$TEST" = 1 ] && [ "$SHOT" != drone-patrol ]; then mkdir -p cycles-in/$SHOT && echo skip > cycles-in/$SHOT/skip; exit 0; fi
+          node scripts/showcase-render.mjs --reel inside-city --shots "$SHOT" --epoch "$EPOCH" --size 270x480 --warmup 12 --out showcase-small --cycles cycles-in
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cycles-in-${{ matrix.shot }}
+          path: cycles-in/${{ matrix.shot }}
+          retention-days: 3
+          compression-level: 1
+
+  frames:
+    needs: record
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix:
+        shot: [crown-tower, probe-arrives, river-bridge, drone-patrol, dublin-weather, city-wide]
+        chunk: [0, 1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@v4
+        with: { name: 'cycles-in-${{ matrix.shot }}', path: cycles-in }
+      - id: range
+        env:
+          CHUNK: ${{ matrix.chunk }}
+        run: |
+          if [ -f cycles-in/skip ]; then echo "run=0" >> "$GITHUB_OUTPUT"; exit 0; fi
+          total=$(python3 -c "import json;print(len(json.load(open('cycles-in/city-shot.json'))['frames']))")
+          if [ "$TEST" = 1 ]; then a=$((total/2)); b=$((a+2)); [ "$CHUNK" = 0 ] || { echo "run=0" >> "$GITHUB_OUTPUT"; exit 0; }
+          else per=$(( (total - FIRST + 6) / 7 )); a=$((FIRST + CHUNK * per)); b=$((a + per)); [ $b -gt $total ] && b=$total; fi
+          if [ $a -ge $b ]; then echo "run=0" >> "$GITHUB_OUTPUT"; else echo "run=1" >> "$GITHUB_OUTPUT"; echo "frames=$a:$b" >> "$GITHUB_OUTPUT"; fi
+          echo "frames $a:$b of $total"
+      - if: steps.range.outputs.run == '1'
+        uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
+      - if: steps.range.outputs.run == '1'
+        run: pip install bpy==5.3.0
+      - if: steps.range.outputs.run == '1'
+        name: Render frames ${{ steps.range.outputs.frames }}
+        run: python scripts/blender/city_cycles.py -- --in cycles-in --out frames --samples "$SAMPLES" --res 1080x1920 --frames "${{ steps.range.outputs.frames }}"
+      - if: steps.range.outputs.run == '1'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cycles-frames-${{ matrix.shot }}-${{ matrix.chunk }}
+          path: frames/frame_*.png
+          retention-days: 3
+          compression-level: 0
+
+  post:
+    needs: frames
+    if: always() && needs.record.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: npm }
+      - run: npm ci && sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      - uses: actions/download-artifact@v4
+        with: { pattern: 'cycles-frames-*', path: frames }
+      - uses: actions/download-artifact@v4
+        with: { pattern: 'pg1-reel-*', path: reel-artifacts, run-id: '${{ env.REEL_RUN }}', github-token: '${{ github.token }}' }
+      - uses: actions/download-artifact@v4
+        with: { pattern: 'pg1-reel-*', path: stills-artifacts, run-id: '${{ env.STILLS_RUN }}', github-token: '${{ github.token }}' }
+      - name: Each shot to an MP4
+        run: |
+          mkdir -p review
+          for shot in crown-tower probe-arrives river-bridge drone-patrol dublin-weather city-wide; do
+            dir="shot-$shot"; mkdir -p "$dir"
+            ls -d frames/cycles-frames-$shot-* >/dev/null 2>&1 || { echo "no frames for $shot"; continue; }
+            cp frames/cycles-frames-$shot-*/frame_*.png "$dir"/
+            first=$(ls "$dir" | sort | head -1); n0=$((10#${first:6:5}))
+            for ((k=1; k<n0; k++)); do cp "$dir/$first" "$dir/$(printf 'frame_%05d.png' $k)"; done
+            ffmpeg -y -loglevel error -framerate 30 -i "$dir/frame_%05d.png" -c:v libx264 -preset veryfast -crf 16 -pix_fmt yuv420p "review/$shot.mp4"
+            old=$(find reel-artifacts -name "$shot.mp4" | head -1)
+            if [ -n "$old" ] && [ "$TEST" != 1 ]; then cp "review/$shot.mp4" "$old"; fi
+            echo "$shot: $(ls $dir | wc -l) frames"
+          done
+          for f in $(find stills-artifacts -name '*-still-2x.png'); do b=$(basename "$f"); o=$(find reel-artifacts -name "$b" | head -1); [ -n "$o" ] && cp "$f" "$o"; done
+      - name: Build the post (captions, crossfades), as the release job does
+        if: env.TEST != '1'
+        run: node scripts/social-inside-city.mjs --from reel-artifacts --out post && cp post/reel-1080x1920.mp4 post/reel-contact-sheet.jpg post/copy.md review/
+      - name: Push for review to cycles-out/<branch>
+        env:
+          TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          cd review && git init -q -b "cycles-out/$BRANCH" && git add -A
+          git -c user.name=pg1-cycles -c user.email=pg1-cycles@users.noreply.github.com commit -q -m "Cycles reel ($GITHUB_SHA)"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "cycles-out/$BRANCH"

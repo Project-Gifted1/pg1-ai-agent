@@ -29,12 +29,93 @@ rain = bool(meta.get('weather') and 'rain' in str(meta.get('weather')))
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.import_scene.gltf(filepath=os.path.join(IN, 'city.glb'))
 scene = bpy.context.scene
+import numpy as np
+ANIM = bool(meta.get('frames'))
+# three.js (y up) to Blender (z up): (x, y, z) -> (x, -z, y).
+C = np.array([[1, 0, 0, 0], [0, 0, -1, 0], [0, 1, 0, 0], [0, 0, 0, 1]], dtype=np.float64); CI = np.linalg.inv(C)
 cams = [o for o in scene.objects if o.type == 'CAMERA']
+if ANIM:
+    cd = bpy.data.cameras.new('shot-camera'); cam_ob = bpy.data.objects.new('shot-camera', cd); scene.collection.objects.link(cam_ob)
+    cd.sensor_fit = 'VERTICAL'
+    cams = [cam_ob]
 if not cams:
     raise SystemExit('no camera in city.glb')
 scene.camera = cams[0]
 cams[0].data.clip_end = 90000
 cams[0].data.clip_start = 0.5
+
+def set_camera(fr):
+    c = meta['frames'][fr]
+    M = np.array(c['matrix'], dtype=np.float64).reshape(4, 4).T
+    from mathutils import Matrix
+    cams[0].matrix_world = Matrix((C @ M).tolist())
+    cams[0].data.angle_y = math.radians(c['fov'])
+
+# Moving things: one mesh per moving mesh of the City, its base geometry
+# repeated per instance; each frame moves the vertices (numpy, from dyn.bin).
+DYN = []
+if ANIM:
+    dyn_data = np.fromfile(os.path.join(IN, 'dyn.bin'), dtype=np.float32)
+    fpf = meta['floats_per_frame']
+    dyn_data = dyn_data.reshape(-1, fpf) if fpf else np.zeros((len(meta['frames']), 0), dtype=np.float32)
+    by_idx = {}
+    for o in list(scene.objects):
+        if o.type == 'MESH' and o.name.startswith('dyn~'):
+            by_idx[int(o.name.split('~')[1])] = o
+    for d in meta['dynamic']:
+        src = by_idx.get(d['mesh'])
+        if src is None or d.get('offset') is None:
+            continue
+        me = src.data; nv = len(me.vertices)
+        base = np.empty(nv * 3, dtype=np.float64); me.vertices.foreach_get('co', base); base = base.reshape(nv, 3)
+        # Back to three.js space for the instance matrices: v3 = CI . vb.
+        base3 = (CI[:3, :3] @ base.T).T
+        n = d['slots']
+        tris = np.array([v for poly in me.polygons for v in poly.vertices], dtype=np.int64)
+        loops_per = [len(poly.vertices) for poly in me.polygons]
+        big = bpy.data.meshes.new(f'moving-{d["name"]}')
+        verts = np.zeros((n * nv, 3)); faces = []
+        offs = np.cumsum([0] + loops_per[:-1])
+        polys = [list(me.polygons[k].vertices) for k in range(len(me.polygons))]
+        for i in range(n):
+            faces.extend([[v + i * nv for v in poly] for poly in polys])
+        big.from_pydata(verts.tolist(), [], faces)
+        for m in me.materials:
+            big.materials.append(m)
+        # Colour per instance (cars, boats): the colour attribute, as the static meshes have.
+        cols = d.get('colours')
+        ca = big.color_attributes.new('Color', 'FLOAT_COLOR', 'POINT')
+        if src.data.color_attributes:
+            sa = src.data.color_attributes[0]; nd = len(sa.data)
+            raw = np.empty(nd * 4, dtype=np.float32); sa.data.foreach_get('color', raw); raw = raw.reshape(nd, 4)
+            if sa.domain == 'POINT':
+                sc_ = raw
+            else:
+                # Per corner: one colour per vertex from its corners.
+                sc_ = np.ones((nv, 4), dtype=np.float32); li = np.empty(len(me.loops), dtype=np.int64); me.loops.foreach_get('vertex_index', li); sc_[li] = raw
+        else:
+            sc_ = np.ones((nv, 4), dtype=np.float32)
+        allc = np.tile(sc_, (n, 1))
+        if cols:
+            cc = np.array(cols, dtype=np.float32)
+            allc[:, :3] = np.repeat(cc, nv, axis=0)
+        ca.data.foreach_set('color', allc.ravel())
+        ob = bpy.data.objects.new(f'moving-{d["name"]}', big); scene.collection.objects.link(ob)
+        for poly in big.polygons:
+            poly.use_smooth = me.polygons[0].use_smooth if len(me.polygons) else False
+        src.hide_render = True; src.hide_viewport = True
+        DYN.append((d, ob, base3, nv))
+    print(f'[cycles] moving: {len(DYN)} meshes, {sum(d["slots"] for d, *_ in DYN)} instances, {dyn_data.shape[0]} frames', flush=True)
+
+def set_dynamic(fr):
+    for d, ob, base3, nv in DYN:
+        n = d['slots']
+        M = dyn_data[fr, d['offset']:d['offset'] + n * 16].astype(np.float64).reshape(n, 4, 4).transpose(0, 2, 1)
+        T = np.einsum('ij,njk,kl->nil', C, M, CI)
+        b = (C[:3, :3] @ base3.T).T  # base in Blender space
+        v = np.einsum('nij,vj->nvi', T[:, :3, :3], b) + T[:, None, :3, 3]
+        ob.data.vertices.foreach_set('co', v.reshape(-1).astype(np.float32))
+        ob.data.update()
 
 def node(nt, kind, x=0, y=0, **inputs):
     n = nt.nodes.new(kind); n.location = (x, y)
@@ -194,10 +275,13 @@ def assign(o, m):
     o.data.materials.clear(); o.data.materials.append(m)
 
 counts = {}
+HIDDEN_FAKE = set()
 for o in list(scene.objects):
     if o.type != 'MESH':
         continue
     n = o.name.split('.')[0]
+    if n.startswith('moving-'):
+        n = n[len('moving-'):]
     base = n.rsplit('-', 1)[0] if n.rsplit('-', 1)[-1].isdigit() else n
     if base.startswith('facade~') or base.startswith('skyline-'):
         assign(o, FACADE); counts['facade'] = counts.get('facade', 0) + 1
@@ -210,6 +294,16 @@ for o in list(scene.objects):
     elif base in ('lamp-pools', 'street-light-pools', 'boat-light-pools', 'wet-road-glare', 'wet-road-tail-glare', 'road-spray', 'boat-wakes', 'crowd', 'tower-beacon-halo'):
         # Fake light pools and glows from the live view: Cycles lights the ground itself.
         o.hide_render = True; counts['hidden'] = counts.get('hidden', 0) + 1
+    # The live view's fake glows (see-through, glowing cards and cones): Cycles makes real glow.
+    fake = False
+    for m in o.data.materials:
+        if m and m.use_nodes and not m.name.startswith('pg1-'):
+            b = m.node_tree.nodes.get('Principled BSDF')
+            if b and not b.inputs['Alpha'].is_linked and b.inputs['Alpha'].default_value < 0.95 and b.inputs['Emission Strength'].default_value > 0:
+                fake = True
+    if fake:
+        o.hide_render = True; counts['hidden'] = counts.get('hidden', 0) + 1; HIDDEN_FAKE.add(base)
+        continue
     # Glows and lamps (exported as emission): brighter, as real lamps are.
     for m in o.data.materials:
         if not m or not m.use_nodes or m.name.startswith('pg1-'):
@@ -345,7 +439,8 @@ cy.use_denoising = True; cy.denoiser = 'OPENIMAGEDENOISE'
 cy.max_bounces = 6; cy.diffuse_bounces = 3; cy.glossy_bounces = 4; cy.transmission_bounces = 4
 cy.caustics_reflective = False; cy.caustics_refractive = False
 cy.light_sampling_threshold = 0.01
-scene.render.resolution_x, scene.render.resolution_y = meta['size']
+RES = arg('--res')
+scene.render.resolution_x, scene.render.resolution_y = (int(v) for v in RES.split('x')) if RES else meta['size']
 scene.render.resolution_percentage = SCALE
 scene.render.film_transparent = False
 scene.view_settings.view_transform = 'AgX'
@@ -376,8 +471,22 @@ ct.links.new(mix.outputs[2], glare.inputs['Image'])
 gout = ct.nodes.new('NodeGroupOutput'); ct.links.new(glare.outputs['Image'], gout.inputs[0])
 
 shot = meta.get('shot', 'shot')
-scene.render.filepath = os.path.join(OUT, f'{shot}-cycles.png')
+print(f'[cycles] see-through glows left out: {sorted(HIDDEN_FAKE)}', flush=True)
 print(f'[cycles] {shot}: {len(scene.objects)} objects, facade on {counts.get("facade", 0)}, hidden glows {counts.get("hidden", 0)}, {SAMPLES} samples on {DEVICE}, {scene.render.resolution_x}x{scene.render.resolution_y} at {SCALE}%', flush=True)
-bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, f'{shot}.blend'), compress=True)
-bpy.ops.render.render(write_still=True)
-print(f'[cycles] wrote {scene.render.filepath}', flush=True)
+if ANIM:
+    # --frames A:B renders frames A..B-1 (0-based) as frame_00001.png ... (1-based, as the shot's MP4 frames).
+    total = len(meta['frames'])
+    rng = arg('--frames', f'0:{total}'); a_, b_ = (int(x) for x in rng.split(':')); b_ = min(b_, total)
+    still = arg('--still')
+    import time
+    for fr in ([int(round((total - 1) * meta.get('still_t', 0.66)))] if still else range(a_, b_)):
+        t0 = time.time()
+        set_camera(fr); set_dynamic(fr)
+        scene.render.filepath = os.path.join(OUT, f'{shot}-still.png' if still else f'frame_{fr + 1:05d}.png')
+        bpy.ops.render.render(write_still=True)
+        print(f'[cycles] {shot} frame {fr + 1}/{total} in {time.time() - t0:.0f} s', flush=True)
+else:
+    scene.render.filepath = os.path.join(OUT, f'{shot}-cycles.png')
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, f'{shot}.blend'), compress=True)
+    bpy.ops.render.render(write_still=True)
+    print(f'[cycles] wrote {scene.render.filepath}', flush=True)
