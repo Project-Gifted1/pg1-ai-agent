@@ -149,7 +149,7 @@ for o in list(scene.objects):
         assign(o, WATER)
     elif base in ('pavements', 'plaza', 'kerbs'):
         assign(o, PAVING)
-    elif base in ('lamp-pools', 'street-light-pools', 'boat-light-pools', 'wet-road-glare', 'wet-road-tail-glare', 'road-spray', 'boat-wakes', 'crowd'):
+    elif base in ('lamp-pools', 'street-light-pools', 'boat-light-pools', 'wet-road-glare', 'wet-road-tail-glare', 'road-spray', 'boat-wakes', 'crowd', 'tower-beacon-halo'):
         # Fake light pools and glows from the live view: Cycles lights the ground itself.
         o.hide_render = True; counts['hidden'] = counts.get('hidden', 0) + 1
     # Glows and lamps (exported as emission): brighter, as real lamps are.
@@ -240,6 +240,9 @@ scene.view_settings.view_transform = 'AgX'
 scene.view_settings.look = 'AgX - Medium High Contrast'
 scene.view_settings.exposure = 0.3 if night else 0.0
 scene.render.image_settings.file_format = 'PNG'
+# The compositor on the CPU: a runner has no display for a GPU context.
+if hasattr(scene.render, 'compositor_device'):
+    scene.render.compositor_device = 'CPU'
 
 # Distance haze: the mist pass, in the shot's fog colour.
 vl = scene.view_layers[0]; vl.use_pass_mist = True
