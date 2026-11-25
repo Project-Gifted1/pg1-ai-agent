@@ -12,6 +12,8 @@
 # soft glow on bright lights. Everything else keeps the exported colours.
 
 import bpy, json, math, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import pg1_buildings, pg1_vehicles
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 def arg(name, default=None):
@@ -70,6 +72,14 @@ if ANIM:
         base = np.empty(nv * 3, dtype=np.float64); me.vertices.foreach_get('co', base); base = base.reshape(nv, 3)
         # Back to three.js space for the instance matrices: v3 = CI . vb.
         base3 = (CI[:3, :3] @ base.T).T
+        rep = pg1_vehicles.REPLACE.get(d['name'])
+        if rep:
+            # A detailed stand-in in the same local space (pg1_vehicles.py).
+            rv, rf = rep()
+            me = bpy.data.meshes.new(f'detail-{d["name"]}'); me.from_pydata([tuple(v) for v in rv], [], rf)
+            for m in src.data.materials:
+                me.materials.append(m)
+            nv = len(me.vertices); base3 = np.array(rv, dtype=np.float64)
         n = d['slots']
         tris = np.array([v for poly in me.polygons for v in poly.vertices], dtype=np.int64)
         loops_per = [len(poly.vertices) for poly in me.polygons]
@@ -85,7 +95,7 @@ if ANIM:
         # Colour per instance (cars, boats): the colour attribute, as the static meshes have.
         cols = d.get('colours')
         ca = big.color_attributes.new('Color', 'FLOAT_COLOR', 'POINT')
-        if src.data.color_attributes:
+        if src.data.color_attributes and not rep:
             sa = src.data.color_attributes[0]; nd = len(sa.data)
             raw = np.empty(nd * 4, dtype=np.float32); sa.data.foreach_get('color', raw); raw = raw.reshape(nd, 4)
             if sa.domain == 'POINT':
@@ -238,8 +248,6 @@ PLANT = simple('pg1-plant', (0.09, 0.095, 0.1), 0.45, metal=0.6)
 AVLIGHT = simple('pg1-aviation-light', (0.3, 0.02, 0.02), 0.4)
 _b = AVLIGHT.node_tree.nodes.get('Principled BSDF'); _b.inputs['Emission Color'].default_value = (1.0, 0.05, 0.03, 1); _b.inputs['Emission Strength'].default_value = 40.0 if night else 0.0
 AVLIGHT['pg1_boosted'] = 1
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import pg1_buildings
 if meta.get('buildings'):
     sky_ob = pg1_buildings.build_skyline(bpy, meta['buildings'], [FACADE, TRIM, PLANT, AVLIGHT])
     print(f"[cycles] skyline: {len(meta['buildings'])} buildings, {len(sky_ob.data.polygons)} faces", flush=True)
@@ -304,6 +312,12 @@ for o in list(scene.objects):
     if fake:
         o.hide_render = True; counts['hidden'] = counts.get('hidden', 0) + 1; HIDDEN_FAKE.add(base)
         continue
+    if base == 'aircraft':
+        # Airliners at night: painted, lit by the city, their lights do the glowing.
+        for m in o.data.materials:
+            b = m.node_tree.nodes.get('Principled BSDF') if m and m.use_nodes else None
+            if b:
+                b.inputs['Emission Strength'].default_value = 0.0; b.inputs['Roughness'].default_value = 0.3; m['pg1_boosted'] = 1
     # Glows and lamps (exported as emission): brighter, as real lamps are.
     for m in o.data.materials:
         if not m or not m.use_nodes or m.name.startswith('pg1-'):
