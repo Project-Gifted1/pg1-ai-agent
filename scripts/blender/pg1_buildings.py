@@ -181,11 +181,26 @@ def _crown(bm, col, b):
             _box(bm, col, cx, cy, z, w + 0.25, d + 0.25, 0.45, CROWN, rot)
 
 
-def build_skyline(bpy, buildings, materials, name='pg1-skyline'):
+def build_filler(bm, col, b):
+    """A low-rise block (scenery): the body, a parapet, sometimes plant on the roof."""
+    rnd = random.Random(int(b['seed'] * 1000) + int(b['x'] * 7) + int(b['z'] * 13))
+    cx, cy = b['x'], -b['z']; w, d, h, style = b['w'], b['d'], b['h'], int(round(b['style']))
+    COLOUR[0] = (b['seed'] / 997.0, style / 8.0, 0.0, 1.0)
+    _box(bm, col, cx, cy, 0.0, w, d, h, FACADE)
+    t = 0.35
+    for (ox, oy, ww, dd) in ((0, d / 2 - t / 2, w, t), (0, -d / 2 + t / 2, w, t), (w / 2 - t / 2, 0, t, d), (-w / 2 + t / 2, 0, t, d)):
+        _box(bm, col, cx + ox, cy + oy, h, ww, dd, 0.9, TRIM)
+    if rnd.random() < 0.55:
+        _box(bm, col, cx + rnd.uniform(-w / 5, w / 5), cy + rnd.uniform(-d / 5, d / 5), h, rnd.uniform(2, 4), rnd.uniform(2, 3.5), rnd.uniform(1.2, 2.4), PLANT)
+
+
+def build_skyline(bpy, buildings, materials, name='pg1-skyline', fn=None):
     me = bpy.data.meshes.new(name)
     bm = bmesh.new()
     col = bm.loops.layers.float_color.new('Color')
     for b in buildings:
+        if fn:
+            fn(bm, col, b); continue
         build(bm, col, b)
         if len(materials) > CROWN:
             _crown(bm, col, b)

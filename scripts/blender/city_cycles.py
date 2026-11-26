@@ -14,7 +14,7 @@
 import re
 import bpy, json, math, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import pg1_buildings, pg1_vehicles
+import pg1_buildings, pg1_vehicles, pg1_filler
 
 argv = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else []
 def arg(name, default=None):
@@ -34,6 +34,7 @@ bpy.ops.import_scene.gltf(filepath=os.path.join(IN, 'city.glb'))
 scene = bpy.context.scene
 import numpy as np
 ANIM = bool(meta.get('frames'))
+FLY_PTS = np.zeros((0, 3))
 # three.js (y up) to Blender (z up): (x, y, z) -> (x, -z, y).
 C = np.array([[1, 0, 0, 0], [0, 0, -1, 0], [0, 1, 0, 0], [0, 0, 0, 1]], dtype=np.float64); CI = np.linalg.inv(C)
 cams = [o for o in scene.objects if o.type == 'CAMERA']
@@ -109,6 +110,15 @@ if ANIM:
                 if Lh[i].any():
                     dyn_data[:, o + 13] += Lh[i].astype(np.float32); moved += 1
         print(f'[cycles] clearance: {moved} fliers lifted over roofs they would have crossed', flush=True)
+        # Where fliers go (Blender axes), so the low-rise scenery keeps out of their way.
+        _fp = []
+        for d in meta['dynamic']:
+            if FLIERS.search(d['name']):
+                for k in range(d['slots']):
+                    o0 = d['offset'] + k * 16
+                    if dyn_data[:, o0 + 13].max() >= 3 and np.abs(dyn_data[:, o0:o0 + 16]).any():
+                        _fp.append(np.stack([dyn_data[::3, o0 + 12], -dyn_data[::3, o0 + 14], dyn_data[::3, o0 + 13]], axis=1))
+        FLY_PTS = np.concatenate(_fp) if _fp else np.zeros((0, 3))
     by_idx = {}
     for o in list(scene.objects):
         if o.type == 'MESH' and o.name.startswith('dyn~'):
@@ -704,6 +714,33 @@ scene.render.image_settings.file_format = 'PNG'
 if hasattr(scene.render, 'compositor_device'):
     scene.render.compositor_device = 'CPU'
 
+# --- scenery between the towers (reel only): low-rise blocks, street trees, far traffic ---
+CAMPOS = np.array([(C @ np.array(c['matrix'], dtype=np.float64).reshape(4, 4).T)[:3, 3] for c in meta.get('frames') or []]).reshape(-1, 3)
+TRAFFIC = None
+if arg('--scenery', '1') == '1':
+    bpy.context.view_layer.update(); _dg = bpy.context.evaluated_depsgraph_get()
+    _segs = None
+    if ANIM:
+        _nfr = len(meta['frames']); _frs = sorted(set([0, _nfr - 1] + list(range(0, _nfr, 15))))
+        _segs = pg1_filler.sight_lines(scene, _dg, cams[0], set_camera, _frs)
+        print(f'[cycles] scenery: {0 if _segs is None else len(_segs)} sight lines kept clear', flush=True)
+    _lots = pg1_filler.plan_lots(scene, _dg, CAMPOS, segs=_segs, fliers=FLY_PTS)
+    if _lots:
+        pg1_buildings.build_skyline(bpy, _lots, [FACADE, TRIM, PLANT, AVLIGHT], name='pg1-lowrise', fn=pg1_buildings.build_filler)
+    _roads = pg1_filler.road_rects(bpy)
+    BARK = simple('pg1-bark', (0.05, 0.035, 0.025), 0.85)
+    _trees, _nt = pg1_filler.street_trees(bpy, scene, _dg, CAMPOS, _roads, BARK, LEAVES)
+    PAINT = simple('pg1-car-paint', (0.3, 0.3, 0.3), 0.3)
+    _pt = PAINT.node_tree; _pv = _pt.nodes.new('ShaderNodeVertexColor'); _pv.layer_name = 'Color'
+    _pt.links.new(_pv.outputs['Color'], _pt.nodes.get('Principled BSDF').inputs['Base Color'])
+    _pt.nodes.get('Principled BSDF').inputs['Coat Weight'].default_value = 0.6
+    HEAD = simple('pg1-headlight', (1, 1, 1), 0.3); _hb = HEAD.node_tree.nodes.get('Principled BSDF')
+    _hb.inputs['Emission Color'].default_value = (1.0, 0.92, 0.8, 1); _hb.inputs['Emission Strength'].default_value = 40.0 if night else 0.0
+    TAIL = simple('pg1-taillight', (0.4, 0.02, 0.02), 0.3); _tb = TAIL.node_tree.nodes.get('Principled BSDF')
+    _tb.inputs['Emission Color'].default_value = (1.0, 0.05, 0.02, 1); _tb.inputs['Emission Strength'].default_value = 25.0 if night else 0.0
+    TRAFFIC = pg1_filler.Traffic(bpy, scene, CAMPOS, _roads, PAINT, HEAD, TAIL)
+    print(f'[cycles] scenery: {len(_lots)} low-rise blocks, {_nt} street trees, {len(TRAFFIC.cars)} cars on {len(_roads)} roads', flush=True)
+
 # Distance haze: the mist pass, in the shot's fog colour.
 vl = scene.view_layers[0]; vl.use_pass_mist = True
 world.mist_settings.start = 400 if night else 150; world.mist_settings.depth = 4300 if night else 5000; world.mist_settings.falloff = 'QUADRATIC'
@@ -735,6 +772,8 @@ if ANIM:
     for fr in ([int(round((total - 1) * meta.get('still_t', 0.66)))] if still else range(a_, b_)):
         t0 = time.time()
         set_camera(fr); set_dynamic(fr)
+        if TRAFFIC:
+            TRAFFIC.update(fr)
         if arg('--look'):
             # Test view: from --look-from (x,y,z, Blender) at the named object's centre.
             from mathutils import Vector
