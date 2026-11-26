@@ -393,11 +393,11 @@ def pool_material(color, strength):
     return m
 
 CROWN = crown_material()
-POOL = pool_material((1.0, 0.62, 0.32), 1.1 if night else 0.0)
+POOL = pool_material((1.0, 0.62, 0.32), 2.6 if night else 0.0)
 if meta.get('buildings'):
     sky_ob = pg1_buildings.build_skyline(bpy, meta['buildings'], [FACADE, TRIM, PLANT, AVLIGHT, CROWN])
     print(f"[cycles] skyline: {len(meta['buildings'])} buildings, {len(sky_ob.data.polygons)} faces", flush=True)
-ASPHALT = simple('pg1-wet-asphalt', (0.045, 0.044, 0.046), 0.7)
+ASPHALT = simple('pg1-wet-asphalt', (0.075, 0.068, 0.06), 0.7)
 
 def puddles(m, wet_share, wet_rough=0.08, dry_rough=0.72):
     """Wet ground in patches (puddles, damp lanes), the rest dry and matt: a
@@ -407,7 +407,8 @@ def puddles(m, wet_share, wet_rough=0.08, dry_rough=0.72):
     nz = nt.nodes.new('ShaderNodeTexNoise'); nz.inputs['Scale'].default_value = 0.035; nz.inputs['Detail'].default_value = 6; nz.inputs['Roughness'].default_value = 0.55
     nt.links.new(g.outputs['Position'], nz.inputs['Vector'])
     mr = nt.nodes.new('ShaderNodeMapRange')
-    lo = 0.5 + (0.5 - wet_share) * 0.35
+    # Noise below lo is wet: lo sits where about wet_share of the noise lies under it.
+    lo = 0.5 - (0.5 - wet_share) * 0.35
     mr.inputs['From Min'].default_value = lo - 0.03; mr.inputs['From Max'].default_value = lo + 0.03
     mr.inputs['To Min'].default_value = wet_rough; mr.inputs['To Max'].default_value = dry_rough
     nt.links.new(nz.outputs['Fac'], mr.inputs['Value']); nt.links.new(mr.outputs['Result'], b.inputs['Roughness'])
@@ -420,7 +421,7 @@ def puddles(m, wet_share, wet_rough=0.08, dry_rough=0.72):
     nt.links.new(dk.outputs['Result'], mul.inputs[7]); nt.links.new(mul.outputs[2], b.inputs['Base Color'])
 
 puddles(ASPHALT, 0.09 if rain else 0.03, wet_rough=0.22)
-ASPHALT.node_tree.nodes.get('Principled BSDF').inputs['Specular IOR Level'].default_value = 0.35
+ASPHALT.node_tree.nodes.get('Principled BSDF').inputs['Specular IOR Level'].default_value = 0.25
 if night:
     # Past the modelled city (about 3 km out) the suburbs go on to the horizon:
     # street lights and windows as small warm points on the ground.
@@ -449,8 +450,8 @@ if night:
     def near_line(v, period, half):
         return math_node(an, 'LESS_THAN', math_node(an, 'MULTIPLY', math_node(an, 'ABSOLUTE', math_node(an, 'SUBTRACT', math_node(an, 'FRACT', math_node(an, 'DIVIDE', v, period)), 0.5)), period), half)
     X, Y = sx.outputs['X'], sx.outputs['Y']
-    lamps = math_node(an, 'MAXIMUM', math_node(an, 'MULTIPLY', near_line(X, 90.0, 1.4), near_line(Y, 24.0, 1.4)), math_node(an, 'MULTIPLY', near_line(Y, 90.0, 1.4), near_line(X, 24.0, 1.4)))
-    street = math_node(an, 'MULTIPLY', math_node(an, 'MULTIPLY', lamps, far.outputs['Result']), 22.0)
+    lamps = math_node(an, 'MAXIMUM', math_node(an, 'MULTIPLY', near_line(X, 90.0, 0.9), near_line(Y, 24.0, 0.9)), math_node(an, 'MULTIPLY', near_line(Y, 90.0, 0.9), near_line(X, 24.0, 0.9)))
+    street = math_node(an, 'MULTIPLY', math_node(an, 'MULTIPLY', lamps, far.outputs['Result']), 12.0)
     em_all = math_node(an, 'MAXIMUM', m3.outputs[0], street)
     an.links.new(vcol.outputs['Color'], ab.inputs['Emission Color']); an.links.new(em_all, ab.inputs['Emission Strength'])
 WATER = simple('pg1-river', (0.003, 0.006, 0.01), 0.05)
@@ -607,7 +608,9 @@ wn.links.new(bg.outputs['Background'], wo.inputs['Surface'])
 # Haze as a real volume, 900 m deep over the city: lamps glow through it, the
 # distance fades into it and the city's light lifts it (a sodium glow at night);
 # above it the sky shows through.
-HAZE = float(arg('--haze', '0.00016'))
+# Night: no haze volume. Lit by moon and sky it laid a navy veil over the
+# streets, which read as standing water; distance fades in the mist pass instead.
+HAZE = float(arg('--haze', '0' if night else '0.00016'))
 if HAZE > 0:
     bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 450))
     hz = bpy.context.active_object; hz.name = 'pg1-haze'; hz.scale = (30000, 30000, 900)
@@ -615,7 +618,7 @@ if HAZE > 0:
     hn = hm.node_tree; hn.nodes.clear()
     pv = hn.nodes.new('ShaderNodeVolumePrincipled'); ho = hn.nodes.new('ShaderNodeOutputMaterial')
     pv.inputs['Density'].default_value = HAZE; pv.inputs['Anisotropy'].default_value = 0.4
-    pv.inputs['Color'].default_value = (0.86, 0.86, 0.9, 1) if night else (0.92, 0.94, 0.97, 1)
+    pv.inputs['Color'].default_value = (0.95, 0.82, 0.68, 1) if night else (0.92, 0.94, 0.97, 1)
     if night:
         pv.inputs['Emission Color'].default_value = (0.8, 0.62, 0.5, 1); pv.inputs['Emission Strength'].default_value = HAZE * 0.003
     hn.links.new(pv.outputs['Volume'], ho.inputs['Volume'])
@@ -703,16 +706,16 @@ if hasattr(scene.render, 'compositor_device'):
 
 # Distance haze: the mist pass, in the shot's fog colour.
 vl = scene.view_layers[0]; vl.use_pass_mist = True
-world.mist_settings.start = 150; world.mist_settings.depth = 5000; world.mist_settings.falloff = 'QUADRATIC'
+world.mist_settings.start = 400 if night else 150; world.mist_settings.depth = 4300 if night else 5000; world.mist_settings.falloff = 'QUADRATIC'
 # Blender 5 compositor: a node group as the scene's compositor.
 ct = bpy.data.node_groups.new('pg1-grade', 'CompositorNodeTree')
 ct.interface.new_socket('Image', in_out='OUTPUT', socket_type='NodeSocketColor')
 scene.compositing_node_group = ct
 rl = ct.nodes.new('CompositorNodeRLayers')
-mist_curve = ct.nodes.new('ShaderNodeMath'); mist_curve.operation = 'MULTIPLY'; mist_curve.inputs[1].default_value = float(arg('--mist', '0'))
+mist_curve = ct.nodes.new('ShaderNodeMath'); mist_curve.operation = 'MULTIPLY'; mist_curve.inputs[1].default_value = float(arg('--mist', '0.95' if night else '0'))
 ct.links.new(rl.outputs['Mist'], mist_curve.inputs[0])
 mix = ct.nodes.new('ShaderNodeMix'); mix.data_type = 'RGBA'; mix.blend_type = 'MIX'
-mix.inputs[7].default_value = (fc[0] * 0.6, fc[1] * 0.6, fc[2] * 0.7, 1) if night else (0.7, 0.75, 0.82, 1)
+mix.inputs[7].default_value = (0.035, 0.045, 0.085, 1) if night else (0.7, 0.75, 0.82, 1)
 ct.links.new(mist_curve.outputs[0], mix.inputs['Factor']); ct.links.new(rl.outputs['Image'], mix.inputs[6])
 glare = ct.nodes.new('CompositorNodeGlare')
 glare.inputs['Type'].default_value = 'Fog Glow'; glare.inputs['Quality'].default_value = 'High'
@@ -739,6 +742,19 @@ if ANIM:
             cen = sum((tgt.matrix_world @ Vector(c) for c in tgt.bound_box), Vector()) / 8
             frm = Vector([float(x) for x in arg('--look-from').split(',')]) + cen
             cams[0].location = frm; cams[0].rotation_euler = (cen - frm).to_track_quat('-Z', 'Y').to_euler()
+        if arg('--pick'):
+            # Debug: what lies under these image points (u,v in 0..1 from top-left; ';' between points).
+            from mathutils import Vector
+            from bpy_extras.view3d_utils import region_2d_to_vector_3d
+            bpy.context.view_layer.update(); dg = bpy.context.evaluated_depsgraph_get(); cam = cams[0]
+            fr_ = cam.data.view_frame(scene=scene)
+            for pt in arg('--pick').split(';'):
+                u, v = [float(x) for x in pt.split(',')]
+                tl, tr, br, bl_ = fr_[3], fr_[0], fr_[1], fr_[2]
+                local = tl + (tr - tl) * u + (bl_ - tl) * v
+                d = (cam.matrix_world.to_3x3() @ local).normalized()
+                hit, loc, nrm, idx, ob, mx = scene.ray_cast(dg, cam.matrix_world.translation, d)
+                print('[pick]', pt, ob.name if ob else None, [m.name for m in ob.data.materials][:2] if ob else None, tuple(round(c, 1) for c in loc), flush=True)
         scene.render.filepath = os.path.join(OUT, f'{shot}-still.png' if still else f'frame_{fr + 1:05d}.png')
         bpy.ops.render.render(write_still=True)
         print(f'[cycles] {shot} frame {fr + 1}/{total} in {time.time() - t0:.0f} s', flush=True)
