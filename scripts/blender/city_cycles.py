@@ -11,6 +11,7 @@
 # night sky; distance haze from the mist pass in the shot's fog colour, and a
 # soft glow on bright lights. Everything else keeps the exported colours.
 
+import re
 import bpy, json, math, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import pg1_buildings, pg1_vehicles
@@ -60,6 +61,54 @@ if ANIM:
     dyn_data = np.fromfile(os.path.join(IN, 'dyn.bin'), dtype=np.float32)
     fpf = meta['floats_per_frame']
     dyn_data = dyn_data.reshape(-1, fpf) if fpf else np.zeros((len(meta['frames']), 0), dtype=np.float32)
+    # Clearance: nothing that flies may pass through a building. The live view
+    # has no collision, so a drone's path can cut a corner of a tower; here it
+    # rises over the roof instead, eased in and out over about two thirds of a
+    # second so it reads as flying, not jumping.
+    FLIERS = re.compile(r'crowd|drone|patrol|probe|courier|helicopter|seagull|warden|scanner')
+    bl = meta.get('buildings') or []
+    if bl and fpf:
+        bx = np.array([b['x'] for b in bl]); bz = np.array([b['z'] for b in bl]); by0 = np.array([b['y'] for b in bl])
+        btop = by0 + np.array([b['h'] * (1.13 if b['kind'] == 'taper' else 1.0) for b in bl])
+        bw = np.array([(min(b['w'], b['d']) if b['kind'] == 'twist' else b['w']) / 2 for b in bl]) + 2.5
+        bd = np.array([(min(b['w'], b['d']) if b['kind'] == 'twist' else b['d']) / 2 for b in bl]) + 2.5
+        cr, sr = np.cos([b['ry'] for b in bl]), np.sin([b['ry'] for b in bl])
+        K = 20; taper = 0.5 * (1 + np.cos(np.pi * np.arange(-K, K + 1) / K))
+        nf = dyn_data.shape[0]; slots = []
+        for d in meta['dynamic']:
+            if not FLIERS.search(d['name']):
+                continue
+            for k in range(d['slots']):
+                o0 = d['offset'] + k * 16
+                if dyn_data[:, o0 + 13].max() < 6 or not np.abs(dyn_data[:, o0:o0 + 16]).any():
+                    continue
+                tx, ty, tz = dyn_data[:, o0 + 12], dyn_data[:, o0 + 13], dyn_data[:, o0 + 14]
+                need = np.zeros(nf)
+                for f in range(nf):
+                    if ty[f] < 6:
+                        continue
+                    dx, dz = tx[f] - bx, tz[f] - bz
+                    lx, lz = dx * cr - dz * sr, dx * sr + dz * cr
+                    hit = (np.abs(lx) < bw) & (np.abs(lz) < bd) & (ty[f] > by0 - 2) & (ty[f] < btop + 2.5)
+                    if hit.any():
+                        need[f] = (btop[hit] + 2.5 - ty[f]).max()
+                pad = np.pad(need, K)
+                slots.append((o0, np.array([(pad[f:f + 2 * K + 1] * taper).max() for f in range(nf)])))
+        moved = 0
+        if slots:
+            # A drone is several meshes (body, arms, lights): every part within 5 m
+            # of another rises by the same amount, so nothing comes apart.
+            L = np.array([l for _, l in slots]); O = [o for o, _ in slots]; Lh = L.copy()
+            for f in range(nf):
+                if not L[:, f].any():
+                    continue
+                P = np.array([[dyn_data[f, o + 12], dyn_data[f, o + 13], dyn_data[f, o + 14]] for o in O])
+                near = np.linalg.norm(P[:, None, :] - P[None, :, :], axis=2) < 5.0
+                Lh[:, f] = np.where(near, L[None, :, f], 0).max(axis=1)
+            for i, o in enumerate(O):
+                if Lh[i].any():
+                    dyn_data[:, o + 13] += Lh[i].astype(np.float32); moved += 1
+        print(f'[cycles] clearance: {moved} fliers lifted over roofs they would have crossed', flush=True)
     by_idx = {}
     for o in list(scene.objects):
         if o.type == 'MESH' and o.name.startswith('dyn~'):
@@ -150,6 +199,15 @@ for o in list(scene.objects):
         ca.data.foreach_set('color', np.tile(raw.reshape(-1, 4).mean(axis=0), (len(me.vertices), 1)).ravel())
     o.data = me; o.matrix_world = __import__('mathutils').Matrix.Identity(4)
     print(f'[cycles] crane mast as a lattice: {side:.2f} m x {zmax - zmin:.1f} m, turned {math.degrees(th):.1f} deg', flush=True)
+    # A camera path through the crane's reach (the jib swings 48 m round the
+    # mast): the crane is left out of that shot rather than flown through.
+    campos = np.array([(C @ np.array(c['matrix'], dtype=np.float64).reshape(4, 4).T)[:3, 3] for c in meta.get('frames') or []]).reshape(-1, 3)
+    hd = np.hypot(campos[:, 0] - ctr[0], campos[:, 1] - ctr[1])
+    if len(hd) and ((hd < 50) & (campos[:, 2] < zmax + 10)).any():
+        for o2 in list(scene.objects):
+            if 'construction-crane' in o2.name:
+                o2.hide_render = True
+        print(f'[cycles] crane left out: the camera passes {hd.min():.0f} m from it', flush=True)
 
 def set_dynamic(fr):
     for d, ob, base3, nv in DYN:
@@ -228,7 +286,12 @@ def facade_material():
     cu = math_node(nt, 'DIVIDE', along, cell); cv = math_node(nt, 'DIVIDE', P.outputs['Z'], 3.6)
     fu, fv = math_node(nt, 'FRACT', cu), math_node(nt, 'FRACT', cv)
     inside = lambda f, lo, hi: math_node(nt, 'MULTIPLY', math_node(nt, 'GREATER_THAN', f, lo), math_node(nt, 'LESS_THAN', f, hi))
-    win = math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', inside(fu, u_lo, u_hi), inside(fv, v_lo, v_hi)), wall)
+    win_up = math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', inside(fu, u_lo, u_hi), inside(fv, v_lo, v_hi)), wall)
+    # The ground floor: shop fronts (wide glass, lit late), from the base height in the vertex colour.
+    rel = math_node(nt, 'SUBTRACT', P.outputs['Z'], math_node(nt, 'MULTIPLY', sc.outputs['Blue'], 400.0))
+    shop = math_node(nt, 'MULTIPLY', math_node(nt, 'LESS_THAN', rel, 4.4), math_node(nt, 'GREATER_THAN', rel, -0.5))
+    shopwin = math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', inside(math_node(nt, 'FRACT', math_node(nt, 'DIVIDE', along, 6.0)), 0.06, 0.94), inside(rel, 0.35, 3.5)), wall)
+    win = math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', win_up, math_node(nt, 'SUBTRACT', 1.0, shop)), math_node(nt, 'MULTIPLY', shopwin, shop))
     # Each window: white noise of (column, storey, building seed).
     cellv = node(nt, 'ShaderNodeCombineXYZ', -300, -150)
     # Offices light in runs along a floor (glass: about 6 panes), homes window by window.
@@ -237,17 +300,17 @@ def facade_material():
     wn = node(nt, 'ShaderNodeTexWhiteNoise', -100, -150); wn.noise_dimensions = '3D'; link(nt, cellv.outputs['Vector'], wn.inputs['Vector'])
     # Each building its own occupancy (0.2 to 0.6 of windows lit at night).
     bn = node(nt, 'ShaderNodeTexWhiteNoise', -300, -350); bn.noise_dimensions = '1D'; link(nt, math_node(nt, 'MULTIPLY', seed, 997.0), bn.inputs['W'])
-    occ = math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', bn.outputs['Value'], 0.35), 0.15)
-    lit = math_node(nt, 'LESS_THAN', wn.outputs['Value'], occ if night else 0.004)
+    occ = math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', bn.outputs['Value'], 0.4), 0.3)
+    lit = math_node(nt, 'LESS_THAN', wn.outputs['Value'], math_node(nt, 'ADD', occ, math_node(nt, 'MULTIPLY', shop, 0.45)) if night else 0.004)
     litw = math_node(nt, 'MULTIPLY', lit, win)
     ramp_l = node(nt, 'ShaderNodeValToRGB', 300, -250); link(nt, wn.outputs['Color'], ramp_l.inputs['Fac'])
-    el = ramp_l.color_ramp.elements; el[0].color = (1.0, 0.58, 0.28, 1); el[1].color = (1.0, 0.86, 0.66, 1); el.new(0.82).color = (0.72, 0.84, 1.0, 1)
+    el = ramp_l.color_ramp.elements; el[0].color = (1.0, 0.42, 0.14, 1); el[1].color = (0.45, 0.68, 1.0, 1); el.new(0.3).color = (1.0, 0.62, 0.3, 1); el.new(0.5).color = (1.0, 0.84, 0.6, 1); el.new(0.66).color = (0.92, 0.95, 1.0, 1); el.new(0.86).color = (0.6, 0.78, 1.0, 1); el.new(0.96).color = (0.3, 0.5, 1.0, 1)
     # Interior depth: brighter at the window top (ceiling lights), blinds part-way on some.
     grad = math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', fv, 0.9), 0.4)
     cellw = node(nt, 'ShaderNodeCombineXYZ', -300, 400); link(nt, math_node(nt, 'FLOOR', cu), cellw.inputs['X']); link(nt, math_node(nt, 'FLOOR', cv), cellw.inputs['Y']); link(nt, math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', seed, 997.0), 0.5), cellw.inputs['Z'])
     wn2 = node(nt, 'ShaderNodeTexWhiteNoise', -100, 400); wn2.noise_dimensions = '3D'; link(nt, cellw.outputs['Vector'], wn2.inputs['Vector'])
     var = node(nt, 'ShaderNodeMapRange', 300, 250); link(nt, wn2.outputs['Value'], var.inputs['Value']); var.inputs['To Min'].default_value = 0.35
-    strength = math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', litw, var.outputs['Result']), grad), 1.5 if night else 0.0)
+    strength = math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', litw, var.outputs['Result']), math_node(nt, 'ADD', grad, math_node(nt, 'MULTIPLY', shop, 1.6))), 1.9 if night else 0.0)
     wallc = lookup(nt, style, STYLE_WALL, 300, -700)
     # Slight weathering on walls: large noise darkens and lightens them.
     wnz = node(nt, 'ShaderNodeTexNoise', 300, -950); wnz.inputs['Scale'].default_value = 0.08; link(nt, geo.outputs['Position'], wnz.inputs['Vector'])
@@ -256,7 +319,19 @@ def facade_material():
     bsdf = node(nt, 'ShaderNodeBsdfPrincipled', 1300, 0)
     basec = node(nt, 'ShaderNodeMix', 900, -300); basec.data_type = 'RGBA'
     link(nt, win, basec.inputs['Factor']); link(nt, weather.outputs[2], basec.inputs[6]); basec.inputs[7].default_value = (0.004, 0.006, 0.01, 1)
-    link(nt, basec.outputs[2], bsdf.inputs['Base Color'])
+    # Roofs: a light membrane and gravel, weathered, with skylights and roof
+    # lights glowing here and there (seen from above, bare dark roofs read as empty).
+    roof = math_node(nt, 'GREATER_THAN', N.outputs['Z'], 0.5)
+    rnz = node(nt, 'ShaderNodeTexNoise', 300, -1250); rnz.inputs['Scale'].default_value = 0.18; rnz.inputs['Detail'].default_value = 8; link(nt, geo.outputs['Position'], rnz.inputs['Vector'])
+    rr = node(nt, 'ShaderNodeValToRGB', 550, -1250); link(nt, rnz.outputs['Fac'], rr.inputs['Fac'])
+    rr.color_ramp.elements[0].color = (0.07, 0.07, 0.075, 1); rr.color_ramp.elements[1].color = (0.24, 0.23, 0.22, 1)
+    rmix = node(nt, 'ShaderNodeMix', 1100, -300); rmix.data_type = 'RGBA'; link(nt, roof, rmix.inputs['Factor'])
+    link(nt, basec.outputs[2], rmix.inputs[6]); link(nt, rr.outputs['Color'], rmix.inputs[7])
+    link(nt, rmix.outputs[2], bsdf.inputs['Base Color'])
+    svs = node(nt, 'ShaderNodeVectorMath', 300, -1450, operation='SCALE'); svs.inputs['Scale'].default_value = 1 / 7.0; link(nt, geo.outputs['Position'], svs.inputs[0])
+    svr = node(nt, 'ShaderNodeTexVoronoi', 550, -1450); link(nt, svs.outputs['Vector'], svr.inputs['Vector'])
+    swn = node(nt, 'ShaderNodeTexWhiteNoise', 750, -1450); swn.noise_dimensions = '3D'; link(nt, svr.outputs['Position'], swn.inputs['Vector'])
+    skyl = math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', math_node(nt, 'LESS_THAN', svr.outputs['Distance'], 0.11), math_node(nt, 'LESS_THAN', swn.outputs['Value'], 0.3)), roof)
     glassy = math_node(nt, 'LESS_THAN', style, 0.5 / 8)
     rgh = node(nt, 'ShaderNodeMix', 900, -500); rgh.data_type = 'FLOAT'; link(nt, win, rgh.inputs['Factor'])
     link(nt, math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', glassy, -0.55), 0.7), rgh.inputs['A']); rgh.inputs['B'].default_value = 0.03
@@ -266,7 +341,7 @@ def facade_material():
     link(nt, spec.outputs['Result'], bsdf.inputs['Specular IOR Level'])
     link(nt, math_node(nt, 'MULTIPLY', glassy, 0.3), bsdf.inputs['Metallic'])
     link(nt, ramp_l.outputs['Color'], bsdf.inputs['Emission Color'])
-    link(nt, strength, bsdf.inputs['Emission Strength'])
+    link(nt, math_node(nt, 'ADD', strength, math_node(nt, 'MULTIPLY', skyl, 2.2 if night else 0.0)), bsdf.inputs['Emission Strength'])
     link(nt, bsdf.outputs['BSDF'], out.inputs['Surface'])
     return m
 
@@ -282,17 +357,77 @@ PLANT = simple('pg1-plant', (0.09, 0.095, 0.1), 0.45, metal=0.6)
 AVLIGHT = simple('pg1-aviation-light', (0.3, 0.02, 0.02), 0.4)
 _b = AVLIGHT.node_tree.nodes.get('Principled BSDF'); _b.inputs['Emission Color'].default_value = (1.0, 0.05, 0.03, 1); _b.inputs['Emission Strength'].default_value = 40.0 if night else 0.0
 AVLIGHT['pg1_boosted'] = 1
+
+def crown_material():
+    """Tower-top LED bands: one colour per building (from its seed), as real skylines are lit."""
+    m = bpy.data.materials.new('pg1-crown'); m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
+    out = node(nt, 'ShaderNodeOutputMaterial', 600, 0)
+    attr = node(nt, 'ShaderNodeVertexColor', -600, 0); attr.layer_name = 'Color'
+    sc = node(nt, 'ShaderNodeSeparateColor', -400, 0); link(nt, attr.outputs['Color'], sc.inputs['Color'])
+    wn = node(nt, 'ShaderNodeTexWhiteNoise', -200, 0); wn.noise_dimensions = '1D'; link(nt, math_node(nt, 'MULTIPLY', sc.outputs['Red'], 613.0), wn.inputs['W'])
+    r = node(nt, 'ShaderNodeValToRGB', 0, 0); r.color_ramp.interpolation = 'CONSTANT'; link(nt, wn.outputs['Value'], r.inputs['Fac'])
+    el = r.color_ramp.elements
+    pal = [(0.85, 0.92, 1.0), (1.0, 0.55, 0.16), (0.1, 0.85, 0.8), (0.95, 0.25, 0.65), (1.0, 0.82, 0.55), (0.25, 0.5, 1.0), (0.85, 0.92, 1.0)]
+    el[0].position = 0.0; el[0].color = (*pal[0], 1); el[1].position = 1 / 7; el[1].color = (*pal[1], 1)
+    for k, c in enumerate(pal[2:], start=2):
+        el.new(k / 7).color = (*c, 1)
+    em = node(nt, 'ShaderNodeEmission', 300, 0); link(nt, r.outputs['Color'], em.inputs['Color']); em.inputs['Strength'].default_value = 9.0 if night else 0.6
+    link(nt, em.outputs['Emission'], out.inputs['Surface'])
+    m['pg1_boosted'] = 1
+    return m
+
+def pool_material(color, strength):
+    """The live view's lamp pools as light on the ground: a soft disc of emission over the street."""
+    m = bpy.data.materials.new('pg1-light-pool'); m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
+    out = node(nt, 'ShaderNodeOutputMaterial', 800, 0)
+    uv = node(nt, 'ShaderNodeUVMap', -800, 0)
+    sub = node(nt, 'ShaderNodeVectorMath', -600, 0, operation='SUBTRACT'); link(nt, uv.outputs['UV'], sub.inputs[0]); sub.inputs[1].default_value = (0.5, 0.5, 0)
+    ln = node(nt, 'ShaderNodeVectorMath', -400, 0, operation='LENGTH'); link(nt, sub.outputs['Vector'], ln.inputs[0])
+    fall = math_node(nt, 'POWER', math_node(nt, 'MAXIMUM', math_node(nt, 'SUBTRACT', 1.0, math_node(nt, 'MULTIPLY', ln.outputs['Value'], 2.0)), 0.0), 2.2)
+    em = node(nt, 'ShaderNodeEmission', 200, 100); em.inputs['Color'].default_value = (*color, 1)
+    link(nt, math_node(nt, 'MULTIPLY', fall, strength), em.inputs['Strength'])
+    tr = node(nt, 'ShaderNodeBsdfTransparent', 200, -100)
+    add = node(nt, 'ShaderNodeAddShader', 500, 0); link(nt, em.outputs['Emission'], add.inputs[0]); link(nt, tr.outputs['BSDF'], add.inputs[1])
+    link(nt, add.outputs['Shader'], out.inputs['Surface'])
+    m['pg1_boosted'] = 1
+    return m
+
+CROWN = crown_material()
+POOL = pool_material((1.0, 0.62, 0.32), 1.1 if night else 0.0)
 if meta.get('buildings'):
-    sky_ob = pg1_buildings.build_skyline(bpy, meta['buildings'], [FACADE, TRIM, PLANT, AVLIGHT])
+    sky_ob = pg1_buildings.build_skyline(bpy, meta['buildings'], [FACADE, TRIM, PLANT, AVLIGHT, CROWN])
     print(f"[cycles] skyline: {len(meta['buildings'])} buildings, {len(sky_ob.data.polygons)} faces", flush=True)
-ASPHALT = simple('pg1-wet-asphalt', (0.025, 0.025, 0.028), 0.18 if rain else 0.45)
+ASPHALT = simple('pg1-wet-asphalt', (0.045, 0.044, 0.046), 0.7)
+
+def puddles(m, wet_share, wet_rough=0.08, dry_rough=0.72):
+    """Wet ground in patches (puddles, damp lanes), the rest dry and matt: a
+    uniformly glossy ground reads as standing water, as if the city were flooded."""
+    nt = m.node_tree; b = nt.nodes.get('Principled BSDF')
+    g = nt.nodes.new('ShaderNodeNewGeometry')
+    nz = nt.nodes.new('ShaderNodeTexNoise'); nz.inputs['Scale'].default_value = 0.035; nz.inputs['Detail'].default_value = 6; nz.inputs['Roughness'].default_value = 0.55
+    nt.links.new(g.outputs['Position'], nz.inputs['Vector'])
+    mr = nt.nodes.new('ShaderNodeMapRange')
+    lo = 0.5 + (0.5 - wet_share) * 0.35
+    mr.inputs['From Min'].default_value = lo - 0.03; mr.inputs['From Max'].default_value = lo + 0.03
+    mr.inputs['To Min'].default_value = wet_rough; mr.inputs['To Max'].default_value = dry_rough
+    nt.links.new(nz.outputs['Fac'], mr.inputs['Value']); nt.links.new(mr.outputs['Result'], b.inputs['Roughness'])
+    # Wet patches are darker (water fills the texture).
+    dk = nt.nodes.new('ShaderNodeMapRange'); dk.inputs['From Min'].default_value = wet_rough; dk.inputs['From Max'].default_value = dry_rough
+    dk.inputs['To Min'].default_value = 0.55; dk.inputs['To Max'].default_value = 1.0
+    nt.links.new(mr.outputs['Result'], dk.inputs['Value'])
+    mul = nt.nodes.new('ShaderNodeMix'); mul.data_type = 'RGBA'; mul.blend_type = 'MULTIPLY'; mul.inputs['Factor'].default_value = 1.0
+    mul.inputs[6].default_value = b.inputs['Base Color'].default_value[:]
+    nt.links.new(dk.outputs['Result'], mul.inputs[7]); nt.links.new(mul.outputs[2], b.inputs['Base Color'])
+
+puddles(ASPHALT, 0.09 if rain else 0.03, wet_rough=0.22)
+ASPHALT.node_tree.nodes.get('Principled BSDF').inputs['Specular IOR Level'].default_value = 0.35
 if night:
     # Past the modelled city (about 3 km out) the suburbs go on to the horizon:
     # street lights and windows as small warm points on the ground.
     an = ASPHALT.node_tree; ab = an.nodes.get('Principled BSDF')
     ag = an.nodes.new('ShaderNodeNewGeometry'); al = an.nodes.new('ShaderNodeVectorMath'); al.operation = 'LENGTH'
     an.links.new(ag.outputs['Position'], al.inputs[0])
-    far = an.nodes.new('ShaderNodeMapRange'); far.inputs['From Min'].default_value = 3000; far.inputs['From Max'].default_value = 4200
+    far = an.nodes.new('ShaderNodeMapRange'); far.inputs['From Min'].default_value = 700; far.inputs['From Max'].default_value = 1500
     an.links.new(al.outputs['Value'], far.inputs['Value'])
     vs_ = an.nodes.new('ShaderNodeVectorMath'); vs_.operation = 'SCALE'; vs_.inputs['Scale'].default_value = 1 / 18.0
     an.links.new(ag.outputs['Position'], vs_.inputs[0])
@@ -309,7 +444,15 @@ if night:
     m3 = an.nodes.new('ShaderNodeMath'); m3.operation = 'MULTIPLY'; m3.inputs[1].default_value = 30.0; an.links.new(m2.outputs[0], m3.inputs[0])
     vcol = an.nodes.new('ShaderNodeValToRGB'); an.links.new(vr.outputs['Color'], vcol.inputs['Fac'])
     vcol.color_ramp.elements[0].color = (1.0, 0.55, 0.22, 1); vcol.color_ramp.elements[1].color = (1.0, 0.85, 0.65, 1)
-    an.links.new(vcol.outputs['Color'], ab.inputs['Emission Color']); an.links.new(m3.outputs[0], ab.inputs['Emission Strength'])
+    # Streets out there too: a grid every 90 m, a lamp every 24 m along each.
+    sx = an.nodes.new('ShaderNodeSeparateXYZ'); an.links.new(ag.outputs['Position'], sx.inputs['Vector'])
+    def near_line(v, period, half):
+        return math_node(an, 'LESS_THAN', math_node(an, 'MULTIPLY', math_node(an, 'ABSOLUTE', math_node(an, 'SUBTRACT', math_node(an, 'FRACT', math_node(an, 'DIVIDE', v, period)), 0.5)), period), half)
+    X, Y = sx.outputs['X'], sx.outputs['Y']
+    lamps = math_node(an, 'MAXIMUM', math_node(an, 'MULTIPLY', near_line(X, 90.0, 1.4), near_line(Y, 24.0, 1.4)), math_node(an, 'MULTIPLY', near_line(Y, 90.0, 1.4), near_line(X, 24.0, 1.4)))
+    street = math_node(an, 'MULTIPLY', math_node(an, 'MULTIPLY', lamps, far.outputs['Result']), 22.0)
+    em_all = math_node(an, 'MAXIMUM', m3.outputs[0], street)
+    an.links.new(vcol.outputs['Color'], ab.inputs['Emission Color']); an.links.new(em_all, ab.inputs['Emission Strength'])
 WATER = simple('pg1-river', (0.003, 0.006, 0.01), 0.05)
 # Ripples: two scales of noise as a bump, so the river breaks up reflections as real water does.
 _wn = WATER.node_tree; _wb = _wn.nodes.get('Principled BSDF')
@@ -322,7 +465,22 @@ _wn.links.new(_wz.outputs['Fac'], _wbump.inputs['Height']); _wn.links.new(_wbump
 _wb.inputs['Specular IOR Level'].default_value = 0.5
 GLASS = simple('pg1-glass', (0.8, 0.85, 0.9), 0.05)
 _gb = GLASS.node_tree.nodes.get('Principled BSDF'); _gb.inputs['Transmission Weight'].default_value = 0.9
-PAVING = simple('pg1-paving', (0.07, 0.07, 0.075), 0.3 if rain else 0.6)
+GRASS = simple('pg1-grass', (0.025, 0.06, 0.018), 0.9)
+_gt = GRASS.node_tree; _gb = _gt.nodes.get('Principled BSDF'); _gg = _gt.nodes.new('ShaderNodeNewGeometry')
+_gn = _gt.nodes.new('ShaderNodeTexNoise'); _gn.inputs['Scale'].default_value = 0.6; _gn.inputs['Detail'].default_value = 10; _gt.links.new(_gg.outputs['Position'], _gn.inputs['Vector'])
+_gr = _gt.nodes.new('ShaderNodeValToRGB'); _gt.links.new(_gn.outputs['Fac'], _gr.inputs['Fac'])
+_gr.color_ramp.elements[0].color = (0.015, 0.035, 0.01, 1); _gr.color_ramp.elements[1].color = (0.05, 0.09, 0.025, 1); _gt.links.new(_gr.outputs['Color'], _gb.inputs['Base Color'])
+_gb.inputs['Sheen Weight'].default_value = 0.6; _gb.inputs['Sheen Tint'].default_value = (0.4, 0.7, 0.3, 1)
+_gbump = _gt.nodes.new('ShaderNodeBump'); _gbump.inputs['Strength'].default_value = 0.4; _gt.links.new(_gn.outputs['Fac'], _gbump.inputs['Height']); _gt.links.new(_gbump.outputs['Normal'], _gb.inputs['Normal'])
+LEAVES = simple('pg1-leaves', (0.03, 0.07, 0.02), 0.75)
+_lt = LEAVES.node_tree; _lb = _lt.nodes.get('Principled BSDF'); _lg = _lt.nodes.new('ShaderNodeNewGeometry')
+_ln = _lt.nodes.new('ShaderNodeTexNoise'); _ln.inputs['Scale'].default_value = 2.5; _ln.inputs['Detail'].default_value = 6; _lt.links.new(_lg.outputs['Position'], _ln.inputs['Vector'])
+_lr = _lt.nodes.new('ShaderNodeValToRGB'); _lt.links.new(_ln.outputs['Fac'], _lr.inputs['Fac'])
+_lr.color_ramp.elements[0].color = (0.012, 0.03, 0.008, 1); _lr.color_ramp.elements[1].color = (0.06, 0.11, 0.03, 1); _lt.links.new(_lr.outputs['Color'], _lb.inputs['Base Color'])
+_lb.inputs['Subsurface Weight'].default_value = 0.15
+_lbump = _lt.nodes.new('ShaderNodeBump'); _lbump.inputs['Strength'].default_value = 0.8; _lt.links.new(_ln.outputs['Fac'], _lbump.inputs['Height']); _lt.links.new(_lbump.outputs['Normal'], _lb.inputs['Normal'])
+PAVING = simple('pg1-paving', (0.11, 0.105, 0.1), 0.7)
+puddles(PAVING, 0.08 if rain else 0.02, wet_rough=0.25, dry_rough=0.78)
 
 # The river: the live view draws it with its own mirror shader (left out of
 # the export), so Cycles gets real water here: three.js RIVER z 120, half 45,
@@ -347,6 +505,10 @@ for o in list(scene.objects):
         assign(o, FACADE); counts['facade'] = counts.get('facade', 0) + 1
     elif base in ('ground', 'road', 'puddles'):
         assign(o, ASPHALT)
+    elif base == 'tower-beacon':
+        # The live view's 4.4 m beacon reads as a white ball close up: a smaller lamp.
+        co = np.empty(len(o.data.vertices) * 3); o.data.vertices.foreach_get('co', co); co = co.reshape(-1, 3)
+        cen = co.mean(axis=0); o.data.vertices.foreach_set('co', (cen + (co - cen) * 0.45).ravel()); o.data.update()
     elif base == 'construction-crane-light':
         # The live view's 1.8 m white ball on the crane top: a small red aviation light.
         co = np.empty(len(o.data.vertices) * 3); o.data.vertices.foreach_get('co', co); co = co.reshape(-1, 3)
@@ -354,8 +516,15 @@ for o in list(scene.objects):
         assign(o, AVLIGHT); continue
     elif base in ('river',):
         assign(o, WATER)
+    elif base in ('park', 'roof-gardens', 'grass', 'verges'):
+        assign(o, GRASS)
+    elif base in ('tree-crowns', 'shop-planters') or base.startswith('shop-planters'):
+        assign(o, LEAVES)
     elif base in ('pavements', 'plaza', 'kerbs'):
         assign(o, PAVING)
+    elif base in ('lamp-pools', 'street-light-pools') and night:
+        # Street lighting: the pools as warm light on the street (the wet asphalt reflects the lamp heads too).
+        assign(o, POOL); o.visible_shadow = False; counts['pools'] = counts.get('pools', 0) + 1; continue
     elif base in ('lamp-pools', 'street-light-pools', 'boat-light-pools', 'wet-road-glare', 'wet-road-tail-glare', 'road-spray', 'boat-wakes', 'tower-beacon-halo'):
         # Fake light pools and glows from the live view: Cycles lights the ground itself.
         o.hide_render = True; counts['hidden'] = counts.get('hidden', 0) + 1
@@ -393,7 +562,7 @@ for o in list(scene.objects):
             em_linked = b.inputs['Emission Color'].is_linked
             # Only the live view's unlit lamps (MeshBasic): painted parts keep their own small glow.
             if st > 0 and m.name.startswith('MeshBasicMaterial') and (em_linked or max(col[0], col[1], col[2]) > 0.05) and not m.get('pg1_boosted'):
-                b.inputs['Emission Strength'].default_value = st * (6.0 if night else 1.5); m['pg1_boosted'] = 1
+                b.inputs['Emission Strength'].default_value = st * ((14.0 if base in ('car-lights', 'buses', 'taxi-roof-signs', 'tram') else 6.0) if night else 1.5); m['pg1_boosted'] = 1
 
 # Real lights at the street lamps would be thousands; the lamp heads glow
 # and light the wet street by reflection. A dim moon and the sky do the rest.
@@ -409,9 +578,9 @@ fog = meta.get('fog') or {'color': [0.2, 0.24, 0.36], 'density': 0.0009}
 fc = fog['color']
 if night:
     # Night: the horizon in the fog colour, deep blue overhead.
-    ramp.color_ramp.elements[0].color = (fc[0] * 0.35, fc[1] * 0.35, fc[2] * 0.42, 1)
+    ramp.color_ramp.elements[0].color = (0.035, 0.045, 0.085, 1)
     ramp.color_ramp.elements[0].position = 0.5
-    ramp.color_ramp.elements[1].color = (0.002, 0.004, 0.012, 1)
+    ramp.color_ramp.elements[1].color = (0.004, 0.01, 0.04, 1)
     ramp.color_ramp.elements[1].position = 0.75
     bg.inputs['Strength'].default_value = 1.0
 else:
@@ -438,7 +607,7 @@ wn.links.new(bg.outputs['Background'], wo.inputs['Surface'])
 # Haze as a real volume, 900 m deep over the city: lamps glow through it, the
 # distance fades into it and the city's light lifts it (a sodium glow at night);
 # above it the sky shows through.
-HAZE = float(arg('--haze', '0.00028'))
+HAZE = float(arg('--haze', '0.00016'))
 if HAZE > 0:
     bpy.ops.mesh.primitive_cube_add(size=1, location=(0, 0, 450))
     hz = bpy.context.active_object; hz.name = 'pg1-haze'; hz.scale = (30000, 30000, 900)
@@ -446,9 +615,9 @@ if HAZE > 0:
     hn = hm.node_tree; hn.nodes.clear()
     pv = hn.nodes.new('ShaderNodeVolumePrincipled'); ho = hn.nodes.new('ShaderNodeOutputMaterial')
     pv.inputs['Density'].default_value = HAZE; pv.inputs['Anisotropy'].default_value = 0.4
-    pv.inputs['Color'].default_value = (0.8, 0.84, 0.95, 1) if night else (0.92, 0.94, 0.97, 1)
+    pv.inputs['Color'].default_value = (0.86, 0.86, 0.9, 1) if night else (0.92, 0.94, 0.97, 1)
     if night:
-        pv.inputs['Emission Color'].default_value = (0.9, 0.6, 0.4, 1); pv.inputs['Emission Strength'].default_value = HAZE * 0.005
+        pv.inputs['Emission Color'].default_value = (0.8, 0.62, 0.5, 1); pv.inputs['Emission Strength'].default_value = HAZE * 0.003
     hn.links.new(pv.outputs['Volume'], ho.inputs['Volume'])
     hz.data.materials.append(hm)
 sun = bpy.data.lights.new('pg1-moon' if night else 'pg1-sun', 'SUN')
@@ -483,7 +652,7 @@ if CLOUDS:
     df.inputs['Base Color'].default_value = (0.5, 0.52, 0.58, 1) if night else (0.95, 0.95, 0.97, 1); df.inputs['Roughness'].default_value = 1.0
     if night:
         # Lit from below by the city: a warm glow on the cloud base.
-        df.inputs['Emission Color'].default_value = (0.9, 0.55, 0.32, 1); df.inputs['Emission Strength'].default_value = 0.16
+        df.inputs['Emission Color'].default_value = (0.75, 0.55, 0.45, 1); df.inputs['Emission Strength'].default_value = 0.07
     mx = cn.nodes.new('ShaderNodeMixShader')
     cn.links.new(cr.outputs['Color'], mx.inputs['Fac']); cn.links.new(tr.outputs['BSDF'], mx.inputs[1]); cn.links.new(df.outputs['BSDF'], mx.inputs[2])
     cn.links.new(mx.outputs['Shader'], co.inputs['Surface'])
@@ -523,9 +692,10 @@ RES = arg('--res')
 scene.render.resolution_x, scene.render.resolution_y = (int(v) for v in RES.split('x')) if RES else meta['size']
 scene.render.resolution_percentage = SCALE
 scene.render.film_transparent = False
-scene.view_settings.view_transform = 'AgX'
-scene.view_settings.look = 'AgX - Medium High Contrast'
-scene.view_settings.exposure = 0.3 if night else 0.0
+scene.view_settings.view_transform = arg('--view', 'Khronos PBR Neutral' if night else 'AgX')
+if scene.view_settings.view_transform == 'AgX':
+    scene.view_settings.look = arg('--look-grade', 'AgX - Punchy')
+scene.view_settings.exposure = float(arg('--exposure', '0.3' if night else '0.0'))
 scene.render.image_settings.file_format = 'PNG'
 # The compositor on the CPU: a runner has no display for a GPU context.
 if hasattr(scene.render, 'compositor_device'):

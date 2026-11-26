@@ -13,12 +13,13 @@
 #   1 trim (bands, cornices, parapets)
 #   2 roof plant (metal)
 #   3 aviation light (red emission)
+#   4 crown light (an LED band near the top; colour from the seed in the shader)
 
 import math, random
 import bmesh
 
 GLASS, STONE, BRICK, METAL, GEORGIAN, PODIUM = range(6)
-FACADE, TRIM, PLANT, LIGHT = range(4)
+FACADE, TRIM, PLANT, LIGHT, CROWN = range(5)
 
 
 def _box(bm, col, cx, cy, z0, w, d, h, mat, rot=0.0):
@@ -114,7 +115,8 @@ def build(bm, col, b):
     rnd = random.Random(int(b['seed'] * 1000) + int(b['x'] * 7) + int(b['z'] * 13))
     cx, cy, z0 = b['x'], -b['z'], b['y']
     w, d, h, rot, style, kind = b['w'], b['d'], b['h'], b['ry'], int(round(b['style'])), b['kind']
-    COLOUR[0] = (b['seed'] / 997.0, style / 8.0, 0.0, 1.0)
+    # b = the building's base height / 400: the shader finds the ground floor (shops).
+    COLOUR[0] = (b['seed'] / 997.0, style / 8.0, max(0.0, z0) / 400.0, 1.0)
     if kind == 'box':
         if h > 55 and style in (GLASS, METAL):
             # Setbacks: two or three tiers.
@@ -155,12 +157,38 @@ def build(bm, col, b):
         _roof(bm, col, rnd, cx, cy, z0 + h, side * 0.8, side * 0.8, top_rot, style, h)
 
 
+def _crown(bm, col, b):
+    """About 40% of towers over 45 m: an LED band (sometimes two) just under the top."""
+    cr = random.Random(int(b['seed'] * 7919) + int(b['x'] * 3) + int(b['z'] * 5) + 17)
+    if b['h'] < 45 or cr.random() > 0.42 or b['kind'] == 'twist':
+        return
+    cx, cy, z0 = b['x'], -b['z'], b['y']
+    w, d, h, rot, kind = b['w'], b['d'], b['h'], b['ry'], b['kind']
+    zs = [z0 + h - 1.6] + ([z0 + h - 6.0] if cr.random() < 0.45 else [])
+    if kind == 'box' and h > 55 and int(round(b['style'])) in (GLASS, METAL):
+        return  # setback towers: the tiers already read; keep their tops plain
+    for z in zs:
+        if kind == 'round':
+            r = min(w, d) / 2 + 0.12
+            _prism(bm, col, lambda tt, i, r=r: (cx + r * math.cos(i / 32 * 2 * math.pi), cy + r * math.sin(i / 32 * 2 * math.pi)), 32, z, 0.45, CROWN, cap=False)
+        elif kind == 'taper':
+            def ring(t, i, z=z):
+                k = (0.62 + (0.4 - 0.62) * ((z - z0) / h)) + 0.01
+                a = rot + math.pi / 4 + i * math.pi / 2
+                return (cx + math.cos(a) * w * k, cy + math.sin(a) * d * k)
+            _prism(bm, col, ring, 4, z, 0.45, CROWN, cap=False)
+        else:
+            _box(bm, col, cx, cy, z, w + 0.25, d + 0.25, 0.45, CROWN, rot)
+
+
 def build_skyline(bpy, buildings, materials, name='pg1-skyline'):
     me = bpy.data.meshes.new(name)
     bm = bmesh.new()
     col = bm.loops.layers.float_color.new('Color')
     for b in buildings:
         build(bm, col, b)
+        if len(materials) > CROWN:
+            _crown(bm, col, b)
     bm.normal_update()
     bm.to_mesh(me); bm.free()
     for m in materials:
