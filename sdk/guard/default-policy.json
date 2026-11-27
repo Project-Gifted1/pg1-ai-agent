@@ -3,7 +3,7 @@
   "default": "allow",
   "tools": {
     "block": ["*delete_account*", "*drop_database*", "*rm_rf*"],
-    "ask": ["*send_email*", "*post*", "*publish*", "*deploy*", "*merge*", "*delete*"]
+    "ask": ["*send_email*", "*send_message*", "post_*", "*_post", "publish*", "*_publish", "*deploy*", "*merge*", "delete_*", "*_delete"]
   },
   "money": {
     "tools": ["*pay*", "*transfer*", "*send_money*", "*withdraw*", "*payment*", "*wallet_send*", "*sign_transaction*"],

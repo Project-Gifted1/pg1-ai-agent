@@ -87,9 +87,23 @@ function* strings(value, depth = 0) {
 
 const URL_RE = /\b(?:https?|ftp|wss?|file):\/\/[^\s"'<>]+/gi;
 
+// Every URL in the arguments, plus bare hosts and addresses given in fields
+// named like one (host, hostname, domain, endpoint, ip, server, url), so
+// "10.0.0.5" in a host field is checked like https://10.0.0.5/.
+const HOST_KEY = /^(host|hostname|domain|endpoint|ip|address_ip|server|url|uri|base_?url)$/i;
+const BARE_HOST = /^(?:\[[0-9a-f:]+\]|[a-z0-9.-]+\.[a-z]{2,}|localhost|\d{1,3}(?:\.\d{1,3}){3})(?::\d+)?(?:\/.*)?$/i;
+
 export function findUrls(value) {
   const out = [];
   for (const s of strings(value)) for (const m of s.matchAll(URL_RE)) out.push(m[0]);
+  const visit = (v, depth) => {
+    if (depth > 8 || v == null || typeof v !== 'object') return;
+    for (const [k, x] of Object.entries(v)) {
+      if (typeof x === 'string' && HOST_KEY.test(k) && !/^[a-z][a-z0-9+.-]*:\/\//i.test(x.trim()) && BARE_HOST.test(x.trim())) out.push(`https://${x.trim()}`);
+      else if (x && typeof x === 'object') visit(x, depth + 1);
+    }
+  };
+  visit(value, 0);
   return [...new Set(out)];
 }
 

@@ -24,6 +24,10 @@ test('an ordinary tool call is allowed by default', () => {
 test('blocked and ask lists by tool name', () => {
   assert.equal(ev('drop_database').decision, 'block');
   assert.equal(ev('send_email', { to: 'a@b.ie' }).decision, 'ask');
+  assert.equal(ev('http_post', {}).decision, 'ask');
+  // Ordinary names that only contain the words are not caught.
+  assert.equal(ev('get_posts', {}).decision, 'allow');
+  assert.equal(ev('postcode_lookup', {}).decision, 'allow');
   assert.equal(ev('read_file', {}, { tools: { allow: ['read_*'] }, default: 'block' }).decision, 'allow');
   assert.equal(ev('write_file', {}, { default: 'block' }).decision, 'block');
 });
@@ -63,6 +67,11 @@ test('network rules: https only, no private addresses, allow and block lists', (
   assert.equal(ev('fetch_url', { url: 'https://evil.example/' }, { network: { block_domains: ['evil.example'] } }).decision, 'block');
   assert.equal(ev('fetch_url', { url: 'https://api.github.com/x' }, { network: { allow_domains: ['github.com'] } }).decision, 'allow');
   assert.equal(ev('fetch_url', { url: 'https://other.org/x' }, { network: { allow_domains: ['github.com'] } }).decision, 'block');
+  // Bare hosts in host-like fields are checked too.
+  assert.equal(ev('connect', { host: '10.0.0.5' }).decision, 'block');
+  assert.equal(ev('connect', { hostname: 'localhost:8080' }).decision, 'block');
+  assert.equal(ev('connect', { host: 'api.example.com' }).decision, 'allow');
+  assert.equal(ev('lookup', { name: '10.0.0.5' }).decision, 'allow');
 });
 
 test('rate limit per tool per minute', () => {
