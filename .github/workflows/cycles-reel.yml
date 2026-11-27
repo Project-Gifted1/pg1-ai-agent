@@ -32,7 +32,7 @@ env:
   EPOCH: '2026-11-24T00:14:54Z'
   REEL_RUN: '45421308040'
   STILLS_RUN: '45519213609'
-  SAMPLES: '32'
+  SAMPLES: '48'
   FIRST: '9'
   TEST: ${{ endsWith(github.ref_name, '-test') && '1' || '0' }}
 
@@ -164,7 +164,7 @@ jobs:
             cp frames/cycles-frames-$shot-*/frame_*.png "$dir"/
             first=$(ls "$dir" | sort | head -1); n0=$((10#${first:6:5}))
             for ((k=1; k<n0; k++)); do cp "$dir/$first" "$dir/$(printf 'frame_%05d.png' $k)"; done
-            ffmpeg -y -loglevel error -framerate 30 -i "$dir/frame_%05d.png" -c:v libx264 -preset veryfast -crf 16 -pix_fmt yuv420p "review/$shot.mp4"
+            ffmpeg -y -loglevel error -framerate 30 -i "$dir/frame_%05d.png" -vf "vignette=angle=0.42:mode=forward" -c:v libx264 -preset veryfast -crf 16 -pix_fmt yuv420p "review/$shot.mp4"
             old=$(find reel-artifacts -name "$shot.mp4" | head -1)
             if [ -n "$old" ] && [ "$TEST" != 1 ]; then cp "review/$shot.mp4" "$old"; fi
             echo "$shot: $(ls $dir | wc -l) frames"

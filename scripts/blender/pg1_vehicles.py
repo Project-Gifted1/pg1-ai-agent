@@ -135,3 +135,83 @@ def crane_jib(w=1.0, length=48.0):
 REPLACE = {'aircraft': airliner, 'construction-crane-jib': crane_jib}
 # Stand-ins that keep the City's own colour (the crane's yellow), not white paint.
 KEEP_COLOUR = {'construction-crane-jib'}
+
+
+# --- Drones: the City draws them as a box, two bars, discs and glows (cheap on a
+# phone). In the reel they get a moulded shell, carbon arms with motor pods and
+# visible spinning rotors. Each stand-in fits the City's part (its centre and
+# size), so every drone, whatever its scale, keeps its own place and size.
+
+def _cyl_y(cx, cy, cz, r, h, seg=12):
+    """A vertical cylinder (three.js y up) centred at (cx, cy, cz)."""
+    rings = [[(cx + r * math.cos(a), cy + y, cz + r * math.sin(a)) for a in (2 * math.pi * i / seg for i in range(seg))] for y in (-h / 2, h / 2)]
+    return _loft(rings)
+
+
+def _tube(p0, p1, r, seg=8):
+    """A round tube from p0 to p1 (axis-aligned along x or z)."""
+    ax = 0 if abs(p1[0] - p0[0]) > abs(p1[2] - p0[2]) else 2
+    rings = []
+    for p in (p0, p1):
+        ring = []
+        for i in range(seg):
+            a = 2 * math.pi * i / seg
+            if ax == 0:
+                ring.append((p[0], p[1] + r * math.sin(a), p[2] + r * math.cos(a)))
+            else:
+                ring.append((p[0] + r * math.cos(a), p[1] + r * math.sin(a), p[2]))
+        rings.append(ring)
+    return _loft(rings)
+
+
+def drone_body(cen, ext):
+    """A moulded drone shell (rounded, tapering to a domed top) with a camera pod under it."""
+    cx, cy, cz = cen; ex, ey, ez = ext
+    seg = 20; rings = []
+    prof = [(-0.5, 0.5), (-0.38, 0.86), (-0.15, 1.0), (0.12, 0.97), (0.32, 0.8), (0.45, 0.5), (0.5, 0.12)]
+    for (fy, k) in prof:
+        ring = []
+        for i in range(seg):
+            a = 2 * math.pi * i / seg
+            c, s = math.cos(a), math.sin(a)
+            # A squircle: rounded square, as moulded drone bodies are.
+            n = 0.6
+            x = math.copysign(abs(c) ** n, c) * ex / 2 * k
+            z = math.copysign(abs(s) ** n, s) * ez / 2 * k
+            ring.append((cx + x, cy + fy * ey, cz + z))
+        rings.append(ring)
+    parts = [_loft(rings)]
+    # Camera gimbal under the nose, and a battery hatch line (a thin band).
+    parts.append(_box(cx, cy - ey * 0.62, cz + ez * 0.3, ex * 0.22, ey * 0.3, ez * 0.22))
+    parts.append(_cyl_y(cx, cy - ey * 0.8, cz + ez * 0.3, min(ex, ez) * 0.09, ey * 0.2))
+    return _merge(parts)
+
+
+def drone_arm(cen, ext):
+    """A carbon arm (a slim tube) with a motor pod and its rotor hub at each end."""
+    cx, cy, cz = cen; ex, ey, ez = ext
+    along_x = ex >= ez
+    L = ex if along_x else ez
+    r = min(ey, ez if along_x else ex) * 0.42
+    half = L / 2
+    p0 = (cx - half * 0.92, cy, cz) if along_x else (cx, cy, cz - half * 0.92)
+    p1 = (cx + half * 0.92, cy, cz) if along_x else (cx, cy, cz + half * 0.92)
+    parts = [_tube(p0, p1, r)]
+    for p in (p0, p1):
+        mr = L * 0.055
+        parts.append(_cyl_y(p[0], p[1] + mr * 0.9, p[2], mr, mr * 1.6))          # motor can
+        parts.append(_cyl_y(p[0], p[1] + mr * 2.0, p[2], mr * 0.35, mr * 0.7))   # hub
+        parts.append(_cyl_y(p[0], p[1] - mr * 1.4, p[2], mr * 0.18, mr * 2.2))   # landing strut
+    return _merge(parts)
+
+
+def classify_crowd_part(nv, ext):
+    """Which drone part a City 'crowd' mesh is, from its vertex count and size."""
+    s = sorted(ext)
+    if nv == 24 and abs(s[0] - 0.28) < 0.05 and abs(s[1] - 0.9) < 0.08 and abs(s[2] - 0.9) < 0.08:
+        return 'body'
+    if nv == 24 and s[0] < 0.1 and s[1] < 0.16 and abs(s[2] - 2.2) < 0.2:
+        return 'arm'
+    if nv == 88 and s[0] < 0.06 and abs(s[1] - 0.97) < 0.08 and abs(s[2] - 1.0) < 0.08:
+        return 'rotor'
+    return None

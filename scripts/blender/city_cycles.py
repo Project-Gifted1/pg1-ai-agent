@@ -132,6 +132,14 @@ if ANIM:
         # Back to three.js space for the instance matrices: v3 = CI . vb.
         base3 = (CI[:3, :3] @ base.T).T
         rep = pg1_vehicles.REPLACE.get(d['name'])
+        part = None
+        if d['name'] == 'crowd':
+            ext = base3.max(axis=0) - base3.min(axis=0); cen3 = (base3.max(axis=0) + base3.min(axis=0)) / 2
+            part = pg1_vehicles.classify_crowd_part(nv, ext)
+            if part == 'body':
+                rep = lambda cen3=cen3, ext=ext: pg1_vehicles.drone_body(tuple(cen3), tuple(ext))
+            elif part == 'arm':
+                rep = lambda cen3=cen3, ext=ext: pg1_vehicles.drone_arm(tuple(cen3), tuple(ext))
         if rep:
             # A detailed stand-in in the same local space (pg1_vehicles.py).
             rv, rf = rep()
@@ -173,6 +181,8 @@ if ANIM:
             allc[:, :3] = np.repeat(cc, nv, axis=0)
         ca.data.foreach_set('color', allc.ravel())
         ob = bpy.data.objects.new(f'moving-{d["name"]}', big); scene.collection.objects.link(ob)
+        if part:
+            ob['pg1_drone'] = part
         for poly in big.polygons:
             poly.use_smooth = me.polygons[0].use_smooth if len(me.polygons) else False
         src.hide_render = True; src.hide_viewport = True
@@ -315,8 +325,44 @@ def facade_material():
     litw = math_node(nt, 'MULTIPLY', lit, win)
     ramp_l = node(nt, 'ShaderNodeValToRGB', 300, -250); link(nt, wn.outputs['Color'], ramp_l.inputs['Fac'])
     el = ramp_l.color_ramp.elements; el[0].color = (1.0, 0.42, 0.14, 1); el[1].color = (0.45, 0.68, 1.0, 1); el.new(0.3).color = (1.0, 0.62, 0.3, 1); el.new(0.5).color = (1.0, 0.84, 0.6, 1); el.new(0.66).color = (0.92, 0.95, 1.0, 1); el.new(0.86).color = (0.6, 0.78, 1.0, 1); el.new(0.96).color = (0.3, 0.5, 1.0, 1)
-    # Interior depth: brighter at the window top (ceiling lights), blinds part-way on some.
-    grad = math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', fv, 0.9), 0.4)
+    # Interior mapping: each lit window shows a room behind the glass (back
+    # wall, side walls, a bright ceiling, a darker floor, a piece of furniture),
+    # traced from the view ray, so windows have depth and parallax as the
+    # camera moves instead of reading as flat lit tiles.
+    I = node(nt, 'ShaderNodeSeparateXYZ', -1400, 600); link(nt, geo.outputs['Incoming'], I.inputs['Vector'])
+    M = lambda a, b: math_node(nt, 'MULTIPLY', a, b)
+    A = lambda a, b: math_node(nt, 'ADD', a, b)
+    S = lambda a, b: math_node(nt, 'SUBTRACT', a, b)
+    rx = S(M(I.outputs['Y'], N.outputs['X']), M(I.outputs['X'], N.outputs['Y']))   # -I . T, T = (Ny, -Nx, 0)
+    ry = M(I.outputs['Z'], -1.0)
+    rz = A(M(I.outputs['X'], N.outputs['X']), M(I.outputs['Y'], N.outputs['Y']))     # -I . -N
+    rz = math_node(nt, 'MAXIMUM', rz, 0.02)
+    Wc = cell; Hc = 3.6; Dd = 4.5
+    lx = M(S(fu, 0.5), Wc); ly = M(S(fv, 0.5), Hc)
+    sgn = lambda v: S(M(math_node(nt, 'GREATER_THAN', v, 0.0), 2.0), 1.0)
+    safe = lambda v: A(v, M(sgn(v), 1e-4))
+    tx = math_node(nt, 'DIVIDE', S(M(sgn(rx), M(Wc, 0.5)), lx), safe(rx))
+    ty = math_node(nt, 'DIVIDE', S(M(sgn(ry), Hc / 2), ly), safe(ry))
+    tz = math_node(nt, 'DIVIDE', Dd, rz)
+    back = M(math_node(nt, 'LESS_THAN', tz, tx), math_node(nt, 'LESS_THAN', tz, ty))
+    side = M(math_node(nt, 'LESS_THAN', tx, ty), math_node(nt, 'SUBTRACT', 1.0, back))
+    flat = S(S(1.0, back), side)
+    ceil_ = M(flat, math_node(nt, 'GREATER_THAN', ry, 0.0)); floor_ = S(flat, ceil_)
+    tmin = math_node(nt, 'MINIMUM', math_node(nt, 'MINIMUM', tx, ty), tz)
+    depth = math_node(nt, 'MINIMUM', math_node(nt, 'DIVIDE', M(tmin, rz), Dd), 1.0)
+    hy = A(ly, M(ry, tmin))                    # height of the hit point in the room
+    hx = A(lx, M(rx, tmin))
+    # Furniture: a dark block across part of the back wall, low down (a desk, a sofa, shelves).
+    room = A(A(A(M(back, 0.85), M(side, S(0.62, M(depth, 0.25)))), M(ceil_, 1.55)), M(floor_, 0.38))
+    furn = M(M(back, math_node(nt, 'LESS_THAN', hy, -0.75)), math_node(nt, 'LESS_THAN', math_node(nt, 'ABSOLUTE', hx), M(Wc, 0.3)))
+    room = S(room, M(furn, 0.55))
+    # Blinds on some windows: the top part a flat, softly lit blind.
+    blind_n = node(nt, 'ShaderNodeTexWhiteNoise', -100, 700); blind_n.noise_dimensions = '3D'
+    bcell = node(nt, 'ShaderNodeCombineXYZ', -300, 700); link(nt, math_node(nt, 'FLOOR', cu), bcell.inputs['X']); link(nt, math_node(nt, 'FLOOR', cv), bcell.inputs['Y']); link(nt, A(M(seed, 997.0), 7.3), bcell.inputs['Z'])
+    link(nt, bcell.outputs['Vector'], blind_n.inputs['Vector'])
+    blind_h = M(math_node(nt, 'GREATER_THAN', blind_n.outputs['Value'], 0.55), M(S(blind_n.outputs['Value'], 0.55), 2.0))
+    in_blind = math_node(nt, 'GREATER_THAN', fv, S(v_hi, M(blind_h, S(v_hi, v_lo))))
+    grad = A(M(room, S(1.0, in_blind)), M(in_blind, 0.7))
     cellw = node(nt, 'ShaderNodeCombineXYZ', -300, 400); link(nt, math_node(nt, 'FLOOR', cu), cellw.inputs['X']); link(nt, math_node(nt, 'FLOOR', cv), cellw.inputs['Y']); link(nt, math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', seed, 997.0), 0.5), cellw.inputs['Z'])
     wn2 = node(nt, 'ShaderNodeTexWhiteNoise', -100, 400); wn2.noise_dimensions = '3D'; link(nt, cellw.outputs['Vector'], wn2.inputs['Vector'])
     var = node(nt, 'ShaderNodeMapRange', 300, 250); link(nt, wn2.outputs['Value'], var.inputs['Value']); var.inputs['To Min'].default_value = 0.35
@@ -503,6 +549,19 @@ _rv.data.materials.append(WATER)
 def assign(o, m):
     o.data.materials.clear(); o.data.materials.append(m)
 
+CARBON = simple('pg1-carbon', (0.02, 0.02, 0.022), 0.35, metal=0.2)
+def rotor_material():
+    """A spinning prop: a faint dark disc (the blades a blur), slightly glossy."""
+    m = bpy.data.materials.new('pg1-rotor'); m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
+    out = node(nt, 'ShaderNodeOutputMaterial', 800, 0)
+    b = node(nt, 'ShaderNodeBsdfPrincipled', 200, 100); b.inputs['Base Color'].default_value = (0.03, 0.03, 0.035, 1); b.inputs['Roughness'].default_value = 0.35
+    tr = node(nt, 'ShaderNodeBsdfTransparent', 200, -150)
+    mx = node(nt, 'ShaderNodeMixShader', 500, 0); mx.inputs[0].default_value = 0.28; link(nt, tr.outputs['BSDF'], mx.inputs[1]); link(nt, b.outputs['BSDF'], mx.inputs[2])
+    link(nt, mx.outputs['Shader'], out.inputs['Surface'])
+    m['pg1_boosted'] = 1
+    return m
+ROTOR = rotor_material()
+
 counts = {}
 HIDDEN_FAKE = set()
 for o in list(scene.objects):
@@ -511,12 +570,23 @@ for o in list(scene.objects):
     n = o.name.split('.')[0]
     if n.startswith('moving-'):
         n = n[len('moving-'):]
+    dp = o.get('pg1_drone')
+    if dp == 'rotor':
+        assign(o, ROTOR); o.visible_shadow = False; counts['rotors'] = counts.get('rotors', 0) + 1; continue
+    if dp == 'arm':
+        assign(o, CARBON); continue
+    if dp == 'body':
+        for m in o.data.materials:
+            b = m.node_tree.nodes.get('Principled BSDF') if m and m.use_nodes else None
+            if b:
+                b.inputs['Roughness'].default_value = 0.28; b.inputs['Coat Weight'].default_value = 0.8; b.inputs['Coat Roughness'].default_value = 0.08
+        continue
     base = n.rsplit('-', 1)[0] if n.rsplit('-', 1)[-1].isdigit() else n
     if base.startswith('facade~') or base.startswith('skyline-'):
         assign(o, FACADE); counts['facade'] = counts.get('facade', 0) + 1
     elif base in ('ground', 'road', 'puddles'):
         assign(o, ASPHALT)
-    elif base == 'tower-beacon':
+    elif base in ('tower-beacon', 'rooftop-beacon'):
         # The live view's 4.4 m beacon reads as a white ball close up: a smaller lamp.
         co = np.empty(len(o.data.vertices) * 3); o.data.vertices.foreach_get('co', co); co = co.reshape(-1, 3)
         cen = co.mean(axis=0); o.data.vertices.foreach_set('co', (cen + (co - cen) * 0.45).ravel()); o.data.update()
@@ -769,8 +839,26 @@ if ANIM:
     rng = arg('--frames', f'0:{total}'); a_, b_ = (int(x) for x in rng.split(':')); b_ = min(b_, total)
     still = arg('--still')
     import time
+    MBLUR = arg('--motion-blur', '1') == '1' and not arg('--look')
+    if MBLUR:
+        # Camera motion blur, as a real camera at 1/60 s: the camera keyed a
+        # frame either side, the shutter open for 40% of a frame round each.
+        scene.render.use_motion_blur = True; scene.render.motion_blur_shutter = 0.4
+        scene.render.motion_blur_position = 'CENTER'
+        cams[0].rotation_mode = 'QUATERNION'
     for fr in ([int(round((total - 1) * meta.get('still_t', 0.66)))] if still else range(a_, b_)):
         t0 = time.time()
+        if MBLUR:
+            cam = cams[0]; cam.animation_data_clear(); q_prev = None
+            for f_ in (fr - 1, fr, fr + 1):
+                set_camera(min(max(f_, 0), total - 1))
+                q = cam.matrix_world.to_quaternion()
+                if q_prev is not None and q.dot(q_prev) < 0:
+                    q.negate()
+                q_prev = q
+                cam.rotation_quaternion = q; cam.location = cam.matrix_world.translation.copy()
+                cam.keyframe_insert('location', frame=f_ + 1); cam.keyframe_insert('rotation_quaternion', frame=f_ + 1)
+            scene.frame_set(fr + 1)
         set_camera(fr); set_dynamic(fr)
         if TRAFFIC:
             TRAFFIC.update(fr)
