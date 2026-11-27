@@ -48,6 +48,41 @@ scene.camera = cams[0]
 cams[0].data.clip_end = 90000
 cams[0].data.clip_start = 0.5
 
+# A hand-held recorded path (a follow camera chasing a probe) has uneven
+# steps: the live view samples it at a varying frame rate, so the render
+# judders every other frame and lurches at the start. Smoothed per shot with
+# a Gaussian over frames (position and fov averaged, rotation averaged and
+# re-orthonormalised); frames before `first` hold the first good one.
+def smooth_camera(frames, sigma, first=9):
+    n = len(frames)
+    if sigma <= 0 or n < 3:
+        return frames
+    Ms = [np.array(c['matrix'], dtype=np.float64).reshape(4, 4).T for c in frames]
+    P = np.array([M[:3, 3] for M in Ms]); R = np.array([M[:3, :3] for M in Ms]); F = np.array([float(c['fov']) for c in frames])
+    lo = min(max(0, first), n - 1)
+    idx = np.arange(n); src = np.maximum(idx, lo)
+    r = int(math.ceil(3 * sigma))
+    out = []
+    for i in range(n):
+        c = max(i, lo)
+        js = np.clip(np.arange(c - r, c + r + 1), lo, n - 1)
+        w = np.exp(-0.5 * ((np.arange(-r, r + 1)) / sigma) ** 2); w /= w.sum()
+        p = (P[js] * w[:, None]).sum(0); f = float((F[js] * w).sum())
+        Rm = (R[js] * w[:, None, None]).sum(0)
+        U, _, Vt = np.linalg.svd(Rm); Rq = U @ Vt
+        if np.linalg.det(Rq) < 0:
+            U[:, -1] *= -1; Rq = U @ Vt
+        M = np.eye(4); M[:3, :3] = Rq; M[:3, 3] = p
+        out.append({**frames[i], 'matrix': M.T.reshape(-1).tolist(), 'fov': f})
+    return out
+
+CAM_SMOOTH = {'probe-arrives': 4.0}
+if ANIM:
+    _sig = float(arg('--cam-smooth', str(CAM_SMOOTH.get(meta.get('shot', 'shot'), 0))))
+    if _sig > 0:
+        meta['frames'] = smooth_camera(meta['frames'], _sig, int(arg('--first-frame', '9')))
+        print(f'[cycles] camera path smoothed (sigma {_sig} frames)', flush=True)
+
 def set_camera(fr):
     c = meta['frames'][fr]
     M = np.array(c['matrix'], dtype=np.float64).reshape(4, 4).T
@@ -554,9 +589,9 @@ def rotor_material():
     """A spinning prop: a faint dark disc (the blades a blur), slightly glossy."""
     m = bpy.data.materials.new('pg1-rotor'); m.use_nodes = True; nt = m.node_tree; nt.nodes.clear()
     out = node(nt, 'ShaderNodeOutputMaterial', 800, 0)
-    b = node(nt, 'ShaderNodeBsdfPrincipled', 200, 100); b.inputs['Base Color'].default_value = (0.03, 0.03, 0.035, 1); b.inputs['Roughness'].default_value = 0.35
+    b = node(nt, 'ShaderNodeBsdfPrincipled', 200, 100); b.inputs['Base Color'].default_value = (0.03, 0.03, 0.035, 1); b.inputs['Roughness'].default_value = 0.75
     tr = node(nt, 'ShaderNodeBsdfTransparent', 200, -150)
-    mx = node(nt, 'ShaderNodeMixShader', 500, 0); mx.inputs[0].default_value = 0.28; link(nt, tr.outputs['BSDF'], mx.inputs[1]); link(nt, b.outputs['BSDF'], mx.inputs[2])
+    mx = node(nt, 'ShaderNodeMixShader', 500, 0); mx.inputs[0].default_value = 0.16; link(nt, tr.outputs['BSDF'], mx.inputs[1]); link(nt, b.outputs['BSDF'], mx.inputs[2])
     link(nt, mx.outputs['Shader'], out.inputs['Surface'])
     m['pg1_boosted'] = 1
     return m
