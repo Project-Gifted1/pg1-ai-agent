@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "default": "allow",
+  "tools": {
+    "block": ["*delete_account*", "*drop_database*", "*rm_rf*"],
+    "ask": ["*send_email*", "*post*", "*publish*", "*deploy*", "*merge*", "*delete*"]
+  },
+  "money": {
+    "tools": ["*pay*", "*transfer*", "*send_money*", "*withdraw*", "*payment*", "*wallet_send*", "*sign_transaction*"],
+    "amount_fields": ["amount", "value", "usd", "eur", "price", "total"],
+    "max_per_call": 100,
+    "max_per_day": 250,
+    "always_ask": true
+  },
+  "network": {
+    "allow_domains": [],
+    "block_domains": [],
+    "block_private_addresses": true,
+    "https_only": true
+  },
+  "secrets": { "block_in_arguments": true },
+  "rate": { "per_tool_per_minute": 30 }
+}
