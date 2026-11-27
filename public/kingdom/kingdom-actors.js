@@ -28,7 +28,7 @@
 // gadget actions taken on a real event passed to stage().
 
 import { at, CITY_R, RIVER, GATE_BEARINGS, PLAZA_R } from './kingdom-world.js';
-import { ringAltitude, keepClear } from './kingdom-flight.js';
+import { ringAltitude, keepClear, unlift, flyTowards } from './kingdom-flight.js';
 import { countryBearing, PG1_COLORS, defenceLine, reasonLabel } from './kingdom-data.js';
 
 export { CITY_R };
@@ -533,9 +533,12 @@ export function createActors(THREE, scene, world, settings) {
     const cy = Math.min(b.y1 - hh, Math.max(b.y0 + hh, fitV.y));
     if (cx !== fitV.x || cy !== fitV.y) { fitV.x = cx; fitV.y = cy; sp.position.copy(fitV.unproject(cam)); }
   }
-  const moveTo = (a, t, sp, dt) => { const dx = t.x - a.x; const dy = t.y - a.y; const dz = t.z - a.z; const d = Math.hypot(dx, dy, dz); if (d > 0.3) { const k = Math.min(1, (sp * dt) / d); a.x += dx * k; a.y += dy * k; a.z += dz * k; if (Math.hypot(dx, dz) > 0.5) a.heading = Math.atan2(dx, dz); } return d; };
+  // Every agent the actors move glides (kingdom-flight.js flyTowards): no stop-start steps, no heading snaps.
+  const moveTo = (a, t, sp, dt) => flyTowards(a, t, sp, dt);
   function update(dt, t, camera, { storm = 0 } = {}) {
     camTmp.copy(camera.position);
+    // Each flying agent back to its own flight height; keepClear adds the lift again below.
+    for (const c of crowds) if (c.fly) for (const a of c.agents) unlift(a);
     const now = performance.now();
     for (const [id, g] of groups) {
       g.t += dt;
@@ -556,7 +559,7 @@ export function createActors(THREE, scene, world, settings) {
     }
     // Sentinels: patrol rings; an escort hovers inside the city facing the threat.
     for (const a of sentinels.agents) {
-      if (a.escort && a.post) { moveTo(a, a.post, 60, dt); const g = groups.get(a.escort); const lead = g && g.agents[0]; if (lead) a.heading = Math.atan2(lead.x - a.x, lead.z - a.z); }
+      if (a.escort && a.post) { moveTo(a, a.post, 60, dt); const g = groups.get(a.escort); const lead = g && g.agents[0]; if (lead) { const want = Math.atan2(lead.x - a.x, lead.z - a.z) - a.heading; a.heading += Math.atan2(Math.sin(want), Math.cos(want)) * Math.min(1, dt * 3); } }
       else { const ang = a.a0 + a.dir * t * 0.05; moveTo(a, { x: Math.sin(ang) * a.ring, y: a.alt, z: -Math.cos(ang) * a.ring }, 60, dt); }
     }
     if (cmd.mode !== 'docked' && cmd.until && now > cmd.until) { cmd.mode = 'docked'; cmd.target = { ...DOCK }; cmd.until = 0; }
@@ -657,7 +660,7 @@ export function createActors(THREE, scene, world, settings) {
     setLabelBox(b) { labelBox = b ? { ...b } : null; },
     labelRects(cam) { return labels.filter((l) => l.sp.material.opacity > 0.05).map((l) => { const v = l.sp.position.clone(); cam.updateMatrixWorld(); const c = new THREE.Vector3().setFromMatrixPosition(cam.matrixWorld); const f = new THREE.Vector3(); cam.getWorldDirection(f); const depth = f.dot(v.clone().sub(c)); const tanH = Math.tan((cam.fov * Math.PI) / 360); v.project(cam); const hw = l.sp.scale.x / 2 / (depth * tanH * cam.aspect); const hh = l.sp.scale.y / 2 / (depth * tanH); return { x0: v.x - hw, x1: v.x + hw, y0: v.y - hh, y1: v.y + hh }; }); },
     // Every flying agent's position (tests: tests/browser/kingdom-flight.browser.test.mjs).
-    flyers() { const out = []; crowds.forEach((c, ci) => { if (c.fly) for (const a of c.agents) if (!(a.delay > 0)) out.push({ crowd: ci, x: a.x, y: a.y, z: a.z }); }); return out; },
+    flyers() { const out = []; crowds.forEach((c, ci) => { if (c.fly) c.agents.forEach((a, k) => { if (!(a.delay > 0)) out.push({ crowd: ci, k, x: a.x, y: a.y, z: a.z }); }); }); return out; },
     // The seal in flight (Showcase: the Seal Forge shot follows it), or null.
     sealAt() { const p = props.find((x) => x.kind === 'seal'); return p ? { x: p.mesh.position.x, y: p.mesh.position.y, z: p.mesh.position.z } : null; },
     set onFire(fn) { onFire = typeof fn === 'function' ? fn : null; },

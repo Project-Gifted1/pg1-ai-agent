@@ -14,6 +14,10 @@
 //   aheadFloor(obstacles, a, vx, vz)   the floor along the next few seconds
 //                                      of a straight flight (climbs start
 //                                      before a building, never at its wall)
+//   keepClear(obstacles, a, dt) / unlift(a)
+//                                      the lift over roofs, eased both ways
+//   flyTowards(a, target, speed, dt)   a smooth flight step (no stutter,
+//                                      no heading snaps)
 //   insideBox(boxes, x, y, z, pad)     the box a point is inside, or null
 
 // A drone's half span (the scale-5.2 quad with its rotors) plus a gap, and
@@ -46,24 +50,73 @@ export function ringAltitude(obstacles, ring, alt, { samples = 720, ...o } = {})
   return y;
 }
 
+// Sampled every AHEAD_STEP metres along the next LOOK_AHEAD_S[last] seconds
+// (closer than a drone's width, 2 x DRONE_RADIUS, so no building falls
+// between two samples: a sparse look-ahead made the floor ahead flicker and
+// the drone climb in steps), at most AHEAD_MAX samples.
+export const AHEAD_STEP = 12;
+export const AHEAD_MAX = 24;
 export function aheadFloor(obstacles, a, vx, vz, o = {}) {
   let y = flightFloor(obstacles, a.x, a.z, o);
-  if (!Number.isFinite(vx) || !Number.isFinite(vz) || Math.hypot(vx, vz) < 0.5) return y;
-  for (const s of LOOK_AHEAD_S) y = Math.max(y, flightFloor(obstacles, a.x + vx * s, a.z + vz * s, o));
+  const v = Math.hypot(vx, vz);
+  if (!Number.isFinite(v) || v < 0.5) return y;
+  const reach = v * LOOK_AHEAD_S[LOOK_AHEAD_S.length - 1];
+  const n = Math.min(AHEAD_MAX, Math.max(1, Math.ceil(reach / AHEAD_STEP)));
+  for (let k = 1; k <= n; k++) { const s = (reach * k) / n / v; y = Math.max(y, flightFloor(obstacles, a.x + vx * s, a.z + vz * s, o)); }
   return y;
 }
 
-// One step of the rule for a flying agent: never below the floor here
-// (hard), and climbing early towards the floor ahead (eased, so no pop).
+// One step of the rule for a flying agent. a.y is the height its own flight
+// gives it this frame; the lift above that is kept on a.lift, so the flight
+// and the rule never pull against each other (27 Nov: the flight pulled a
+// drone back down at 60 m/s each frame while the rule lifted it, so it popped
+// up over a roof and dropped after it). The lift eases up early towards the
+// floor ahead (at most CLIMB_RATE), eases back down after (at most
+// DESCENT_RATE), and is never below the floor here (hard). Call unlift(a)
+// before the next frame's flight step.
+export const DESCENT_RATE = 9;
+export const LIFT_EASE = 2.5;
+export const LIFT_ACCEL = 60;
 export function keepClear(obstacles, a, dt, o = {}) {
   const vx = a.lx === undefined ? 0 : (a.x - a.lx) / Math.max(dt, 1e-3);
   const vz = a.lz === undefined ? 0 : (a.z - a.lz) / Math.max(dt, 1e-3);
-  const here = flightFloor(obstacles, a.x, a.z, o);
-  const ahead = aheadFloor(obstacles, a, vx, vz, o);
-  if (a.y < ahead) a.y = Math.min(ahead, a.y + CLIMB_RATE * dt);
-  if (a.y < here) a.y = here;
+  const base = a.y;
+  const hard = Math.max(0, flightFloor(obstacles, a.x, a.z, o) - base);
+  const need = Math.max(0, aheadFloor(obstacles, a, vx, vz, o) - base);
+  let lift = a.lift || 0;
+  // The climb speed it wants (eased towards the need, within the rates),
+  // reached at most LIFT_ACCEL m/s² so a climb or a descent starts and ends softly.
+  const want = Math.max(-DESCENT_RATE, Math.min(CLIMB_RATE, (need - lift) * LIFT_EASE));
+  const v0 = a.liftV || 0; const dv = LIFT_ACCEL * dt;
+  let v = v0 + Math.max(-dv, Math.min(dv, want - v0));
+  lift += v * dt;
+  if (lift <= 0) { lift = 0; v = Math.max(0, v); }
+  if (lift < hard) { lift = hard; v = Math.max(v, 0); }
+  a.lift = lift; a.liftV = v; a.y = base + lift;
   a.lx = a.x; a.lz = a.z;
   return a.y;
+}
+// Back to the agent's own flight height (before its next flight step).
+export function unlift(a) { if (a.lift) { a.y -= a.lift; } }
+
+// A flight step towards a target at `speed` m/s: continuous (no dead zone, so
+// a slow patrol glides instead of stepping), and turning smoothly towards the
+// way it moves (at most TURN_RATE rad/s, eased), not snapping.
+export const TURN_RATE = 2.4;
+const wrap = (x) => Math.atan2(Math.sin(x), Math.cos(x));
+export function flyTowards(a, t, speed, dt) {
+  const dx = t.x - a.x; const dy = t.y - a.y; const dz = t.z - a.z; const d = Math.hypot(dx, dy, dz);
+  if (d > 1e-4 && dt > 0) {
+    const k = Math.min(1, (speed * dt) / d);
+    a.x += dx * k; a.y += dy * k; a.z += dz * k;
+    const h = Math.hypot(dx, dz) * k / dt;
+    if (h > 0.5) {
+      const turn = wrap(Math.atan2(dx, dz) - (a.heading || 0));
+      const lim = TURN_RATE * dt;
+      a.heading = wrap((a.heading || 0) + Math.max(-lim, Math.min(lim, turn * Math.min(1, dt * 6))));
+    }
+  }
+  return d;
 }
 
 export function insideBox(boxes, x, y, z, pad = 0) {
