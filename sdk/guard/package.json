@@ -1,0 +1,21 @@
+{
+  "name": "pg1-guard",
+  "version": "0.1.0",
+  "description": "A guard for AI agents: every tool call is checked against your rules before it runs. Allowed actions run, risky ones wait for a person, rule-breaking ones are stopped, and every step is logged.",
+  "type": "module",
+  "main": "./index.mjs",
+  "types": "./index.d.ts",
+  "bin": { "pg1-guard-mcp": "./mcp.mjs" },
+  "exports": {
+    ".": { "types": "./index.d.ts", "default": "./index.mjs" },
+    "./frameworks": { "default": "./frameworks.mjs" },
+    "./mcp": { "default": "./mcp.mjs" }
+  },
+  "files": ["index.mjs", "index.d.ts", "policy.mjs", "log.mjs", "frameworks.mjs", "mcp.mjs", "default-policy.json", "README.md", "LICENSE"],
+  "engines": { "node": ">=20" },
+  "keywords": ["agents", "ai-agents", "guardrails", "mcp", "policy", "approvals", "audit-log", "x402"],
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/Project-Gifted1/pg1-ai-agent", "directory": "sdk/guard" },
+  "scripts": { "prepack": "cp ../LICENSE LICENSE", "postpack": "rm -f LICENSE" },
+  "homepage": "https://pg1-ai-agent.vercel.app/docs/agents"
+}
