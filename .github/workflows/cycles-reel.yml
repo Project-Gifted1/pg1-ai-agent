@@ -44,6 +44,7 @@ jobs:
       record_run: ${{ steps.p.outputs.record_run }}
       record_only: ${{ steps.p.outputs.record_only }}
       frames_run: ${{ steps.p.outputs.frames_run }}
+      frames_run2: ${{ steps.p.outputs.frames_run2 }}
       rerender: ${{ steps.p.outputs.rerender }}
     steps:
       - uses: actions/checkout@v4
@@ -54,6 +55,8 @@ jobs:
           rr=$( [ -f $f ] && python3 -c "import json;print(json.load(open('$f')).get('record_run',''))" || echo '')
           ro=$( [ -f $f ] && python3 -c "import json;print(str(json.load(open('$f')).get('record_only',False)).lower())" || echo false)
           fr=$( [ -f $f ] && python3 -c "import json;print(json.load(open('$f')).get('frames_run',''))" || echo '')
+          f2=$( [ -f $f ] && python3 -c "import json;print(json.load(open('$f')).get('frames_run2',''))" || echo '')
+          echo "frames_run2=$f2" >> "$GITHUB_OUTPUT"
           rs=$( [ -f $f ] && python3 -c "import json;print(','.join(json.load(open('$f')).get('rerender',[])))" || echo '')
           echo "record_run=$rr" >> "$GITHUB_OUTPUT"; echo "record_only=$ro" >> "$GITHUB_OUTPUT"; echo "frames_run=$fr" >> "$GITHUB_OUTPUT"; echo "rerender=$rs" >> "$GITHUB_OUTPUT"; echo "record_run=$rr record_only=$ro frames_run=$fr rerender=$rs"
 
@@ -148,6 +151,10 @@ jobs:
       - run: npm ci && npx playwright install --with-deps chromium && sudo apt-get install -y -qq ffmpeg
       - uses: actions/download-artifact@v4
         with: { pattern: 'cycles-frames-*', path: frames, run-id: '${{ needs.plan.outputs.frames_run || github.run_id }}', github-token: '${{ github.token }}' }
+      - if: needs.plan.outputs.frames_run2 != ''
+        name: A later partial run's frames over the first
+        uses: actions/download-artifact@v4
+        with: { pattern: 'cycles-frames-*', path: frames, run-id: '${{ needs.plan.outputs.frames_run2 }}', github-token: '${{ github.token }}' }
       - if: needs.plan.outputs.rerender != '' && needs.plan.outputs.frames_run != ''
         name: The re-rendered shots over the earlier run's
         uses: actions/download-artifact@v4

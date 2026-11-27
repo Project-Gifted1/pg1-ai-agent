@@ -706,6 +706,9 @@ if HAZE > 0:
 sun = bpy.data.lights.new('pg1-moon' if night else 'pg1-sun', 'SUN')
 sun.energy = 0.15 if night else 3.5; sun.color = (0.7, 0.8, 1.0) if night else (1.0, 0.95, 0.88); sun.angle = math.radians(0.6)
 so = bpy.data.objects.new(sun.name, sun); scene.collection.objects.link(so)
+if night:
+    # The moon lamp's glint on the rippled river drew a bright column there: lights the scene, no reflection.
+    so.visible_glossy = False
 d = (meta.get('lights') or [{}])[0].get('dir') if meta.get('lights') else None
 if d:
     # three.js y-up to Blender z-up: (x, y, z) -> (x, -z, y); the sun points along -dir.
