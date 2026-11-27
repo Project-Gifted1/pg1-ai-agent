@@ -748,7 +748,9 @@ if night and moon_dir and moon_dir[2] > 0.05:
     mo = bpy.context.active_object; mo.name = 'pg1-moon'
     mm = bpy.data.materials.new('pg1-moon'); mm.use_nodes = True; mb = mm.node_tree.nodes.get('Principled BSDF')
     mb.inputs['Base Color'].default_value = (0, 0, 0, 1); mb.inputs['Emission Color'].default_value = (0.92, 0.94, 1.0, 1); mb.inputs['Emission Strength'].default_value = 6.0
-    mo.data.materials.append(mm); mo.visible_shadow = False; mo.visible_diffuse = False; mo.visible_glossy = True
+    mo.data.materials.append(mm); mo.visible_shadow = False; mo.visible_diffuse = False
+    # Not in reflections: on the rippled river it drew a bright column that read as a light beam.
+    mo.visible_glossy = False; mo.visible_transmission = False
     for f in mo.data.polygons:
         f.use_smooth = True
 camera_far = 80000
@@ -840,18 +842,33 @@ if ANIM:
     still = arg('--still')
     import time
     MBLUR = arg('--motion-blur', '1') == '1' and not arg('--look')
+    # Camera steps between frames: a step far above the shot's usual one is a jump.
+    _P = np.array([np.array(c['matrix'], dtype=np.float64).reshape(4, 4).T[:3, 3] for c in meta['frames']])
+    _R = [np.array(c['matrix'], dtype=np.float64).reshape(4, 4).T[:3, :3] for c in meta['frames']]
+    _step = np.linalg.norm(np.diff(_P, axis=0), axis=1)
+    _turn = np.array([math.degrees(math.acos(max(-1.0, min(1.0, (np.trace(_R[i].T @ _R[i + 1]) - 1) / 2)))) for i in range(len(_R) - 1)])
+    _ms, _mt = float(np.median(_step)) + 1e-6, float(np.median(_turn)) + 1e-6
+    CAM_JUMP = list((_step > 2.5 * _ms + 0.5) | (_turn > 2.5 * _mt + 0.4)) + [False]
+    FIRST_OK = int(arg('--first-frame', '9'))
+    print(f'[cycles] camera jumps (no blur across): {[i for i, j in enumerate(CAM_JUMP) if j]}', flush=True)
     if MBLUR:
         # Camera motion blur, as a real camera at 1/60 s: the camera keyed a
         # frame either side, the shutter open for 40% of a frame round each.
-        scene.render.use_motion_blur = True; scene.render.motion_blur_shutter = 0.4
+        scene.render.use_motion_blur = True; scene.render.motion_blur_shutter = 0.25
         scene.render.motion_blur_position = 'CENTER'
         cams[0].rotation_mode = 'QUATERNION'
     for fr in ([int(round((total - 1) * meta.get('still_t', 0.66)))] if still else range(a_, b_)):
         t0 = time.time()
         if MBLUR:
+            # A neighbour frame across a jump in the recorded camera (a cut, the
+            # first frames settling) would smear the whole frame: that side
+            # keeps this frame's pose (no blur from it).
             cam = cams[0]; cam.animation_data_clear(); q_prev = None
             for f_ in (fr - 1, fr, fr + 1):
-                set_camera(min(max(f_, 0), total - 1))
+                g_ = min(max(f_, 0), total - 1)
+                if g_ != fr and (not (FIRST_OK <= g_) or CAM_JUMP[min(fr, g_)]):
+                    g_ = fr
+                set_camera(g_)
                 q = cam.matrix_world.to_quaternion()
                 if q_prev is not None and q.dot(q_prev) < 0:
                     q.negate()

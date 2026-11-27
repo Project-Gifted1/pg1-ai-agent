@@ -111,7 +111,8 @@ jobs:
           RERENDER: ${{ needs.plan.outputs.rerender }}
         run: |
           # "rerender": only these shots again; the rest come from frames_run.
-          if [ -n "$RERENDER" ] && ! echo ",$RERENDER," | grep -q ",$SHOT,"; then echo "run=0" >> "$GITHUB_OUTPUT"; exit 0; fi
+          # Entries are "shot" (every chunk) or "shot:chunk" (that chunk only).
+          if [ -n "$RERENDER" ] && ! echo ",$RERENDER," | grep -q ",$SHOT," && ! echo ",$RERENDER," | grep -q ",$SHOT:$CHUNK,"; then echo "run=0" >> "$GITHUB_OUTPUT"; exit 0; fi
           if [ -f cycles-in/skip ]; then echo "run=0" >> "$GITHUB_OUTPUT"; exit 0; fi
           total=$(python3 -c "import json;print(len(json.load(open('cycles-in/city-shot.json'))['frames']))")
           if [ "$TEST" = 1 ]; then a=$((total/2)); b=$((a+2)); [ "$CHUNK" = 0 ] || { echo "run=0" >> "$GITHUB_OUTPUT"; exit 0; }
