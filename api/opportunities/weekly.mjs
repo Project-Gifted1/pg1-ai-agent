@@ -7,7 +7,7 @@
 import { getSupabaseCreds } from '../../lib/supabase.mjs';
 import { checkCronAuth } from '../../lib/cronAuth.mjs';
 import { refreshAutonomousSnapshot } from '../../lib/autonomous/state.mjs';
-import { runOpportunityScan } from '../../lib/opportunities.mjs';
+import { runOpportunityScan, actOnOpportunities } from '../../lib/opportunities.mjs';
 import { getUsageStats } from '../../lib/usageStats.mjs';
 import { runReport } from '../../lib/operator/run.mjs';
 import { createOpportunityStore } from '../../lib/opportunities.mjs';
@@ -28,6 +28,9 @@ export default async function handler(req, res) {
   // AUTONOMOUS MODE: the operator's switch is read before PG1 acts on its own.
   await refreshAutonomousSnapshot(creds).catch(() => false);
   const out = await runOpportunityScan({ supUrl: creds.supUrl, supKey: creds.supKey, getStats: (o) => getUsageStats(o) });
+  // Earlier proposals PG1 can act on now (closes finished prototypes, starts
+  // the best cleared one); this week's arrive with the hourly lab monitor.
+  const acted = await actOnOpportunities({ supUrl: creds.supUrl, supKey: creds.supKey }).catch(() => null);
   // THE WEEKLY REPORT (lib/operator/run.mjs), Mondays 07:30 UTC with the scan.
   let report = null;
   try {
@@ -36,5 +39,5 @@ export default async function handler(req, res) {
       deps: { skipSnapshot: true, labHistory: () => createLabStore(creds).history(100), proposals: () => createOpportunityStore(creds).list(20) }
     });
   } catch (e) { report = { ok: false, reason: 'failed' }; }
-  return res.status(200).json({ ok: out.ok, started: out.ok ? out.id : null, message: out.reply, report: report ? { ok: report.ok, id: report.id || null, reason: report.ok ? null : report.reason } : null });
+  return res.status(200).json({ ok: out.ok, started: out.ok ? out.id : null, message: out.reply, acted: acted ? { reconciled: acted.reconciled.length, prototype: acted.started ? acted.started.id : null, reason: acted.reason || null } : null, report: report ? { ok: report.ok, id: report.id || null, reason: report.ok ? null : report.reason } : null });
 }
