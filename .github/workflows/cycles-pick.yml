@@ -1,0 +1,23 @@
+name: cycles-pick
+# Debug: what lies under given image points of one recorded shot frame.
+on:
+  push:
+    branches: ['cycles-pick/**']
+permissions:
+  contents: read
+  actions: read
+jobs:
+  pick:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@v4
+        with: { name: 'cycles-in-dublin-weather', path: cycles-in, run-id: '45572838381', github-token: '${{ github.token }}' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
+      - run: pip install bpy==5.3.0
+      - run: |
+          python scripts/blender/city_cycles.py -- --in cycles-in --out pick --samples 1 --res 270x480 --frames 20:21 --scenery 0 \
+            --pick "0.75,0.45;0.75,0.42;0.75,0.48;0.76,0.44;0.74,0.46;0.75,0.5" 2>&1 | grep -E "pick|cycles\]" 
