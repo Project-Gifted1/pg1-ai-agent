@@ -1,0 +1,39 @@
+name: cycles-look
+# Test stills of recorded reel frames with the current scripts (look development).
+on:
+  push:
+    branches: ['cycles-look/**']
+permissions:
+  contents: write
+  actions: read
+jobs:
+  still:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { shot: crown-tower, frame: 100 }
+          - { shot: city-wide, frame: 40 }
+          - { shot: probe-arrives, frame: 60 }
+          - { shot: river-bridge, frame: 70 }
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: actions/download-artifact@v4
+        with: { name: 'cycles-in-${{ matrix.shot }}', path: cycles-in, run-id: '45572838381', github-token: '${{ github.token }}' }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
+      - run: pip install bpy==5.3.0
+      - run: |
+          python scripts/blender/city_cycles.py -- --in cycles-in --out look --samples 40 --res 1080x1920 --scale 60 --frames "${{ matrix.frame }}:$(( ${{ matrix.frame }} + 1 ))" 2>&1 | grep -E "cycles\]|Error|error" | head -60
+          ls look
+      - env:
+          TOKEN: ${{ github.token }}
+          BR: ${{ github.ref_name }}
+        run: |
+          mkdir -p o && cp look/*.png "o/${{ matrix.shot }}.png"
+          cd o && git init -q -b x && git add -A
+          git -c user.name=pg1-cycles -c user.email=pg1-cycles@users.noreply.github.com commit -q -m "look ${{ matrix.shot }}"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "x:refs/heads/cycles-out/$BR-${{ matrix.shot }}"

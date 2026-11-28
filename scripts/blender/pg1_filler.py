@@ -252,7 +252,7 @@ class Traffic:
                 s = rnd.uniform(0, 60)
                 while s < length:
                     cars.append((start[0], start[1], dvec[0], dvec[1], length, s, rnd.uniform(9, 15)))
-                    s += rnd.uniform(35, 110)
+                    s += rnd.uniform(22, 70)
         self.cars = np.array(cars, dtype=np.float64) if cars else np.zeros((0, 7))
         self.near = near
         # One car: body, cabin, two headlights, two tail lights (along +x, centred).
@@ -334,3 +334,56 @@ def road_rects(bpy):
         xs = [v.x for v in vs]; ys = [v.y for v in vs]
         out.add((round(min(xs), 1), round(max(xs), 1), round(min(ys), 1), round(max(ys), 1)))
     return sorted(out)
+
+
+def lane_markings(bpy, paint, dash=3.0, gap=6.0, line=0.15):
+    """Road paint on the live view's straight roads: a dashed centre line and
+    solid edge lines, a hair above the asphalt, one mesh."""
+    ob = bpy.data.objects.get('road')
+    if not ob:
+        return None, 0
+    W = ob.matrix_world; me = ob.data; seen = set(); verts = []; faces = []
+
+    def quad(x0, x1, y0, y1, z):
+        b = len(verts)
+        verts.extend([(x0, y0, z), (x1, y0, z), (x1, y1, z), (x0, y1, z)])
+        faces.append((b, b + 1, b + 2, b + 3))
+
+    for p in me.polygons:
+        vs = [W @ me.vertices[i].co for i in p.vertices]
+        if max(abs(v.z) for v in vs) > 0.5:
+            continue
+        xs = [v.x for v in vs]; ys = [v.y for v in vs]
+        x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+        key = (round(x0, 1), round(x1, 1), round(y0, 1), round(y1, 1))
+        if key in seen:
+            continue
+        seen.add(key)
+        z = max(v.z for v in vs) + 0.025
+        along_x = (x1 - x0) > (y1 - y0)
+        width = (y1 - y0) if along_x else (x1 - x0)
+        length = (x1 - x0) if along_x else (y1 - y0)
+        if width < 8 or length < 20:
+            continue
+        c = (y0 + y1) / 2 if along_x else (x0 + x1) / 2
+        e = width / 2 - 0.7
+        # Edge lines, solid (a little short of the junctions).
+        for off in (-e, e):
+            if along_x:
+                quad(x0 + 4, x1 - 4, c + off - line / 2, c + off + line / 2, z)
+            else:
+                quad(c + off - line / 2, c + off + line / 2, y0 + 4, y1 - 4, z)
+        # Centre line, dashed.
+        t = 6.0
+        while t + dash < length - 6.0:
+            if along_x:
+                quad(x0 + t, x0 + t + dash, c - line / 2, c + line / 2, z)
+            else:
+                quad(c - line / 2, c + line / 2, y0 + t, y0 + t + dash, z)
+            t += dash + gap
+    if not faces:
+        return None, 0
+    m = bpy.data.meshes.new('pg1-lane-paint'); m.from_pydata(verts, [], faces); m.materials.append(paint)
+    o = bpy.data.objects.new('pg1-lane-paint', m); bpy.context.scene.collection.objects.link(o)
+    o.visible_shadow = False
+    return o, len(faces)

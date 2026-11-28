@@ -355,7 +355,15 @@ def facade_material():
     wn = node(nt, 'ShaderNodeTexWhiteNoise', -100, -150); wn.noise_dimensions = '3D'; link(nt, cellv.outputs['Vector'], wn.inputs['Vector'])
     # Each building its own occupancy (0.2 to 0.6 of windows lit at night).
     bn = node(nt, 'ShaderNodeTexWhiteNoise', -300, -350); bn.noise_dimensions = '1D'; link(nt, math_node(nt, 'MULTIPLY', seed, 997.0), bn.inputs['W'])
-    occ = math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', bn.outputs['Value'], 0.4), 0.3)
+    # Real cities at night: about a fifth to a third of windows lit, whole
+    # floors dark, the odd floor still working, a few buildings nearly dark.
+    occ = math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', bn.outputs['Value'], 0.28), 0.1)
+    bd = node(nt, 'ShaderNodeTexWhiteNoise', -300, -480); bd.noise_dimensions = '1D'; link(nt, math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', seed, 331.0), 5.7), bd.inputs['W'])
+    occ = math_node(nt, 'MULTIPLY', occ, math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', math_node(nt, 'LESS_THAN', bd.outputs['Value'], 0.15), -0.85), 1.0))
+    flc = node(nt, 'ShaderNodeCombineXYZ', -300, -560); link(nt, math_node(nt, 'FLOOR', cv), flc.inputs['Y']); link(nt, math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', seed, 997.0), 3.1), flc.inputs['Z'])
+    fln = node(nt, 'ShaderNodeTexWhiteNoise', -100, -560); fln.noise_dimensions = '3D'; link(nt, flc.outputs['Vector'], fln.inputs['Vector'])
+    floorfac = math_node(nt, 'ADD', math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', math_node(nt, 'LESS_THAN', fln.outputs['Value'], 0.22), -0.85), math_node(nt, 'MULTIPLY', math_node(nt, 'GREATER_THAN', fln.outputs['Value'], 0.86), 1.4)), 1.0)
+    occ = math_node(nt, 'MULTIPLY', occ, floorfac)
     lit = math_node(nt, 'LESS_THAN', wn.outputs['Value'], math_node(nt, 'ADD', occ, math_node(nt, 'MULTIPLY', shop, 0.45)) if night else 0.004)
     litw = math_node(nt, 'MULTIPLY', lit, win)
     ramp_l = node(nt, 'ShaderNodeValToRGB', 300, -250); link(nt, wn.outputs['Color'], ramp_l.inputs['Fac'])
@@ -400,16 +408,38 @@ def facade_material():
     grad = A(M(room, S(1.0, in_blind)), M(in_blind, 0.7))
     cellw = node(nt, 'ShaderNodeCombineXYZ', -300, 400); link(nt, math_node(nt, 'FLOOR', cu), cellw.inputs['X']); link(nt, math_node(nt, 'FLOOR', cv), cellw.inputs['Y']); link(nt, math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', seed, 997.0), 0.5), cellw.inputs['Z'])
     wn2 = node(nt, 'ShaderNodeTexWhiteNoise', -100, 400); wn2.noise_dimensions = '3D'; link(nt, cellw.outputs['Vector'], wn2.inputs['Vector'])
-    var = node(nt, 'ShaderNodeMapRange', 300, 250); link(nt, wn2.outputs['Value'], var.inputs['Value']); var.inputs['To Min'].default_value = 0.35
-    strength = math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', litw, var.outputs['Result']), math_node(nt, 'ADD', grad, math_node(nt, 'MULTIPLY', shop, 1.6))), 1.9 if night else 0.0)
+    var = node(nt, 'ShaderNodeMapRange', 300, 250); link(nt, wn2.outputs['Value'], var.inputs['Value']); var.inputs['To Min'].default_value = 0.22
+    strength = math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', litw, var.outputs['Result']), math_node(nt, 'ADD', grad, math_node(nt, 'MULTIPLY', shop, 1.6))), 1.4 if night else 0.0)
+    # Window frames: a mullion down the middle of wider windows and a transom
+    # near the top (dark metal), a stone sill under each window that catches
+    # light, the glass set back in the wall (bump at the reveals).
+    cellw_m = math_node(nt, 'MULTIPLY', S(u_hi, u_lo), cell)
+    midu = M(A(u_lo, u_hi), 0.5)
+    mull = M(math_node(nt, 'LESS_THAN', M(math_node(nt, 'ABSOLUTE', S(fu, midu)), cell), 0.045), math_node(nt, 'GREATER_THAN', cellw_m, 1.3))
+    tv = A(v_lo, M(S(v_hi, v_lo), 0.74))
+    tran = M(math_node(nt, 'LESS_THAN', math_node(nt, 'ABSOLUTE', M(S(fv, tv), 3.6)), 0.04), math_node(nt, 'GREATER_THAN', style, 0.5 / 8))
+    bars = math_node(nt, 'MINIMUM', A(mull, tran), 1.0)
+    frame_e = math_node(nt, 'MINIMUM', A(A(math_node(nt, 'LESS_THAN', M(S(fu, u_lo), cell), 0.05), math_node(nt, 'LESS_THAN', M(S(u_hi, fu), cell), 0.05)), A(math_node(nt, 'LESS_THAN', M(S(fv, v_lo), 3.6), 0.05), math_node(nt, 'LESS_THAN', M(S(v_hi, fv), 3.6), 0.05))), 1.0)
+    frm = M(win_up, math_node(nt, 'MINIMUM', A(bars, frame_e), 1.0))
+    glazing = S(win, M(frm, S(1.0, shop)))
+    sill = M(M(M(M(inside(fu, S(u_lo, 0.02), A(u_hi, 0.02)), math_node(nt, 'GREATER_THAN', fv, S(v_lo, 0.045))), math_node(nt, 'LESS_THAN', fv, v_lo)), wall), M(S(1.0, shop), math_node(nt, 'GREATER_THAN', style, 0.5 / 8)))
+    strength = M(strength, S(1.0, frm))
     wallc = lookup(nt, style, STYLE_WALL, 300, -700)
+    # Each building its own shade of its material.
+    bj = node(nt, 'ShaderNodeTexWhiteNoise', 100, -800); bj.noise_dimensions = '1D'; link(nt, A(M(seed, 577.0), 1.3), bj.inputs['W'])
+    wj = node(nt, 'ShaderNodeMix', 420, -700); wj.data_type = 'RGBA'; wj.blend_type = 'MULTIPLY'; wj.inputs['Factor'].default_value = 1.0
+    link(nt, wallc, wj.inputs[6]); jv = A(M(bj.outputs['Value'], 0.7), 0.65); jc = node(nt, 'ShaderNodeCombineColor', 300, -780); [link(nt, jv, jc.inputs[k]) for k in ('Red', 'Green', 'Blue')]
+    link(nt, jc.outputs['Color'], wj.inputs[7]); wallc = wj.outputs[2]
     # Slight weathering on walls: large noise darkens and lightens them.
     wnz = node(nt, 'ShaderNodeTexNoise', 300, -950); wnz.inputs['Scale'].default_value = 0.08; link(nt, geo.outputs['Position'], wnz.inputs['Vector'])
     weather = node(nt, 'ShaderNodeMix', 550, -800); weather.data_type = 'RGBA'; weather.blend_type = 'MULTIPLY'
     link(nt, wnz.outputs['Fac'], weather.inputs['Factor']); link(nt, wallc, weather.inputs[6]); weather.inputs[7].default_value = (0.75, 0.75, 0.75, 1)
     bsdf = node(nt, 'ShaderNodeBsdfPrincipled', 1300, 0)
     basec = node(nt, 'ShaderNodeMix', 900, -300); basec.data_type = 'RGBA'
-    link(nt, win, basec.inputs['Factor']); link(nt, weather.outputs[2], basec.inputs[6]); basec.inputs[7].default_value = (0.004, 0.006, 0.01, 1)
+    link(nt, glazing, basec.inputs['Factor']); link(nt, weather.outputs[2], basec.inputs[6]); basec.inputs[7].default_value = (0.004, 0.006, 0.01, 1)
+    fr_c = node(nt, 'ShaderNodeMix', 1000, -380); fr_c.data_type = 'RGBA'; link(nt, frm, fr_c.inputs['Factor']); link(nt, basec.outputs[2], fr_c.inputs[6]); fr_c.inputs[7].default_value = (0.025, 0.025, 0.028, 1)
+    sl_c = node(nt, 'ShaderNodeMix', 1050, -420); sl_c.data_type = 'RGBA'; link(nt, sill, sl_c.inputs['Factor']); link(nt, fr_c.outputs[2], sl_c.inputs[6]); sl_c.inputs[7].default_value = (0.42, 0.4, 0.37, 1)
+    basec = sl_c
     # Roofs: a light membrane and gravel, weathered, with skylights and roof
     # lights glowing here and there (seen from above, bare dark roofs read as empty).
     roof = math_node(nt, 'GREATER_THAN', N.outputs['Z'], 0.5)
@@ -424,15 +454,20 @@ def facade_material():
     swn = node(nt, 'ShaderNodeTexWhiteNoise', 750, -1450); swn.noise_dimensions = '3D'; link(nt, svr.outputs['Position'], swn.inputs['Vector'])
     skyl = math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', math_node(nt, 'LESS_THAN', svr.outputs['Distance'], 0.11), math_node(nt, 'LESS_THAN', swn.outputs['Value'], 0.3)), roof)
     glassy = math_node(nt, 'LESS_THAN', style, 0.5 / 8)
-    rgh = node(nt, 'ShaderNodeMix', 900, -500); rgh.data_type = 'FLOAT'; link(nt, win, rgh.inputs['Factor'])
+    rgh = node(nt, 'ShaderNodeMix', 900, -500); rgh.data_type = 'FLOAT'; link(nt, glazing, rgh.inputs['Factor'])
     link(nt, math_node(nt, 'ADD', math_node(nt, 'MULTIPLY', glassy, -0.55), 0.7), rgh.inputs['A']); rgh.inputs['B'].default_value = 0.03
     link(nt, rgh.outputs['Result'], bsdf.inputs['Roughness'])
     # Window glass reflects less than a mirror (tinted, with lights behind it).
-    spec = node(nt, 'ShaderNodeMix', 900, -600); spec.data_type = 'FLOAT'; link(nt, win, spec.inputs['Factor']); spec.inputs['A'].default_value = 0.5; spec.inputs['B'].default_value = 0.18
+    spec = node(nt, 'ShaderNodeMix', 900, -600); spec.data_type = 'FLOAT'; link(nt, glazing, spec.inputs['Factor']); spec.inputs['A'].default_value = 0.5; spec.inputs['B'].default_value = 0.18
     link(nt, spec.outputs['Result'], bsdf.inputs['Specular IOR Level'])
     link(nt, math_node(nt, 'MULTIPLY', glassy, 0.3), bsdf.inputs['Metallic'])
     link(nt, ramp_l.outputs['Color'], bsdf.inputs['Emission Color'])
     link(nt, math_node(nt, 'ADD', strength, math_node(nt, 'MULTIPLY', skyl, 2.2 if night else 0.0)), bsdf.inputs['Emission Strength'])
+    # Relief: glass set back from the wall, sills standing out, fine grain on stone and brick.
+    gr = node(nt, 'ShaderNodeTexNoise', 1000, -900); gr.inputs['Scale'].default_value = 3.0; gr.inputs['Detail'].default_value = 6; link(nt, geo.outputs['Position'], gr.inputs['Vector'])
+    hgt = A(A(M(win_up, -1.0), M(sill, 0.6)), M(M(gr.outputs['Fac'], 0.08), S(1.0, glassy)))
+    bump = node(nt, 'ShaderNodeBump', 1150, -900); bump.inputs['Strength'].default_value = 0.7; bump.inputs['Distance'].default_value = 0.12
+    link(nt, hgt, bump.inputs['Height']); link(nt, bump.outputs['Normal'], bsdf.inputs['Normal'])
     link(nt, bsdf.outputs['BSDF'], out.inputs['Surface'])
     return m
 
@@ -849,6 +884,9 @@ if arg('--scenery', '1') == '1':
     TAIL = simple('pg1-taillight', (0.4, 0.02, 0.02), 0.3); _tb = TAIL.node_tree.nodes.get('Principled BSDF')
     _tb.inputs['Emission Color'].default_value = (1.0, 0.05, 0.02, 1); _tb.inputs['Emission Strength'].default_value = 25.0 if night else 0.0
     TRAFFIC = pg1_filler.Traffic(bpy, scene, CAMPOS, _roads, PAINT, HEAD, TAIL)
+    LANE = simple('pg1-road-paint', (0.55, 0.54, 0.5), 0.55)
+    _, _nl = pg1_filler.lane_markings(bpy, LANE)
+    print(f'[cycles] scenery: {_nl} road-paint strips', flush=True)
     print(f'[cycles] scenery: {len(_lots)} low-rise blocks, {_nt} street trees, {len(TRAFFIC.cars)} cars on {len(_roads)} roads', flush=True)
 
 # Distance haze: the mist pass, in the shot's fog colour.
@@ -868,7 +906,18 @@ glare = ct.nodes.new('CompositorNodeGlare')
 glare.inputs['Type'].default_value = 'Fog Glow'; glare.inputs['Quality'].default_value = 'High'
 glare.inputs['Threshold'].default_value = 1.0; glare.inputs['Strength'].default_value = 0.6
 ct.links.new(mix.outputs[2], glare.inputs['Image'])
-gout = ct.nodes.new('NodeGroupOutput'); ct.links.new(glare.outputs['Image'], gout.inputs[0])
+# A real lens: a touch of colour fringing towards the edges.
+last = glare.outputs['Image']
+try:
+    lens = ct.nodes.new('CompositorNodeLensdist')
+    if 'Dispersion' in lens.inputs:
+        lens.inputs['Dispersion'].default_value = 0.012
+    else:
+        lens.dispersion = 0.012
+    ct.links.new(last, lens.inputs['Image']); last = lens.outputs['Image']
+except Exception as e:
+    print(f'[cycles] lens node skipped: {e}', flush=True)
+gout = ct.nodes.new('NodeGroupOutput'); ct.links.new(last, gout.inputs[0])
 
 shot = meta.get('shot', 'shot')
 print(f'[cycles] see-through glows left out: {sorted(HIDDEN_FAKE)}', flush=True)
@@ -892,7 +941,7 @@ if ANIM:
     if MBLUR:
         # Camera motion blur, as a real camera at 1/60 s: the camera keyed a
         # frame either side, the shutter open for 40% of a frame round each.
-        scene.render.use_motion_blur = True; scene.render.motion_blur_shutter = 0.25
+        scene.render.use_motion_blur = True; scene.render.motion_blur_shutter = 0.5
         scene.render.motion_blur_position = 'CENTER'
         cams[0].rotation_mode = 'QUATERNION'
     for fr in ([int(round((total - 1) * meta.get('still_t', 0.66)))] if still else range(a_, b_)):

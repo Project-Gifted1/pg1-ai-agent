@@ -91,14 +91,14 @@ def _roof(bm, col, rnd, cx, cy, top, w, d, rot, style, h_total, round_=False):
 def _bands(bm, col, rnd, cx, cy, z0, h, w, d, rot, style, round_=False):
     # Floor bands every few storeys (stone, brick, georgian), spandrels on glass at each tier top.
     if style in (STONE, BRICK, GEORGIAN):
-        every = 3.6 * (3 if style == GEORGIAN else 4)
+        every = 3.6 * (4 if style == GEORGIAN else 6)
         z = z0 + every
         while z < z0 + h - 2:
             if round_:
                 r = min(w, d) / 2 + 0.25
                 _prism(bm, col, lambda tt, i, r=r: (cx + r * math.cos(i / 32 * 2 * math.pi), cy + r * math.sin(i / 32 * 2 * math.pi)), 32, z, 0.35, TRIM)
             else:
-                _box(bm, col, cx, cy, z, w + 0.5, d + 0.5, 0.35, TRIM, rot)
+                _box(bm, col, cx, cy, z, w + 0.3, d + 0.3, 0.25, TRIM, rot)
             z += every
         # Cornice.
         if round_:
@@ -118,10 +118,12 @@ def build(bm, col, b):
     # b = the building's base height / 400: the shader finds the ground floor (shops).
     COLOUR[0] = (b['seed'] / 997.0, style / 8.0, max(0.0, z0) / 400.0, 1.0)
     if kind == 'box':
-        if h > 55 and style in (GLASS, METAL):
-            # Setbacks: two or three tiers.
-            tiers = [(0.0, 0.62), (0.1, 0.26), (0.2, 0.12)] if rnd.random() < 0.6 else [(0.0, 0.72), (0.14, 0.28)]
+        if h > 80 and style in (GLASS, METAL) and rnd.random() < 0.3:
+            # A setback near the top on some tall towers (most rise straight,
+            # as real glass towers do; stacked tiers read as stacked boxes).
+            tiers = [(0.0, 0.84), (0.07, 0.16)]
             z = z0
+            rnd.random()  # keep the seeded sequence as before for the rest of the building
             for inset, frac in tiers:
                 th = h * frac; tw, td = w * (1 - inset * 2), d * (1 - inset * 2)
                 _box(bm, col, cx, cy, z, tw, td, th, FACADE, rot)
@@ -160,11 +162,11 @@ def build(bm, col, b):
 def _crown(bm, col, b):
     """About 40% of towers over 45 m: an LED band (sometimes two) just under the top."""
     cr = random.Random(int(b['seed'] * 7919) + int(b['x'] * 3) + int(b['z'] * 5) + 17)
-    if b['h'] < 45 or cr.random() > 0.42 or b['kind'] == 'twist':
+    if b['h'] < 70 or cr.random() > 0.22 or b['kind'] == 'twist':
         return
     cx, cy, z0 = b['x'], -b['z'], b['y']
     w, d, h, rot, kind = b['w'], b['d'], b['h'], b['ry'], b['kind']
-    zs = [z0 + h - 1.6] + ([z0 + h - 6.0] if cr.random() < 0.45 else [])
+    zs = [z0 + h - 1.6]
     if kind == 'box' and h > 55 and int(round(b['style'])) in (GLASS, METAL):
         return  # setback towers: the tiers already read; keep their tops plain
     for z in zs:
