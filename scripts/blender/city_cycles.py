@@ -461,8 +461,15 @@ def facade_material():
     spec = node(nt, 'ShaderNodeMix', 900, -600); spec.data_type = 'FLOAT'; link(nt, glazing, spec.inputs['Factor']); spec.inputs['A'].default_value = 0.5; spec.inputs['B'].default_value = 0.18
     link(nt, spec.outputs['Result'], bsdf.inputs['Specular IOR Level'])
     link(nt, math_node(nt, 'MULTIPLY', glassy, 0.3), bsdf.inputs['Metallic'])
-    link(nt, ramp_l.outputs['Color'], bsdf.inputs['Emission Color'])
-    link(nt, math_node(nt, 'ADD', strength, math_node(nt, 'MULTIPLY', skyl, 2.2 if night else 0.0)), bsdf.inputs['Emission Strength'])
+    warmw = node(nt, 'ShaderNodeMix', 1150, -150); warmw.data_type = 'RGBA'; warmw.blend_type = 'MULTIPLY'; warmw.inputs['Factor'].default_value = 1.0
+    link(nt, wallc, warmw.inputs[6]); warmw.inputs[7].default_value = (1.0, 0.66, 0.38, 1)
+    emc = node(nt, 'ShaderNodeMix', 1200, -100); emc.data_type = 'RGBA'; link(nt, glazing, emc.inputs['Factor'])
+    link(nt, warmw.outputs[2], emc.inputs[6]); link(nt, ramp_l.outputs['Color'], emc.inputs[7])
+    link(nt, emc.outputs[2], bsdf.inputs['Emission Color'])
+    # Street light on the lower walls (sodium and LED from the lamps below),
+    # fading up the first floors; bounce of the city glow on the rest.
+    up = math_node(nt, 'MULTIPLY', math_node(nt, 'MULTIPLY', wall, S(1.0, glazing)), A(M(math_node(nt, 'POWER', 0.5, math_node(nt, 'DIVIDE', math_node(nt, 'MAXIMUM', P.outputs['Z'], 0.0), 7.0)), 0.5), 0.03))
+    link(nt, math_node(nt, 'ADD', math_node(nt, 'ADD', strength, math_node(nt, 'MULTIPLY', skyl, 2.2 if night else 0.0)), math_node(nt, 'MULTIPLY', up, 1.6 if night else 0.0)), bsdf.inputs['Emission Strength'])
     # Relief: glass set back from the wall, sills standing out, fine grain on stone and brick.
     gr = node(nt, 'ShaderNodeTexNoise', 1000, -900); gr.inputs['Scale'].default_value = 3.0; gr.inputs['Detail'].default_value = 6; link(nt, geo.outputs['Position'], gr.inputs['Vector'])
     hgt = A(A(M(win_up, -1.0), M(sill, 0.6)), M(M(gr.outputs['Fac'], 0.08), S(1.0, glassy)))
@@ -650,6 +657,9 @@ for o in list(scene.objects):
             b = m.node_tree.nodes.get('Principled BSDF') if m and m.use_nodes else None
             if b:
                 b.inputs['Roughness'].default_value = 0.28; b.inputs['Coat Weight'].default_value = 0.8; b.inputs['Coat Roughness'].default_value = 0.08
+                # Graphite shells: a white body reads as a pale umbrella from above at night.
+                if not b.inputs['Base Color'].is_linked:
+                    b.inputs['Base Color'].default_value = (0.05, 0.055, 0.06, 1)
         continue
     base = n.rsplit('-', 1)[0] if n.rsplit('-', 1)[-1].isdigit() else n
     if base.startswith('facade~') or base.startswith('skyline-'):
@@ -853,7 +863,7 @@ scene.render.film_transparent = False
 scene.view_settings.view_transform = arg('--view', 'Khronos PBR Neutral' if night else 'AgX')
 if scene.view_settings.view_transform == 'AgX':
     scene.view_settings.look = arg('--look-grade', 'AgX - Punchy')
-scene.view_settings.exposure = float(arg('--exposure', '0.3' if night else '0.0'))
+scene.view_settings.exposure = float(arg('--exposure', '0.55' if night else '0.0'))
 scene.render.image_settings.file_format = 'PNG'
 # The compositor on the CPU: a runner has no display for a GPU context.
 if hasattr(scene.render, 'compositor_device'):
